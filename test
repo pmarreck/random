@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Run the random test suite with this project's bin/ on PATH.
+# Usage: ./test            (FAST mode by default — quick, quiet on success)
+#        FAST= ./test      (full statistical run)
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="$here/bin:$PATH"
+export RANDOM_TEST_FILE="$here/tests/random_test"
+export FAST="${FAST-1}"
+exec "$here/tests/random_test" "$@"
