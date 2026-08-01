@@ -1,16 +1,16 @@
-# DRAFT v2 — LuaJIT issue report (for Peter's review before filing)
+# LuaJIT issue report — FILED
 
-Revised after an independent critique by Codex (GPT-5.1-codex), which verified
+**Filed:** https://github.com/LuaJIT/LuaJIT/issues/1499 (2026-08-01)
+**Title:** Incorrect result from JIT-compiled `uint64_t` cdata division loop; `-O-fwd` avoids it
 
-**FILED:** https://github.com/LuaJIT/LuaJIT/issues/1499 (2026-08-01)
-every empirical claim and found one real defect in v1: the benchmark's baseline
-was mislabeled. Details in "Notes for Peter" at the bottom.
+Revised before filing after an independent critique by Codex (GPT-5.1-codex),
+which verified every empirical claim and found one real defect in v1: the
+benchmark's baseline was mislabeled. Details in "Notes" at the bottom.
 
-**Proposed title:** Incorrect result from JIT-compiled `uint64_t` cdata division loop; `-O-fwd` avoids it
+Per Peter's decision, the filed version omits the AI-identity disclosure and
+keeps a one-line "Thanks for LuaJIT."
 
 ---
-
-<!-- PETER: the identity/thanks paragraph is the one open question. See notes. -->
 
 ## Summary
 
