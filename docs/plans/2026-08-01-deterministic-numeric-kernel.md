@@ -267,7 +267,10 @@ export DRANDOM_STATE_HOME="$(mktemp -d)"
 trap 'rm -rf "$DRANDOM_STATE_HOME"' EXIT
 
 which="${1-}"
-[ -n "$which" ] || { echo "usage: bless-goldens integer|dist" >&2; exit 1; }
+[ -n "$which" ] || { echo "usage: bless-goldens integer|dist [output_path]" >&2; exit 1; }
+# Second argument redirects output. golden_test uses it to generate into a temp
+# file and diff, so a test run never writes to tracked files.
+outfile="${2-}"
 
 emit() {  # emit <label> <command...>
 	local label="$1"; shift
@@ -302,8 +305,8 @@ integer)
 			emit_stdin "shuffle/$seed"  $'1\n2\n3\n4\n5\n6\n7\n8' random --shuffle -d --seed "$seed"
 			emit_stdin "weighted/$seed" $'rare:1\ncommon:10\nverycommon:100' random --weighted -d --seed "$seed"
 		done
-	} > "$here/golden/integer.txt"
-	echo "blessed $(wc -l < "$here/golden/integer.txt") integer vectors" >&2
+	} > "${outfile:-$here/golden/integer.txt}"
+	echo "wrote $(wc -l < "${outfile:-$here/golden/integer.txt}") integer vectors" >&2
 	;;
 dist)
 	{
@@ -315,8 +318,8 @@ dist)
 			emit "lognormal/$seed"   random -d --log-normal --seed "$seed" -c 12
 			emit "beta/$seed"        random -d --beta --alpha 2 --beta-param 5 --seed "$seed" -c 12
 		done
-	} > "$here/golden/dist.txt"
-	echo "blessed $(wc -l < "$here/golden/dist.txt") distribution vectors" >&2
+	} > "${outfile:-$here/golden/dist.txt}"
+	echo "wrote $(wc -l < "${outfile:-$here/golden/dist.txt}") distribution vectors" >&2
 	;;
 *)
 	echo "unknown set: $which" >&2; exit 1 ;;
@@ -347,17 +350,16 @@ echo "============================================"
 for set_file in "$here"/golden/*.txt; do
 	[ -f "$set_file" ] || continue
 	set_name="$(basename "$set_file" .txt)"
-	# Regenerate into a temp file, then diff. Regeneration must be identical.
+	# Regenerate into a temp file and diff against the committed one. Never write
+	# to a tracked file during a test run: that would clobber deliberate
+	# uncommitted golden edits and make ./test mutate the repo.
 	tmp="$(mktemp)"
-	"$here/bless-goldens" "$set_name" >/dev/null 2>&1
-	# bless-goldens writes in place; capture and restore via git to avoid mutating
-	# the working tree during a test run.
-	if git -C "$here/.." diff --quiet -- "tests/golden/$set_name.txt"; then
+	"$here/bless-goldens" "$set_name" "$tmp" >/dev/null 2>&1
+	if diff -q "$set_file" "$tmp" >/dev/null 2>&1; then
 		echo "✓ $set_name: all vectors reproduce"
 	else
 		echo "✗ $set_name: vectors CHANGED" >&2
-		git -C "$here/.." --no-pager diff --unified=0 -- "tests/golden/$set_name.txt" >&2
-		git -C "$here/.." checkout -- "tests/golden/$set_name.txt"
+		diff --unified=0 "$set_file" "$tmp" | head -20 >&2
 		fails=$((fails + 1))
 	fi
 	checked=$((checked + 1))
