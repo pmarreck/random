@@ -903,6 +903,203 @@ ok(math_abs_rel(just_above_half_m, just_above_half_e, fx.from_int(-1)) < 1e-15, 
 end
 
 print("")
+print("--- Section 7: sqrt and pow ---")
+do
+
+-- True fixed-point relative error: computed ENTIRELY in this kernel's own
+-- 62-bit arithmetic (fx.sub then fx.div), converting to a Lua double only
+-- on the resulting ALREADY-TINY residual. math_abs_rel above converts
+-- each operand independently through a double FIRST, which introduces
+-- ~2^-53 relative rounding PER CONVERSION -- too coarse to validate this
+-- kernel's ~2^-62 precision claim (it cannot tell a true ~6e-19 error from
+-- a ~1e-16 one; both round to "0" once each operand is independently cast
+-- through tonumber()). See lib/fixed.lua's M.sqrt doc comment for the
+-- full derivation of why this distinction matters for sqrt specifically
+-- (a single raw-integer Newton stage, with no soft-float refinement, only
+-- reaches ~31 bits of precision -- a ~1e-9-scale error that a
+-- double-precision check alone cannot distinguish from full 62-bit
+-- precision at this file's own tolerances).
+local function true_fixed_relerr(m1, e1, m2, e2)
+	if m2 == 0 then
+		if m1 == 0 then return 0.0 end
+		return math.huge
+	end
+	local dm, de = fx.sub(m1, e1, m2, e2)
+	if dm == 0 then return 0.0 end
+	local rm, re = fx.div(dm, de, m2, e2)
+	return math.abs(tonumber(rm)) * 2 ^ (re - 62)
+end
+
+-- Bound for the true-precision round trip checks below. Measured worst
+-- case over the sampled list is 4.336809e-19 (x=2, see task-9-report.md);
+-- SQRT_RTOL gives ~11.5x margin, matching this file's "single-digit
+-- multiple margin" convention (see kernel_bc_sweep.lua's own DIV_RTOL/
+-- SQRT_RTOL derivations) rather than a loose bound that would fail to
+-- catch a real regression.
+local SQRT_RTOL = 5e-18
+
+-- === sqrt: exact squares -- bit-exact, no tolerance needed. ============
+-- v=2 (from_int(2) normalizes to e=1, ODD) and v=4 (e=2, EVEN) between
+-- them exercise both exponent parities the brief's own Step 4 warned an
+-- off-by-one would surface as (though the actual defect found here was
+-- far larger than an off-by-one -- see lib/fixed.lua's M.sqrt comment).
+local sqrt_exact_ok = true
+for _, pair in ipairs({ {4,2}, {9,3}, {16,4}, {100,10}, {10000,100} }) do
+	local v, want = pair[1], pair[2]
+	local xm, xe = fx.from_int(v)
+	local rm, re = fx.sqrt(xm, xe)
+	local wm, we = fx.from_int(want)
+	if not (rm == wm and re == we) then sqrt_exact_ok = false end
+end
+ok(sqrt_exact_ok, "sqrt of perfect squares is bit-exact (4,9,16,100,10000)")
+
+-- === sqrt: round trip, brief's own list and tolerance (Step 1) =========
+local sq_ok, sq_worst = true, 0
+for _, v in ipairs({1, 2, 4, 9, 16, 100, 12345}) do
+	local xm, xe = fx.from_int(v)
+	local rm, re = fx.sqrt(xm, xe)
+	local backm, backe = fx.mul(rm, re, rm, re)
+	local err = math_abs_rel(backm, backe, xm, xe)
+	if err > sq_worst then sq_worst = err end
+	if err > 1e-15 then sq_ok = false end
+end
+ok(sq_ok, "sqrt(x)^2 == x for sampled x (double-precision check)", ("worst=%.3e"):format(sq_worst))
+
+local em, ee = fx.sqrt(fx.from_int(4))
+ok(math_abs_rel(em, ee, fx.from_int(2)) < 1e-16, "sqrt(4) == 2")
+
+-- === sqrt: same round trip, TRUE fixed-point precision (MUTATION TARGET) ==
+-- This is one of the two tests task-9's mutation pass targets (see
+-- task-9-report.md). It is the only assertion in this file precise
+-- enough to distinguish "full 62-bit precision" from "only the ~31-bit
+-- precision a single raw-integer Newton stage can give" -- the
+-- double-precision check above cannot make that distinction, since a
+-- ~1e-9-scale error and a ~1e-19-scale error both read as comfortably
+-- "0" once independently rounded through a double.
+local sq_true_ok, sq_true_worst, sq_true_worst_label = true, 0, nil
+for _, v in ipairs({1, 2, 4, 9, 16, 100, 12345}) do
+	local xm, xe = fx.from_int(v)
+	local rm, re = fx.sqrt(xm, xe)
+	local backm, backe = fx.mul(rm, re, rm, re)
+	local err = true_fixed_relerr(backm, backe, xm, xe)
+	if err > sq_true_worst then sq_true_worst, sq_true_worst_label = err, v end
+	if err > SQRT_RTOL then sq_true_ok = false end
+end
+ok(sq_true_ok, ("sqrt(x)^2 == x, TRUE fixed-point precision (< %.1e)"):format(SQRT_RTOL),
+   ("worst=%.6e at x=%s"):format(sq_true_worst, tostring(sq_true_worst_label)))
+
+-- === sqrt: explicit odd- and even-exponent cases at magnitude extremes ===
+-- (verification item 1: "test on both odd and even exponents", beyond
+-- what the small-integer list above happens to sample). Oracle-free,
+-- metamorphic check (sqrt(x)^2 == x is a property of ANY x -- no
+-- reference value needs to be known in advance).
+local exp_parity_ok, exp_parity_worst = true, 0
+for _, e in ipairs({-999, -1000, 0, 1, 999, 1000}) do
+	local xm = 0x5B23A7C9E1F4D680LL   -- an arbitrary normalized mantissa
+	local rm, re = fx.sqrt(xm, e)
+	local backm, backe = fx.mul(rm, re, rm, re)
+	local err = true_fixed_relerr(backm, backe, xm, e)
+	if err > exp_parity_worst then exp_parity_worst = err end
+	if err > SQRT_RTOL then exp_parity_ok = false end
+end
+ok(exp_parity_ok, "sqrt(x)^2 == x across odd/even exponents at magnitude extremes",
+   ("worst=%.6e"):format(exp_parity_worst))
+
+-- === sqrt: returned exponent is always an INTEGER (representation ======
+-- === invariant, checked directly rather than only via a round trip). ===
+-- Mutation testing this task's own tests found a real blind spot: a
+-- mutant that drops the odd-exponent mantissa-halving step returns a
+-- soft-float whose exponent ends in exactly ".5" (confirmed directly:
+-- sqrt(2) under that mutant returns e=0.5, not an integer) -- an invalid
+-- representation this file's own top-of-file invariant (2^62 <= |m| < 2^63
+-- at INTEGER e) forbids. The "square it back and compare" round-trip
+-- checks above do NOT catch this: squaring exactly DOUBLES the exponent,
+-- and doubling any X.5 lands back on an integer by construction (2*(n +
+-- 0.5) = 2n + 1), so the corruption exactly self-cancels under squaring
+-- and every round-trip check above still reads as numerically correct.
+-- Confirmed empirically (see task-9-report.md's mutation section): only
+-- the bit-exact "sqrt of perfect squares" check above happened to catch
+-- that mutant, incidentally (it compares fx.sqrt's raw output directly
+-- against a genuinely-integer-exponent fx.from_int(want), which a
+-- fractional exponent can never bit-match) -- not because any test was
+-- actually checking the invariant itself. This check closes that gap
+-- directly: it is now a target-of-record for that mutant class, not an
+-- accident of a different test's shape.
+local int_exp_ok, int_exp_bad_at = true, nil
+for _, v in ipairs({1, 2, 4, 9, 16, 100, 12345}) do
+	local xm, xe = fx.from_int(v)
+	local _, re = fx.sqrt(xm, xe)
+	if re ~= math.floor(re) then int_exp_ok = false; int_exp_bad_at = int_exp_bad_at or ("v=" .. v) end
+end
+for _, e in ipairs({-999, -1000, 0, 1, 999, 1000}) do
+	local _, re = fx.sqrt(0x5B23A7C9E1F4D680LL, e)
+	if re ~= math.floor(re) then int_exp_ok = false; int_exp_bad_at = int_exp_bad_at or ("e=" .. e) end
+end
+ok(int_exp_ok, "sqrt always returns an integer exponent (representation invariant)",
+   int_exp_bad_at and ("first bad at " .. int_exp_bad_at) or nil)
+
+-- === pow: brief's own case (Step 1), bit-exact ==========================
+local base_m, base_e = fx.from_int(2)
+local pm, pe = fx.pow(base_m, base_e, fx.from_int(10))
+local want1024_m, want1024_e = fx.from_int(1024)
+ok(math_abs_rel(pm, pe, fx.from_int(1024)) < 1e-14, "2^10 == 1024")
+ok(pm == want1024_m and pe == want1024_e, "2^10 == 1024, bit-exact")
+
+-- === pow: y == 0 and x == 1 identities (oracle-free: from_int(1) is =====
+-- === already known-exact, no bc/double comparison needed) ==============
+local one_m, one_e = fx.from_int(1)
+local pow_y0_m, pow_y0_e = fx.pow(base_m, base_e, fx.from_int(0))
+ok(pow_y0_m == one_m and pow_y0_e == one_e, "x^0 == 1 exactly")
+local pow_x1_m, pow_x1_e = fx.pow(one_m, one_e, fx.from_int(12345))
+ok(pow_x1_m == one_m and pow_x1_e == one_e, "1^y == 1 exactly")
+
+-- === pow: negative y =====================================================
+local pow_neg_m, pow_neg_e = fx.pow(base_m, base_e, fx.from_int(-3))
+local eighth_m, eighth_e = fx.div(one_m, one_e, fx.from_int(8))
+ok(true_fixed_relerr(pow_neg_m, pow_neg_e, eighth_m, eighth_e) < SQRT_RTOL, "2^-3 == 1/8")
+
+-- === pow: differential check against an INDEPENDENT computation path ===
+-- (MUTATION TARGET, the second of the two tests task-9's mutation pass
+-- targets). Comparing fx.pow against repeated M.mul exercises a
+-- completely different code path (mul only, no ln/exp) for the same
+-- mathematical quantity -- this catches a formula flip (e.g.
+-- exp(ln(x)/y) instead of exp(y*ln(x))) far more reliably than "2^10 ==
+-- 1024" alone: with a non-power-of-two base (1/3) and several n, the two
+-- formulas diverge by many orders of magnitude rather than by a value
+-- that might coincidentally still look plausible for one specific (2,10)
+-- pair.
+local function pow_by_repeated_mul(xm, xe, n)
+	local am, ae = fx.from_int(1)
+	for _ = 1, n do am, ae = fx.mul(am, ae, xm, xe) end
+	return am, ae
+end
+local third_m, third_e = fx.div(one_m, one_e, fx.from_int(3))
+local pow_diff_ok, pow_diff_worst = true, 0
+for _, n in ipairs({1, 2, 5, 10, 20}) do
+	local viaexp_m, viaexp_e = fx.pow(third_m, third_e, fx.from_int(n))
+	local viamul_m, viamul_e = pow_by_repeated_mul(third_m, third_e, n)
+	local err = true_fixed_relerr(viaexp_m, viaexp_e, viamul_m, viamul_e)
+	if err > pow_diff_worst then pow_diff_worst = err end
+	if err > 1e-14 then pow_diff_ok = false end
+end
+ok(pow_diff_ok, "pow(1/3, n) matches (1/3)*(1/3)*...*(1/3) via an independent mul-only path",
+   ("worst=%.6e"):format(pow_diff_worst))
+
+-- === pow: realistic gamma-sampler domain (alpha<1, x in (0,1)) succeeds ==
+local realistic_ok = pcall(fx.pow, third_m, third_e, fx.from_int(10))
+ok(realistic_ok, "pow succeeds for a realistic alpha=0.1 gamma-sampler case ((1/3)^10)")
+
+-- === pow: pathological alpha raises rather than hanging or returning ===
+-- === garbage (documents the inherited M.exp bound -- see M.pow's doc  ===
+-- === comment in lib/fixed.lua for the measured boundary this pins).   ===
+local tiny_m, tiny_e = fx.div(one_m, one_e, fx.from_int(4294967296))  -- x = 2^-32
+local hy_m, hy_e = fx.norm(one_m, 57)                                 -- y = 2^57
+local pow_raises_ok = not pcall(fx.pow, tiny_m, tiny_e, hy_m, hy_e)
+ok(pow_raises_ok, "pow raises (not hang, not garbage) once y*ln(x) exceeds M.exp's inherited bound")
+
+end
+
+print("")
 print("============================================")
 if fails > 0 then
 	io.stderr:write(("fixed test FAILED: %d of %d checks failed\n"):format(fails, checks))

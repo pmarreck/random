@@ -358,10 +358,116 @@ for _, zk in ipairs(COS_ZERO_KS) do
 	end
 end
 
+-- === sqrt: mantissa x exponent sweep against bc's own arbitrary-        ===
+-- === precision sqrt() builtin (task-9 verification items 1 and 3: the   ===
+-- === exponent bookkeeping and the true round-trip precision, here       ===
+-- === cross-checked against an INDEPENDENT oracle rather than only this  ===
+-- === kernel's own M.sub/M.div-based self-check in fixed_test.lua).      ===
+--
+-- A dedicated LCG (own seed), same rationale as cos's cos_lcg_state
+-- above: adding or resizing this sweep must never shift how many
+-- next_mantissa() calls the div/ln/exp sections above have already
+-- consumed.
+local sqrt_lcg_state = 0x9E6B4A7F1C2D3E5FULL
+local function next_sqrt_mantissa()
+	sqrt_lcg_state = sqrt_lcg_state * 6364136223846793005ULL + 1442695040888963407ULL
+	local high = sqrt_lcg_state / 4ULL
+	return TWO62 + (high % TWO62)
+end
+
+local function add_sqrt_case(m, e, label)
+	local rm, re = fx.sqrt(m, e)
+	local ms = i64dec(m)
+	local rms = tostring(rm):gsub("LL$", "")
+	-- bc's sqrt() is a builtin (available with or without -l), the natural
+	-- independent oracle for this section -- same rationale as l()/e()/c()
+	-- above: ground truth for THIS TEST, never inside the shipped kernel.
+	local expr = ("val = %s * 2^(%d); ref = sqrt(val); our = %s * 2^(%d); " ..
+		"if (ref == 0) print \"%s SKIP\\n\"; " ..
+		"if (ref != 0) print \"%s \", (our - ref) / abs(ref), \" \", abs(our - ref), \"\\n\""):format(
+		ms, e - 62, rms, re - 62, label, label)
+	bc_lines[#bc_lines + 1] = expr
+	labels[#labels + 1] = label
+end
+
+-- Mantissa set: same edge-value baseline mantissa_set() uses (min/max/
+-- min+1/max-1/midpoint), all non-negative since M.sqrt's domain is m >= 0
+-- (mantissa_set's own defaults are already all non-negative u64 literals
+-- cast straight to i64, so no sign filtering is needed here), plus
+-- SQRT_MANTISSA_COUNT more from the dedicated LCG above.
+local SQRT_MANTISSA_COUNT = fast and 30 or 100
+local sqrtset = { 0x4000000000000000LL, 0x4000000000000001LL,
+                  0x7FFFFFFFFFFFFFFELL, 0x7FFFFFFFFFFFFFFFLL,
+                  0x6000000000000000LL }
+for _ = 1, SQRT_MANTISSA_COUNT do
+	sqrtset[#sqrtset + 1] = ffi.cast(i64, next_sqrt_mantissa())
+end
+-- Exponents spanning a wide magnitude range with BOTH parities explicitly
+-- represented at each scale (verification item 1: "test on both odd and
+-- even exponents") -- e.g. -1000/-999 sit right next to each other so a
+-- parity-dependent bug at large |e| can't hide behind only testing one
+-- parity per magnitude.
+local SQRT_EXPS = {-1000, -999, -501, -500, -50, -49, -5, -4, -1, 0, 1, 4, 5,
+                    49, 50, 500, 501, 999, 1000}
+local sqrt_case_count = 0
+for i = 1, #sqrtset do
+	for _, e in ipairs(SQRT_EXPS) do
+		add_sqrt_case(sqrtset[i], e, ("sqrt_%d_%d"):format(i, e))
+		sqrt_case_count = sqrt_case_count + 1
+	end
+end
+
+-- === pow: x^y via bc's own e(y*l(x)) as an INDEPENDENT reference -- same ===
+-- === arbitrary-precision l()/e() this file already trusts as the ln/exp ===
+-- === oracle, composed the same way M.pow itself is, but with bc's OWN   ===
+-- === big-decimal l()/e() rather than this kernel's ~62-bit versions, so ===
+-- === it is not simply re-checking M.pow against its own arithmetic.     ===
+-- Domain deliberately kept well inside M.exp's convergence bound (see
+-- M.pow's doc comment for the measured boundary, ~2^57 for this program's
+-- worst-case ln(x)) -- this sweep validates ORDINARY pow correctness, not
+-- the boundary, which fixed_test.lua's pcall-based check already covers.
+local pow_lcg_state = 0xB5297A4D3C9E7F21ULL
+local function next_pow_mantissa()
+	pow_lcg_state = pow_lcg_state * 6364136223846793005ULL + 1ULL
+	local high = pow_lcg_state / 4ULL
+	return TWO62 + (high % TWO62)
+end
+local function add_pow_case(bm, be, ym, ye, label)
+	local rm, re = fx.pow(bm, be, ym, ye)
+	local bms, yms = i64dec(bm), i64dec(ym)
+	local rms = tostring(rm):gsub("LL$", "")
+	local expr = ("base = %s * 2^(%d); ypow = %s * 2^(%d); ref = e(ypow*l(base)); our = %s * 2^(%d); " ..
+		"if (ref == 0) print \"%s SKIP\\n\"; " ..
+		"if (ref != 0) print \"%s \", (our - ref) / abs(ref), \" \", abs(our - ref), \"\\n\""):format(
+		bms, be - 62, yms, ye - 62, rms, re - 62, label, label)
+	bc_lines[#bc_lines + 1] = expr
+	labels[#labels + 1] = label
+end
+local POW_MANTISSA_COUNT = fast and 15 or 40
+local powset = {}
+for _ = 1, POW_MANTISSA_COUNT do
+	powset[#powset + 1] = ffi.cast(i64, next_pow_mantissa())
+end
+-- base exponents kept small (x roughly in [2^-5, 2^5]) and y drawn from
+-- both small integers and fractional (negative-exponent) soft-floats, so
+-- |y * ln x| stays comfortably under ~200 -- nowhere near the ~2^57
+-- boundary M.pow inherits from M.exp.
+local POW_BASE_EXPS = {-5, -1, 0, 1, 5}
+local POW_Y_VALUES = {-20, -3, -1, 1, 3, 20}
+local pow_case_count = 0
+for i = 1, #powset do
+	local bexp = POW_BASE_EXPS[((i - 1) % #POW_BASE_EXPS) + 1]
+	for _, yv in ipairs(POW_Y_VALUES) do
+		local ym, ye = fx.from_int(yv)
+		add_pow_case(powset[i], bexp, ym, ye, ("pow_%d_%d_%d"):format(i, bexp, yv))
+		pow_case_count = pow_case_count + 1
+	end
+end
+
 io.stderr:write(("kernel_bc_sweep: %d div cases, %d ln cases, %d exp cases " ..
-	"(%d r-domain + %d x-domain), %d cos cases (FAST=%s)\n"):format(
+	"(%d r-domain + %d x-domain), %d cos cases, %d sqrt cases, %d pow cases (FAST=%s)\n"):format(
 	div_pair_count, ln_case_count, expfn_r_count + expfn_x_count,
-	expfn_r_count, expfn_x_count, cos_case_count, tostring(fast ~= nil)))
+	expfn_r_count, expfn_x_count, cos_case_count, sqrt_case_count, pow_case_count, tostring(fast ~= nil)))
 
 local bc_script = table.concat(bc_lines, "\n") .. "\n"
 local tmp = os.tmpname()
@@ -507,6 +613,34 @@ local EXPFN_X_RTOL = 4e-15
 local COS_RTOL = 2e-17
 local COS_ATOL = 1e-16
 
+-- sqrt is a single Newton refinement stage on top of an already-normalized
+-- operand -- no cancellation dynamics (like div, not like ln/cos), so a
+-- pure relative bound is sufficient, no atol escape hatch needed. Measured
+-- worst case over the FULL (non-FAST) sweep of 1995 cases spanning the
+-- full mantissa range and both exponent parities at 19 magnitudes:
+-- 2.262778e-19 (sqrt_12_-49) -- already AT this kernel's ~2^-62
+-- (2.168e-19) floor, consistent with SQRT_REFINE's own derivation in
+-- lib/fixed.lua (measured worst 6.3e-19 to 8.6e-19 over a separate
+-- 20000-sample Lua-side sweep; this bc-oracle sweep, independent of that
+-- one, lands in the same order of magnitude). SQRT_RTOL = 2e-18 gives
+-- ~8.8x margin above the measured worst case -- between DIV_RTOL's tight
+-- ~1.2x (a single exact truncation, no compounding) and LN_RTOL's ~23x
+-- (a 20-term series plus ~40 compounding mul/add ops), reflecting sqrt's
+-- own small, bounded number of compounding operations (SQRT_REFINE=3
+-- div+add pairs on top of the integer-Newton seed).
+local SQRT_RTOL = 2e-18
+-- pow compounds THREE kernel operations (ln, mul, exp), each with its own
+-- error budget, so its floor is necessarily looser than sqrt's or div's.
+-- Measured worst case over the full sweep (240 cases, x in roughly
+-- [2^-5, 2^5], y in {-20,-3,-1,1,3,20}): 5.253608e-17 (pow_20_5_20).
+-- POW_RTOL = 3e-16 gives ~5.7x margin, in the same range as EXPFN_R_RTOL's
+-- own ~3x margin over ITS measured worst case -- pow's compounding is
+-- similar in kind (a kernel op feeding a kernel op), not looser by an
+-- order of magnitude the way exp's x-domain (which additionally
+-- compounds LN2's own fixed truncation, amplified by a potentially large
+-- k) is.
+local POW_RTOL = 3e-16
+
 local worst_div_rel, worst_div_label = 0, nil
 local worst_ln_rel, worst_ln_rel_label = 0, nil
 local worst_ln_abs, worst_ln_abs_label = 0, nil
@@ -515,7 +649,9 @@ local worst_expfn_x_rel, worst_expfn_x_label = 0, nil
 local worst_cos_rel, worst_cos_rel_label = 0, nil
 local worst_cos_abs, worst_cos_abs_label = 0, nil
 local worst_cos_nearzero_rel, worst_cos_nearzero_rel_label = 0, nil
-local div_bad, ln_bad, expfn_bad, cos_bad = 0, 0, 0, 0
+local worst_sqrt_rel, worst_sqrt_rel_label = 0, nil
+local worst_pow_rel, worst_pow_rel_label = 0, nil
+local div_bad, ln_bad, expfn_bad, cos_bad, sqrt_bad, pow_bad = 0, 0, 0, 0, 0, 0
 local skipped = 0
 local seen = 0
 for line in out:gmatch("[^\n]+") do
@@ -556,12 +692,19 @@ for line in out:gmatch("[^\n]+") do
 				if arel > COS_RTOL and not (ill_conditioned and aabs <= COS_ATOL) then
 					cos_bad = cos_bad + 1
 				end
+			elseif label:match("^sqrt_") then
+				if arel > worst_sqrt_rel then worst_sqrt_rel, worst_sqrt_rel_label = arel, label end
+				if arel > SQRT_RTOL then sqrt_bad = sqrt_bad + 1 end
+			elseif label:match("^pow_") then
+				if arel > worst_pow_rel then worst_pow_rel, worst_pow_rel_label = arel, label end
+				if arel > POW_RTOL then pow_bad = pow_bad + 1 end
 			end
 		end
 	end
 end
 
-local expected = div_pair_count + ln_case_count + expfn_r_count + expfn_x_count + cos_case_count
+local expected = div_pair_count + ln_case_count + expfn_r_count + expfn_x_count + cos_case_count +
+	sqrt_case_count + pow_case_count
 print(("bc sweep: %d/%d cases measured (%d skipped as ref==0)"):format(seen, expected, skipped))
 print(("worst div relative error: %.6e (%s)"):format(worst_div_rel, tostring(worst_div_label)))
 print(("worst ln  relative error: %.6e (%s)"):format(worst_ln_rel, tostring(worst_ln_rel_label)))
@@ -574,6 +717,8 @@ print(("worst cos relative error (all cases):   %.6e (%s)"):format(worst_cos_rel
 print(("worst cos absolute error (all cases):   %.6e (%s)"):format(worst_cos_abs, tostring(worst_cos_abs_label)))
 print(("worst cos relative error (near-zero cancellation probe only): %.6e (%s)"):format(
 	worst_cos_nearzero_rel, tostring(worst_cos_nearzero_rel_label)))
+print(("worst sqrt relative error: %.6e (%s)"):format(worst_sqrt_rel, tostring(worst_sqrt_rel_label)))
+print(("worst pow  relative error: %.6e (%s)"):format(worst_pow_rel, tostring(worst_pow_rel_label)))
 
 local fails = 0
 if seen == 0 then
@@ -604,6 +749,16 @@ if cos_bad > 0 then
 		cos_bad, COS_RTOL, COS_ATOL,
 		worst_cos_rel, tostring(worst_cos_rel_label),
 		worst_cos_abs, tostring(worst_cos_abs_label)))
+	fails = fails + 1
+end
+if sqrt_bad > 0 then
+	io.stderr:write(("kernel_bc_sweep FAILED: %d sqrt case(s) exceeded rtol %.1e (worst %.6e, %s)\n"):format(
+		sqrt_bad, SQRT_RTOL, worst_sqrt_rel, tostring(worst_sqrt_rel_label)))
+	fails = fails + 1
+end
+if pow_bad > 0 then
+	io.stderr:write(("kernel_bc_sweep FAILED: %d pow case(s) exceeded rtol %.1e (worst %.6e, %s)\n"):format(
+		pow_bad, POW_RTOL, worst_pow_rel, tostring(worst_pow_rel_label)))
 	fails = fails + 1
 end
 

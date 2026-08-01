@@ -921,4 +921,146 @@ function M.cos_turns(m, e)
 	return sin_rad(am, ae)
 end
 
+--- Refinement count for M.sqrt's soft-float Newton stage. See M.sqrt's doc
+--- comment for the full derivation; summary: 1 iteration already reaches
+--- this kernel's ~2^-62 precision floor (measured worst true fixed-point
+--- relative error 6.3e-19 over a 20000-sample sweep of the FULL normalized
+--- mantissa range at 1 iteration), and 2-4 iterations do not improve on
+--- that -- the plateau every other iterative series/refinement in this
+--- file hits once its own ~62-bit mul/add/div truncation dominates (same
+--- shape as ATANH_TERMS/FACT_RECIP/COS_TERMS). 3 keeps 2 iterations of
+--- margin past the measured plateau, matching this file's "N + margin"
+--- convention (e.g. ln's 3 terms past its own N=17 plateau).
+local SQRT_REFINE = 3
+
+--- Square root. Two-stage: a fast ~31-bit-accurate integer-Newton starting
+--- guess on the raw mantissa, then SQRT_REFINE soft-float Newton
+--- iterations (y' = (y + v/y) / 2, via M.div/M.add) to reach this kernel's
+--- full ~62-bit precision.
+---
+--- WHY TWO STAGES, NOT JUST THE BRIEF'S SINGLE INTEGER-NEWTON LOOP: pure
+--- integer Newton directly on the 62-bit mantissa (mm cast to uint64,
+--- iterating in raw u64 arithmetic with no soft-float division) can only
+--- ever converge to floor(sqrt(mantissa)) -- an integer around 2^31, i.e.
+--- roughly HALF the input's bits of precision, no matter how many
+--- iterations run. That is an information-theoretic ceiling of the
+--- method, not a tuning problem: a ~31-bit integer has ~31 bits to give.
+--- Confirmed directly: the brief's literal algorithm (single integer-
+--- Newton stage, no refinement) measured against a true fixed-point
+--- oracle (sqrt(x)^2 compared to x via M.sub/M.div in 62-bit arithmetic,
+--- NOT through a lossy double conversion -- see the comment below on why
+--- that distinction matters) gives a worst relative error of 1.3e-09 over
+--- the same 20000-sample sweep this file's SQRT_REFINE derivation uses --
+--- about 9-10 orders of magnitude above this kernel's ~2.17e-19 floor and
+--- the fixed_test.lua "sqrt(x)^2 == x" check's own 1e-15 bound (which the
+--- single-stage version DOES still fail, since 1.3e-9 > 1e-15).
+---
+--- FIX: use the integer-Newton loop only to get a fast starting point (its
+--- ~31 bits of accuracy make it an excellent seed -- Newton's method
+--- converges quadratically, roughly doubling correct bits per iteration,
+--- so a ~31-bit-accurate start needs only ONE more soft-float iteration to
+--- clear 62 bits), then refine with SQRT_REFINE soft-float Newton steps
+--- using M.div/M.add, both already ~62-bit precise. The "/2" each
+--- iteration is done as an exact exponent decrement (v*2^(e-62) halved is
+--- v*2^(e-1-62)), never a lossy divide -- the mantissa is untouched, so it
+--- stays normalized with no renormalization call needed.
+---
+--- No sign handling anywhere in this function (m >= 0 is asserted below),
+--- so it cannot exhibit the negation-then-loop pattern LuaJIT#1499
+--- miscompiles (see M.div's comment) -- no jit.off dispatch is needed.
+---
+--- EXPONENT BOOKKEEPING (the second, independent defect in the brief):
+--- value = m*2^(e-62) = f*2^e with f = m/2^62 in [1,2) always (m is
+--- already normalized). If e is odd, rewrite as f' = f/2 (in [0.5,1)) at
+--- exponent e+1, so the working exponent ee (= e, or e+1 if e was odd) is
+--- always even and value = f_or_f'*2^ee. Let mm = m or m/2 (matching
+--- which f the ee adjustment picked); mm/2^62 = f_or_f' by construction,
+--- so u = mm represents f_or_f' scaled by 2^62, and integer-Newton's
+--- result x approximates sqrt(u) = sqrt(f_or_f') * 2^31. Since
+--- sqrt(value) = sqrt(f_or_f') * 2^(ee/2) (ee even, so this is exact),
+--- dividing out the shared sqrt(f_or_f') factor gives
+--- sqrt(value) = x * 2^(ee/2 - 31). M.norm's own e parameter means
+--- "x * 2^(e-62)", so e - 62 = ee/2 - 31, i.e. e = ee/2 + 31 -- NOT the
+--- brief's "(ee - 62) / 2 + 62 - 31", which algebraically reduces to
+--- exactly ee/2, 31 short. Confirmed directly: the brief's formula run
+--- verbatim on sqrt(4) returns 9.3132257461547852e-10 (== 2 * 2^-31), not
+--- 2 -- a factor of 2^31 out, not the "sqrt(2) or 2" off-by-one the
+--- brief's own Step 4 anticipated as the failure mode for a mistake here.
+---
+--- PRECISION MEASUREMENT CAVEAT: comparing two soft-floats by converting
+--- each independently to a Lua double (as fixed_test.lua's math_abs_rel
+--- helper and this comment's own worked numeric examples do) introduces
+--- ~2^-53 relative rounding PER CONVERSION -- far coarser than this
+--- kernel's ~2^-62 claim. That floor is too coarse to validate 62-bit
+--- precision (it would not distinguish this fix's ~6e-19 true error from,
+--- say, ~1e-16), but it IS fine for catching the two defects above: both
+--- produce errors many orders of magnitude above that ~1e-16 double noise
+--- floor (1.0 for the exponent bug, ~1e-9 for the missing refinement
+--- stage). True 62-bit-level validation is done by comparing entirely in
+--- fixed-point arithmetic (M.sub/M.div on the two soft-floats, converting
+--- to double only the resulting ALREADY-TINY residual) and, independently,
+--- by tests/kernel_bc_sweep.lua's sweep against `bc -l`'s arbitrary-
+--- precision sqrt() -- see task-9-report.md for both measurements.
+function M.sqrt(m, e)
+	assert(m >= 0, "fixed.sqrt: argument must be non-negative")
+	if m == 0 then return 0LL, 0 end
+	local mm, ee = m, e
+	if (ee % 2) ~= 0 then
+		mm = mm / 2LL
+		ee = ee + 1
+	end
+	-- mantissa is in [2^61, 2^63) (halved above if e was odd); its square
+	-- root is in [2^30.5, 2^31.5) -- 2^32 is a safe, always-above starting
+	-- point for the monotonically-decreasing branch of integer Newton.
+	local u = ffi.cast(u64, mm)
+	local x = ffi.cast(u64, 0x100000000ULL)   -- 2^32, a safe starting point
+	for _ = 1, 40 do
+		local nx = (x + u / x) / 2ULL
+		if nx == x then break end
+		x = nx
+	end
+	local rm = ffi.cast(i64, x)
+	local ym, ye = M.norm(rm, ee / 2 + 31)
+	for _ = 1, SQRT_REFINE do
+		local qm, qe = M.div(m, e, ym, ye)
+		local sm, se = M.add(ym, ye, qm, qe)
+		ym, ye = sm, se - 1
+	end
+	return ym, ye
+end
+
+--- x^y via exp(y * ln x). Only defined for x > 0, which is all this
+--- program needs (the gamma sampler's alpha<1 branch, applied to a
+--- uniform-random base in (0,1)). y == 0 and y's sign both fall out of
+--- the general M.mul/M.exp composition with no special-casing needed here:
+--- y == 0 makes M.mul short-circuit to canonical zero, and M.exp(0,0)
+--- returns 1 exactly, so x^0 == 1 for any valid x with no extra branch.
+---
+--- DOMAIN, inherited from M.exp: M.exp raises if range-reduction can't
+--- converge within a bounded number of corrections -- see M.exp's own doc
+--- comment for the exact mechanism (a Lua double's ULP exceeding 1 once
+--- the range-reduced k grows past ~2^52-2^53). For this program's real use
+--- (x a uniform (0,1) RNG draw, y = 1/alpha for the gamma sampler's
+--- alpha<1 branch), ln x is bounded by the RNG's own smallest
+--- representable nonzero draw (down to roughly -22, per this file's
+--- top-of-file comment). MEASURED DIRECTLY (not derived from a naive
+--- "y * 22 ~= 2^52" linear estimate, which undercounts by roughly 2^10 --
+--- an earlier version of this comment claimed alpha < ~2^-47 on exactly
+--- that flawed basis; what actually governs the boundary is the exponent
+--- of the y*ln(x) PRODUCT after M.mul's own normalization, not a simple
+--- decimal-magnitude comparison): with ln(x) at its documented floor
+--- (x = 2^-32, ln(x) = -22.1807...), M.pow first raises at y = 2^57
+--- (alpha = 2^-57), succeeding for every y = 2^40..2^56 tried below that.
+--- alpha = 2^-57 is pathological, not a realistic sampler input (even
+--- alpha = 1e-10 gives y ~ 2^33, twenty-four orders of magnitude below
+--- this boundary), but M.pow does not clamp or special-case it: it raises
+--- the same loud error M.exp would, rather than silently returning a
+--- wrong answer. See task-9-report.md for the full sweep.
+function M.pow(bm, be, ym, ye)
+	assert(bm > 0, "fixed.pow: base must be positive")
+	local lm, le = M.ln(bm, be)
+	local pm, pe = M.mul(ym, ye, lm, le)
+	return M.exp(pm, pe)
+end
+
 return M
