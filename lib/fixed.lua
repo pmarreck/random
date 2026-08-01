@@ -585,6 +585,61 @@ do
 	end
 end
 
+-- Correction-loop bound for M.exp's range reduction. The termination proof
+-- in M.exp's own doc comment ("at most one combined adjustment") holds ONLY
+-- while `k` stays small enough for `k = k +/- 1` to actually change `k`.
+-- `k` is a plain Lua NUMBER (a double), not an int64 -- and a double's ULP
+-- (its smallest representable step) exceeds 1 once magnitude passes 2^53:
+-- at k ~= 2^55, the ULP is 8, so `k + 1` rounds right back to `k` --
+-- CONFIRMED DIRECTLY: `(51978566788454384 + 1) == 51978566788454384` is
+-- `true` in this exact runtime. Two distinct things can then go wrong, and
+-- EITHER one on its own is enough to break the termination proof:
+--   (a) to_int_trunc's own sh>=0 branch (see its doc comment) explicitly
+--       CLAMPS to +/-2^53 once |x/ln2| >= 2^62, rather than truncating;
+--   (b) even OUTSIDE that clamp branch (sh<0, i.e. to_int_trunc still
+--       truncates a real value), the truncated k can itself already
+--       exceed 2^53 in magnitude -- to_int_trunc's `tonumber()` return
+--       does not clamp there, it just silently hands back a k the
+--       correction loop can no longer nudge.
+-- Whichever mechanism applies, once a correction is actually needed and
+-- `k +/- 1` is a no-op, `r` never changes, so the loop's own naive
+-- termination condition never changes truth value either.
+--
+-- CONFIRMED BY EXECUTION, not just by this derivation, and the two ways of
+-- confirming it disagree with each other in a way worth recording: under
+-- normal JIT execution, exp(2^55) (mechanism (b) -- k ~= 5.2e16, not yet
+-- past to_int_trunc's own 2^62 clamp threshold) "returns" after 17 loop
+-- iterations with `r` jumping to a completely different value on that
+-- 17th iteration despite `k` never having changed on ANY of the prior 16
+-- -- not real convergence, an artifact. Under `luajit -joff` (no JIT at
+-- all), the SAME code, SAME input, loops forever: `r` stays bit-identical
+-- run after run, exactly as the frozen-`k` analysis above predicts.
+-- exp(2^61)/exp(2^62)/exp(2^70) (mechanism (a), the explicit clamp) hang
+-- under the JIT too -- there is no lucky JIT-artifact escape for those.
+-- This program's real callers stay nowhere near either mechanism:
+-- exponential/Poisson need |x| in the low tens (-ln(u)); log-normal's mu
+-- is documented as reaching "into the thousands," not 2^52+.
+--
+-- FIX: bound the loop instead of trying to make it converge for arguments
+-- this large. The proven invariant is "at most 1" in the regime where the
+-- proof holds; EXP_MAX_CORRECTIONS = 3 gives a small margin above that
+-- without ever letting the loop run away -- and empirically stops WAY
+-- before iteration 17, so the JIT-artifact-vs-`-joff`-hang discrepancy
+-- above is moot: the bound below never lets the loop run long enough to
+-- reach it. A loud, immediate error is the right behavior here, the same
+-- way M.ln refuses a non-positive argument outright rather than trying to
+-- return something for it -- exp is not meant to be total either.
+local EXP_MAX_CORRECTIONS = 3
+local function correction_guard(count, e)
+	if count > EXP_MAX_CORRECTIONS then
+		error(("fixed.exp: argument too large to range-reduce (e=%d): correction loop " ..
+			"exceeded %d iteration(s) without converging -- k has grown too large for " ..
+			"Lua's double-precision arithmetic to nudge by +/-1 (see the comment above " ..
+			"this function), so this range reduction cannot correct for it. See M.exp's " ..
+			"doc comment."):format(e, EXP_MAX_CORRECTIONS))
+	end
+end
+
 --- Exponential. Range-reduce x = k*ln2 + r with |r| <= ln2/2, evaluate
 --- exp(r) by Taylor series, and return (exp(r), k) directly -- adding k to
 --- exp(r)'s own exponent IS multiplying by 2^k, so no renormalization is
@@ -592,6 +647,17 @@ end
 --- fold is exactly what would overflow log-normal's exp() for a large mu,
 --- the reason this soft-float representation exists at all -- see the
 --- file's top-of-file REPRESENTATION note).
+---
+--- DOMAIN: NOT total. Raises via correction_guard (see above) if range
+--- reduction cannot converge within EXP_MAX_CORRECTIONS steps whenever a
+--- correction is actually needed and k has grown too large for double
+--- arithmetic to nudge by +/-1 -- in practice this can start as early as
+--- |x| in the mid-2^10^15 range (empirically: e=54 still works, e=55
+--- reliably raises) and is guaranteed once |x/ln2| >= 2^62 (~3.2e18,
+--- to_int_trunc's own explicit clamp threshold). This program's real
+--- callers stay far below either: exponential/Poisson need |x| in the low
+--- tens (-ln(u)), and log-normal's mu is documented as reaching "into the
+--- thousands," not 10^15+.
 function M.exp(m, e)
 	if m == 0 then return M.from_int(1) end
 	-- k = round(x / ln2): truncate first, then nudge by at most one step.
@@ -602,18 +668,27 @@ function M.exp(m, e)
 	-- At most one of the two loops below can therefore ever fire, and
 	-- firing once shifts r by exactly one ln2, landing it inside
 	-- [-ln2/2, ln2/2] immediately. See task-7-report.md for the empirical
-	-- confirmation (large |x|, both signs) that neither loop ever iterates
-	-- more than once in practice, matching this proof.
+	-- confirmation (large |x|, both signs, WITHIN the domain this proof
+	-- actually covers) that neither loop ever iterates more than once.
+	-- This proof holds ONLY while to_int_trunc truncates rather than
+	-- clamps -- see correction_guard's comment above for the regime where
+	-- it breaks down, and why the loops below are bounded rather than
+	-- trusted to always terminate on their own.
 	local qm, qe = M.div(m, e, M.LN2_M, M.LN2_E)
 	local k = M.to_int_trunc(qm, qe)
 	local rm, re = reduce_r(m, e, k)
+	local corrections = 0
 	while M.cmp(rm, re, HALF_LN2_M, HALF_LN2_E) > 0 do
 		k = k + 1
 		rm, re = reduce_r(m, e, k)
+		corrections = corrections + 1
+		correction_guard(corrections, e)
 	end
 	while M.cmp(rm, re, NEG_HALF_LN2_M, NEG_HALF_LN2_E) < 0 do
 		k = k - 1
 		rm, re = reduce_r(m, e, k)
+		corrections = corrections + 1
+		correction_guard(corrections, e)
 	end
 	-- exp(r) = sum_{n=0..16} r^n / n!, computed incrementally: pow_m/pow_e
 	-- tracks r^n, updated by one multiply per term rather than recomputed

@@ -695,6 +695,52 @@ ok(math_abs_rel(prodm, prode, fx.from_int(1)) < 1e-15,
 ok(fx.cmp(pexpm, pexpe, fx.from_int(1)) ~= 0 and fx.cmp(nexpm, nexpe, fx.from_int(1)) ~= 0,
    "exp(3.7) and exp(-3.7) are each individually != 1 (rules out an always-return-1 mutant)")
 
+-- DOMAIN GUARD: exp must raise a clean, immediate error rather than hang
+-- for arguments large enough that the correction loop cannot converge --
+-- see correction_guard's doc comment in lib/fixed.lua for the full
+-- derivation (k is a plain Lua double, and once its magnitude exceeds
+-- 2^53 or so, `k +/- 1` inside the loop can become a silent no-op).
+-- Fixed post-review, once the coordinator caught (and confirmed by
+-- execution) that the committed exp hung for x = 2^61/2^62/2^70 -- the
+-- termination proof above the round-trip check only holds while
+-- to_int_trunc actually truncates, not once it starts clamping. See
+-- task-7-report.md's fix-up appendix.
+local function rejects_exp(m, e, want_msg)
+	local okc, err = pcall(fx.exp, m, e)
+	if okc then return false, "accepted (returned instead of raising)" end
+	if not tostring(err):find(want_msg, 1, true) then
+		return false, "wrong error fired: " .. tostring(err)
+	end
+	return true
+end
+
+-- 2^62 is constructed directly (mantissa 2^62, exponent 62) rather than
+-- via fx.from_int, which only accepts |v| < 2^53 by its own doc comment.
+-- This is where to_int_trunc's own explicit clamp branch guarantees
+-- non-convergence -- the case the coordinator's review measured directly.
+local pow62_m, pow62_e = 0x4000000000000000LL, 62
+local r62_ok, r62_why = rejects_exp(pow62_m, pow62_e, "correction loop")
+ok(r62_ok, "exp(2^62) raises naming the correction-loop failure, rather than hanging", r62_why)
+
+-- A SECOND, lower-magnitude case: 2^62 is where to_int_trunc's own clamp
+-- branch guarantees non-convergence, but investigation (see the report)
+-- found real, ordinary-arithmetic-reachable inputs fail far earlier and
+-- more insidiously -- x = 2^55 does NOT hit to_int_trunc's clamp branch at
+-- all (|x/ln2| ~= 5.2e16, well under the 2^62 threshold), yet still needs
+-- a correction the loop cannot make once k's own magnitude (~5.2e16)
+-- exceeds where +/-1 changes a Lua double. Before this fix, this exact
+-- input did not cleanly hang OR cleanly succeed: under normal JIT
+-- execution it silently returned an arbitrary, non-reproducible wrong
+-- answer (r jumping to an unrelated value on the loop's 17th iteration
+-- despite k never actually changing on any iteration before it); under
+-- `luajit -joff` the identical code was a true infinite loop. Neither
+-- behavior is acceptable, and this check pins that the loop bound now
+-- catches this earlier, sneakier case too, not just the obvious
+-- explicit-clamp one above.
+local pow55_m, pow55_e = 0x4000000000000000LL, 55
+local r55_ok, r55_why = rejects_exp(pow55_m, pow55_e, "correction loop")
+ok(r55_ok, "exp(2^55) raises rather than silently returning a JIT-artifact wrong answer", r55_why)
+
 end
 
 print("")
