@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Unit tests for the integer-only numeric kernel.
+# NOTE: no `set -e` — see ./test.
+set -u
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec luajit "$here/fixed_test.lua"
