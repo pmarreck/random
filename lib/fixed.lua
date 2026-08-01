@@ -151,8 +151,13 @@ end
 --- Soft-float addition.
 --- Same-sign operands are combined by pre-halving each mantissa one bit
 --- before summing: |m1| and |shifted| can each approach 2^63, so a same-sign
---- sum could reach 2^64 and overflow int64. That costs up to one bit of the
---- 62-bit mantissa; norm() reclaims the rest.
+--- sum could reach 2^64 and overflow int64. Both m1 and shifted are
+--- truncated independently, each losing up to 1 unit at the halved scale, so
+--- the worst-case error is up to 2 ULP of the 62-bit mantissa, not 1 --
+--- measured exactly via fx.add(2^62+1, 100, 2^62, 38): the true sum is
+--- 2^62+2 at exponent 100, the kernel returns 2^62, an error of exactly 2
+--- ULP (see fixed_test.lua's "same-sign worst case" check). norm() still
+--- reclaims everything above that.
 --- Opposite-sign operands -- the catastrophic-cancellation path every
 --- alternating-sign Taylor series (cos!) depends on -- are combined EXACTLY,
 --- with NO pre-halving. A same/opposite-sign combination of two values each
@@ -179,6 +184,11 @@ function M.add(m1, e1, m2, e2)
 	local d = e1 - e2
 	if d >= 63 then return m1, e1 end   -- second operand is below the ulp
 	local shifted = m2 / POW2[d]
+	-- Unreachable under the normalization invariant: for any normalized m2
+	-- (2^62 <= |m2| < 2^63) and any d in [0,62], |shifted| >= 1 always (the
+	-- extreme case, d=62, gives exactly |m2|/2^62 = 1). Kept as defense
+	-- against a caller that hands in an unnormalized m2 -- not live logic
+	-- under the invariant this file otherwise guarantees.
 	if shifted == 0 then return m1, e1 end
 	local sum, e
 	if (m1 < 0) == (shifted < 0) then

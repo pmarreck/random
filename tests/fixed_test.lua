@@ -162,6 +162,52 @@ local tiny1, tiny2 = fx.norm(0x4000000000000000LL, -200)
 local u1, u2 = fx.add(big1, big2, tiny1, tiny2)
 ok(u1 == big1 and u2 == big2, "1 + 2^-200 == 1 (addend below the ulp)")
 
+-- The d >= 63 threshold (POW2 only covers indices 0..62) needs boundary
+-- coverage: d=62 is the last index actually reachable and must still shift
+-- and contribute; d=63 and beyond must return the larger operand unchanged.
+-- A mutant that loosens the guard to "d > 63" lets d=63 reach POW2[63],
+-- which is nil, and would only be caught by a test sitting exactly on that
+-- boundary -- the pre-existing "1 + 2^-200" test above has d ~= 200 and
+-- does not exercise it.
+-- d=62: sub is exact (opposite-sign path), so the tiny operand's single
+-- contributed bit is not lost to the same-sign pre-halving. It must move
+-- the result off the unchanged value.
+local d62_m, d62_e = fx.norm(0x4000000000000000LL, big2 - 62)
+local sub62_m, sub62_e = fx.sub(big1, big2, d62_m, d62_e)
+ok(not (sub62_m == big1 and sub62_e == big2), "d=62 still shifts and contributes",
+   ("got m=%s e=%d"):format(tostring(sub62_m), sub62_e))
+ok(sub62_m == 0x7FFFFFFFFFFFFFFELL and sub62_e == -1, "d=62 contributes the exact expected value",
+   ("got m=%s e=%d want m=%s e=%d"):format(tostring(sub62_m), sub62_e, tostring(0x7FFFFFFFFFFFFFFELL), -1))
+
+-- d=63: both add and sub must return the larger operand exactly unchanged --
+-- this is the case a "d > 63" mutant reaches POW2[63] (nil) and crashes on.
+local d63_m, d63_e = fx.norm(0x4000000000000000LL, big2 - 63)
+local add63_m, add63_e = fx.add(big1, big2, d63_m, d63_e)
+ok(add63_m == big1 and add63_e == big2, "d=63 add leaves the larger operand unchanged",
+   ("got m=%s e=%d"):format(tostring(add63_m), add63_e))
+local sub63_m, sub63_e = fx.sub(big1, big2, d63_m, d63_e)
+ok(sub63_m == big1 and sub63_e == big2, "d=63 sub leaves the larger operand unchanged",
+   ("got m=%s e=%d"):format(tostring(sub63_m), sub63_e))
+
+-- d=64: further past the boundary, same requirement, extra margin.
+local d64_m, d64_e = fx.norm(0x4000000000000000LL, big2 - 64)
+local add64_m, add64_e = fx.add(big1, big2, d64_m, d64_e)
+ok(add64_m == big1 and add64_e == big2, "d=64 add leaves the larger operand unchanged",
+   ("got m=%s e=%d"):format(tostring(add64_m), add64_e))
+
+-- Same-sign worst case: BOTH operands are truncated independently before
+-- summing (m1/2 and shifted/2), so the error bound is up to 2 ULP, not 1.
+-- Pinned deterministically rather than left in a scratchpad fuzz script: if
+-- the same-sign path regresses to a wider error tomorrow, this must catch
+-- it. m1 = 2^62+1 at e=100, m2 = 2^62 at e=38 (d=62): the true sum is
+-- 2^62+2 at exponent 100 (no renormalization needed at all, since 2^62+2 is
+-- still < 2^63); the kernel's pre-halving loses exactly 2 from the mantissa.
+local ss_m1, ss_e1 = 0x4000000000000001LL, 100
+local ss_m2, ss_e2 = 0x4000000000000000LL, 38
+local ss_rm, ss_re = fx.add(ss_m1, ss_e1, ss_m2, ss_e2)
+ok(ss_rm == 0x4000000000000000LL and ss_re == 100, "same-sign worst case is exactly 2 ULP, pinned",
+   ("got m=%s e=%d want m=%s e=%d"):format(tostring(ss_rm), ss_re, tostring(0x4000000000000000LL), 100))
+
 -- commutativity over a sampled set (add is order-independent by construction)
 local comm_ok = true
 for _, p in ipairs({{1,2},{7,-3},{-5,-9},{1000000,1},{3,-3}}) do
