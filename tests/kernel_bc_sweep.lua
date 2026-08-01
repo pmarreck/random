@@ -71,6 +71,17 @@ local function next_mantissa()
 	return TWO62 + (high % TWO62)
 end
 
+-- A SECOND, independently-seeded LCG for cos's k-domain sampling (u = k/2^32,
+-- k in [0, 2^32)) -- deliberately not sharing lcg_state above, so adding or
+-- resizing the cos sweep can never shift how many next_mantissa() calls the
+-- div/ln/exp sections above have already consumed (and vice versa).
+local cos_lcg_state = 0xC2B2AE3D27D4EB4FULL
+local function next_k32()
+	cos_lcg_state = cos_lcg_state * 6364136223846793005ULL + 1442695040888963407ULL
+	local high = cos_lcg_state / 4ULL
+	return tonumber(high % 4294967296ULL)
+end
+
 local function mantissa_set(n)
 	local set = { 0x4000000000000000ULL, 0x4000000000000001ULL,
 	              0x7FFFFFFFFFFFFFFFULL, 0x7FFFFFFFFFFFFFFEULL,
@@ -175,6 +186,30 @@ local function add_exp_case(m, e, label)
 	labels[#labels + 1] = label
 end
 
+-- Sweeps M.cos_turns over the REAL domain it is actually fed: u = k/2^32
+-- for integer k in [0, 2^32) -- exactly one uint32 RNG draw, the same
+-- domain the top-of-file comment's "cos differs 3.06% of inputs" figure
+-- was measured over. k/4294967296 is always exact in this binary
+-- representation (division by a power of two is a pure exponent shift,
+-- no truncation, regardless of k), so `bc`'s reference angle
+-- twopi*k/4294967296 is computed from k directly -- never from our own
+-- (um, ue) -- keeping the oracle fully independent of the code under test.
+-- `twopi` is computed once (bc_lines[3] below, via 8*a(1) = 2*(4*a(1)) =
+-- 2*pi) and reused across every case rather than recomputed per print.
+local function add_cos_case(k, label)
+	local km, ke = fx.from_int(k)
+	local dm, de = fx.from_int(4294967296)
+	local um, ue = fx.div(km, ke, dm, de)
+	local rm, re = fx.cos_turns(um, ue)
+	local rms = tostring(rm):gsub("LL$", "")
+	local expr = ("ref = c(twopi*%d/4294967296); our = %s * 2^(%d); " ..
+		"if (ref == 0) print \"%s SKIP\\n\"; " ..
+		"if (ref != 0) print \"%s \", (our - ref) / abs(ref), \" \", abs(our - ref), \"\\n\""):format(
+		k, rms, re - 62, label, label)
+	bc_lines[#bc_lines + 1] = expr
+	labels[#labels + 1] = label
+end
+
 -- Sign quadrants cycle deterministically across the sweep so it exercises
 -- the negative/inexact truncation path (M.div computes a magnitude via
 -- floor, then reapplies the sign) exactly as often as the positive path.
@@ -271,10 +306,62 @@ for _, v in ipairs(EXPFN_XDOMAIN_VALUES) do
 	expfn_x_count = expfn_x_count + 1
 end
 
+-- === cos: sweep over the REAL u = k/2^32 domain (task-8 verification    ===
+-- === items 2-4: quadrant reduction exactness at boundaries, series      ===
+-- === term-count adequacy across the full domain, and cancellation near  ===
+-- === cos's zeros). `twopi` (bc's own 2*pi, via 8*a(1)) is computed once ===
+-- === and reused by every add_cos_case call below.                      ===
+bc_lines[#bc_lines + 1] = "twopi = 8*a(1)"
+local COS_UNIFORM_COUNT = fast and 60 or 200
+local cos_case_count = 0
+
+-- Uniform coverage: k drawn from the dedicated LCG above, spread across the
+-- entire [0, 2^32) domain -- this is the check that actually validates
+-- COS_TERMS is sufficient EVERYWHERE in [0, pi/2), not just at the single
+-- worst-case point x = pi/2 the term-count derivation above was measured
+-- at.
+for i = 1, COS_UNIFORM_COUNT do
+	local k = next_k32()
+	add_cos_case(k, ("cos_uniform_%d"):format(i))
+	cos_case_count = cos_case_count + 1
+end
+
+-- Exact quadrant boundaries: division by 2^32 (a power of two) is exact
+-- regardless of numerator, so these k values put u at EXACTLY 0, 1/4, 1/2,
+-- and 3/4 turn -- not approximations of the boundary, the boundary itself,
+-- bit-for-bit. Verification item 2 from the task brief, cross-checked here
+-- against an independent oracle (bc) rather than only fixed_test.lua's own
+-- self-consistency checks.
+local COS_BOUNDARY_KS = {0, 1073741824, 2147483648, 3221225472}
+for _, k in ipairs(COS_BOUNDARY_KS) do
+	add_cos_case(k, ("cos_boundary_%d"):format(k))
+	cos_case_count = cos_case_count + 1
+end
+
+-- Near-zero cancellation probe (verification item 4): cos's only ZEROS in
+-- [0, 1) turns are at 1/4 and 3/4 (0 and 1/2 turn are extrema, +-1, not
+-- zeros -- cancellation there is not a concern the same way). Offsets are
+-- in units of k, the finest step this k/2^32 domain can express, so k = zk
+-- +/- 1 is literally the closest this program's real RNG-fed input can
+-- ever land next to the boundary without landing ON it. As true |cos|
+-- shrinks toward 0, the SAME small absolute error that is invisible
+-- everywhere else becomes a large RELATIVE error -- exactly the dynamic
+-- LN_RTOL/LN_ATOL above exists to separate for ln's own near-1
+-- cancellation case.
+local COS_ZERO_KS = {1073741824, 3221225472}   -- 1/4 turn, 3/4 turn
+local COS_OFFSETS = {1, 2, 3, 5, 10, 100, 1000, 1000000}
+for _, zk in ipairs(COS_ZERO_KS) do
+	for _, off in ipairs(COS_OFFSETS) do
+		add_cos_case(zk - off, ("cos_nearzero_%d_m%d"):format(zk, off))
+		add_cos_case(zk + off, ("cos_nearzero_%d_p%d"):format(zk, off))
+		cos_case_count = cos_case_count + 2
+	end
+end
+
 io.stderr:write(("kernel_bc_sweep: %d div cases, %d ln cases, %d exp cases " ..
-	"(%d r-domain + %d x-domain) (FAST=%s)\n"):format(
+	"(%d r-domain + %d x-domain), %d cos cases (FAST=%s)\n"):format(
 	div_pair_count, ln_case_count, expfn_r_count + expfn_x_count,
-	expfn_r_count, expfn_x_count, tostring(fast ~= nil)))
+	expfn_r_count, expfn_x_count, cos_case_count, tostring(fast ~= nil)))
 
 local bc_script = table.concat(bc_lines, "\n") .. "\n"
 local tmp = os.tmpname()
@@ -369,13 +456,32 @@ local EXPFN_R_RTOL = 1e-17
 -- cancellation blind spot here and a pure relative bound is sufficient
 -- (no atol needed).
 local EXPFN_X_RTOL = 4e-15
+-- cos combines an rtol/atol pair like ln, for the same structural reason:
+-- verification item 4 (task-8-report.md) measured the near-1/4-turn and
+-- near-3/4-turn probe cases directly and found relative error DOES grow as
+-- the true value shrinks toward cos's zeros, exactly the cancellation
+-- dynamic ln's own near-1.0 case documents above -- though bounded here,
+-- unlike ln's continuous domain, by the k/2^32 domain's own quantization:
+-- the closest a real RNG-fed input can land next to a zero is k = zk +/- 1,
+-- one part in 2^32 of a turn (~1.46e-9 rad), which floors how small the
+-- true reference value can get and therefore how far relative error can
+-- blow up. Measured worst case (cos_nearzero_..._m1/p1, the k=zk+/-1
+-- cases): relative error ~6.8e-11, absolute error ~1e-19 -- both reported
+-- below. COS_RTOL covers the general (non-cancellation) case; COS_ATOL is
+-- the fallback for cases failing COS_RTOL purely from a near-zero true
+-- value, matching LN_RTOL/LN_ATOL's combined-bound rationale exactly.
+local COS_RTOL = 5e-18
+local COS_ATOL = 5e-15
 
 local worst_div_rel, worst_div_label = 0, nil
 local worst_ln_rel, worst_ln_rel_label = 0, nil
 local worst_ln_abs, worst_ln_abs_label = 0, nil
 local worst_expfn_r_rel, worst_expfn_r_label = 0, nil
 local worst_expfn_x_rel, worst_expfn_x_label = 0, nil
-local div_bad, ln_bad, expfn_bad = 0, 0, 0
+local worst_cos_rel, worst_cos_rel_label = 0, nil
+local worst_cos_abs, worst_cos_abs_label = 0, nil
+local worst_cos_nearzero_rel, worst_cos_nearzero_rel_label = 0, nil
+local div_bad, ln_bad, expfn_bad, cos_bad = 0, 0, 0, 0
 local skipped = 0
 local seen = 0
 for line in out:gmatch("[^\n]+") do
@@ -402,12 +508,19 @@ for line in out:gmatch("[^\n]+") do
 			elseif label:match("^expfn_x_") then
 				if arel > worst_expfn_x_rel then worst_expfn_x_rel, worst_expfn_x_label = arel, label end
 				if arel > EXPFN_X_RTOL then expfn_bad = expfn_bad + 1 end
+			elseif label:match("^cos_") then
+				if arel > worst_cos_rel then worst_cos_rel, worst_cos_rel_label = arel, label end
+				if aabs > worst_cos_abs then worst_cos_abs, worst_cos_abs_label = aabs, label end
+				if label:match("^cos_nearzero_") and arel > worst_cos_nearzero_rel then
+					worst_cos_nearzero_rel, worst_cos_nearzero_rel_label = arel, label
+				end
+				if arel > COS_RTOL and aabs > COS_ATOL then cos_bad = cos_bad + 1 end
 			end
 		end
 	end
 end
 
-local expected = div_pair_count + ln_case_count + expfn_r_count + expfn_x_count
+local expected = div_pair_count + ln_case_count + expfn_r_count + expfn_x_count + cos_case_count
 print(("bc sweep: %d/%d cases measured (%d skipped as ref==0)"):format(seen, expected, skipped))
 print(("worst div relative error: %.6e (%s)"):format(worst_div_rel, tostring(worst_div_label)))
 print(("worst ln  relative error: %.6e (%s)"):format(worst_ln_rel, tostring(worst_ln_rel_label)))
@@ -416,6 +529,10 @@ print(("worst exp r-domain (k=0, series-only) relative error: %.6e (%s)"):format
 	worst_expfn_r_rel, tostring(worst_expfn_r_label)))
 print(("worst exp x-domain (full pipeline)     relative error: %.6e (%s)"):format(
 	worst_expfn_x_rel, tostring(worst_expfn_x_label)))
+print(("worst cos relative error (all cases):   %.6e (%s)"):format(worst_cos_rel, tostring(worst_cos_rel_label)))
+print(("worst cos absolute error (all cases):   %.6e (%s)"):format(worst_cos_abs, tostring(worst_cos_abs_label)))
+print(("worst cos relative error (near-zero cancellation probe only): %.6e (%s)"):format(
+	worst_cos_nearzero_rel, tostring(worst_cos_nearzero_rel_label)))
 
 local fails = 0
 if seen == 0 then
@@ -438,6 +555,14 @@ if expfn_bad > 0 then
 		expfn_bad, EXPFN_R_RTOL, EXPFN_X_RTOL,
 		worst_expfn_r_rel, tostring(worst_expfn_r_label),
 		worst_expfn_x_rel, tostring(worst_expfn_x_label)))
+	fails = fails + 1
+end
+if cos_bad > 0 then
+	io.stderr:write(("kernel_bc_sweep FAILED: %d cos case(s) exceeded BOTH rtol %.1e and atol %.1e " ..
+		"(worst rel %.6e %s, worst abs %.6e %s)\n"):format(
+		cos_bad, COS_RTOL, COS_ATOL,
+		worst_cos_rel, tostring(worst_cos_rel_label),
+		worst_cos_abs, tostring(worst_cos_abs_label)))
 	fails = fails + 1
 end
 

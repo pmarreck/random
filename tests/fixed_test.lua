@@ -789,6 +789,120 @@ ok(corr2_okc, "a real M.exp input known to need exactly 2 corrections still succ
 end
 
 print("")
+print("--- Section 6: cos (in turns) ---")
+-- NOTE: the brief this task was built from labeled this "Section 5" --
+-- stale, since exp (landed in Task 7) already occupies that slot above.
+-- Renumbered for a monotonic file, same fix Section 5's own header applied
+-- for the section before it.
+do
+
+local function turns(num, den)   -- num/den as a soft-float
+	local nm, ne = fx.from_int(num)
+	local dm, de = fx.from_int(den)
+	return fx.div(nm, ne, dm, de)
+end
+
+-- u = k / 2^32, the REAL domain this function is fed by the RNG (u2 in
+-- Box-Muller is exactly a uint32 draw divided by 2^32). 4294967296 fits
+-- exactly in a Lua double (well under 2^53), so from_int(k) and
+-- from_int(4294967296) are both exact.
+local U32_DEN = 4294967296
+local function turns32(k)
+	local nm, ne = fx.from_int(k)
+	local dm, de = fx.from_int(U32_DEN)
+	return fx.div(nm, ne, dm, de)
+end
+
+-- exact quarter-turn values
+local c0m, c0e = fx.cos_turns(0LL, 0)
+ok(fx.cmp(c0m, c0e, fx.from_int(1)) == 0, "cos(0 turns) == 1")
+
+local c2m, c2e = fx.cos_turns(turns(1, 2))
+ok(math_abs_rel(c2m, c2e, fx.from_int(-1)) < 1e-16, "cos(1/2 turn) == -1")
+
+local c4m, c4e = fx.cos_turns(turns(1, 4))
+ok(math_abs_rel(c4m, c4e, fx.from_int(0)) < 1e-15, "cos(1/4 turn) == 0")
+
+local c34m, c34e = fx.cos_turns(turns(3, 4))
+ok(math_abs_rel(c34m, c34e, fx.from_int(0)) < 1e-15, "cos(3/4 turn) == 0")
+
+-- result stays within [-1, 1] across a full turn
+local bound_ok = true
+for i = 0, 199 do
+	local rm, re = fx.cos_turns(turns(i, 200))
+	if fx.cmp(rm, re, fx.from_int(1)) > 0 or fx.cmp(rm, re, fx.from_int(-1)) < 0 then
+		bound_ok = false
+	end
+end
+ok(bound_ok, "cos stays within [-1,1] across 200 points of a full turn")
+
+-- symmetry: cos(u) == cos(1-u)
+local sym_ok, sym_worst = true, 0
+for i = 1, 99 do
+	local am, ae = fx.cos_turns(turns(i, 200))
+	local bm, be = fx.cos_turns(turns(200 - i, 200))
+	local err = math_abs_rel(am, ae, bm, be)
+	if err > sym_worst then sym_worst = err end
+	if err > 1e-15 then sym_ok = false end
+end
+ok(sym_ok, "cos(u) == cos(1-u) across the turn", ("worst=%.3e"):format(sym_worst))
+
+-- === Quadrant-boundary tests (verification item 2 from the task brief) ===
+-- "Exact boundaries and just either side of each, where an off-by-one in
+-- the quadrant selection shows up as a sign flip." Using u = k/2^32 (the
+-- real RNG-fed domain) rather than the arbitrary denominators above --
+-- k = 2^30 lands EXACTLY on 1/4 turn (2^30/2^32 = 1/4), and division by a
+-- power of two is exact in this binary representation regardless of the
+-- numerator, so these are not approximations of the boundary, they ARE
+-- the boundary (and its immediate integer-adjacent neighbors) bit-exactly.
+--
+-- 1/4 turn: cos crosses zero going NEGATIVE as u increases through 1/4
+-- (derivative -2*pi*sin(pi/2) = -2*pi < 0). An off-by-one that used the
+-- q==0 (cos) formula one step too late, or the q==1 (-sin) formula one
+-- step too early, flips this sign.
+local just_below_q4m, just_below_q4e = fx.cos_turns(turns32(1073741823))  -- (2^30 - 1)/2^32
+local exact_q4m, exact_q4e           = fx.cos_turns(turns32(1073741824))  -- 2^30 / 2^32 == 1/4 exactly
+local just_above_q4m, just_above_q4e = fx.cos_turns(turns32(1073741825)) -- (2^30 + 1)/2^32
+ok(just_below_q4m > 0, "cos just below 1/4 turn is still positive (pre-boundary quadrant)",
+   ("m=%s e=%d"):format(tostring(just_below_q4m), just_below_q4e))
+ok(fx.cmp(exact_q4m, exact_q4e, fx.from_int(0)) == 0 or math_abs_rel(exact_q4m, exact_q4e, fx.from_int(0)) < 1e-15,
+   "cos at exactly 1/4 turn is 0 (within-quadrant angle reduces to exactly 0)")
+ok(just_above_q4m < 0, "cos just above 1/4 turn is negative (post-boundary quadrant, sign flip caught)",
+   ("m=%s e=%d"):format(tostring(just_above_q4m), just_above_q4e))
+
+-- 3/4 turn: cos crosses zero going POSITIVE as u increases through 3/4
+-- (derivative -2*pi*sin(3*pi/2) = -2*pi*(-1) = +2*pi > 0) -- the opposite
+-- sign transition from 1/4 turn, so a quadrant-branch swap that happens to
+-- get 1/4 turn right by accident (e.g. swapping BOTH q==1 and q==3) is
+-- still caught here.
+local just_below_q34m = fx.cos_turns(turns32(3221225471))   -- (3*2^30 - 1)/2^32
+local exact_q34m, exact_q34e = fx.cos_turns(turns32(3221225472))  -- 3*2^30 / 2^32 == 3/4 exactly
+local just_above_q34m = fx.cos_turns(turns32(3221225473))   -- (3*2^30 + 1)/2^32
+ok(just_below_q34m < 0, "cos just below 3/4 turn is still negative (pre-boundary quadrant)",
+   ("m=%s"):format(tostring(just_below_q34m)))
+ok(fx.cmp(exact_q34m, exact_q34e, fx.from_int(0)) == 0 or math_abs_rel(exact_q34m, exact_q34e, fx.from_int(0)) < 1e-15,
+   "cos at exactly 3/4 turn is 0")
+ok(just_above_q34m > 0, "cos just above 3/4 turn is positive (post-boundary quadrant, sign flip caught)",
+   ("m=%s"):format(tostring(just_above_q34m)))
+
+-- 0 and 1/2 turn are extrema (+1, -1), not zero crossings -- a quadrant mixup
+-- here shows up as a VALUE excursion away from the extremum rather than a
+-- sign flip, so check magnitude stays pinned near +-1 on both sides instead.
+local near0_lo_m, near0_lo_e = fx.cos_turns(turns32(1))            -- 1/2^32, just above 0
+local near0_hi_m, near0_hi_e = fx.cos_turns(turns32(4294967295))   -- (2^32-1)/2^32, just below 1 (wraps toward 0)
+ok(math_abs_rel(near0_lo_m, near0_lo_e, fx.from_int(1)) < 1e-15, "cos just above 0 turns stays pinned near +1")
+ok(math_abs_rel(near0_hi_m, near0_hi_e, fx.from_int(1)) < 1e-15, "cos just below 1 turn (wraps) stays pinned near +1")
+
+local just_below_half_m, just_below_half_e = fx.cos_turns(turns32(2147483647)) -- (2^31-1)/2^32, just below 1/2
+local exact_half_m, exact_half_e = fx.cos_turns(turns32(2147483648))           -- 2^31/2^32 == 1/2 exactly
+local just_above_half_m, just_above_half_e = fx.cos_turns(turns32(2147483649)) -- (2^31+1)/2^32, just above 1/2
+ok(math_abs_rel(just_below_half_m, just_below_half_e, fx.from_int(-1)) < 1e-15, "cos just below 1/2 turn stays pinned near -1")
+ok(math_abs_rel(exact_half_m, exact_half_e, fx.from_int(-1)) < 1e-16, "cos at exactly 1/2 turn is -1")
+ok(math_abs_rel(just_above_half_m, just_above_half_e, fx.from_int(-1)) < 1e-15, "cos just above 1/2 turn stays pinned near -1")
+
+end
+
+print("")
 print("============================================")
 if fails > 0 then
 	io.stderr:write(("fixed test FAILED: %d of %d checks failed\n"):format(fails, checks))
