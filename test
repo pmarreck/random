@@ -3,6 +3,7 @@
 # Usage: ./test            (FAST mode by default — quick, quiet on success)
 #        FAST= ./test      (full statistical run)
 #        ./test fixed      (run only suites whose name matches 'fixed')
+#        SUITE_TIMEOUT=60 ./test   (override the per-suite wall-clock cap)
 # Accumulates per-suite failures and returns the count as the exit code.
 # NOTE: no `set -e` here on purpose. Suites deliberately exercise non-zero
 # exit paths, and errexit would abort the runner on the first one.
@@ -12,19 +13,39 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PATH="$here/bin:$PATH"
 export RANDOM_TEST_FILE="$here/tests/random_test"
 export FAST="${FAST-1}"
+SUITE_TIMEOUT="${SUITE_TIMEOUT:-300}"
 
 filter="${1-}"
 failed=0
 ran=0
 
+# Every suite runs under `timeout` -- a real, ordinary-arithmetic-reachable
+# bug (M.exp's unbounded correction loop before it was bounded; see
+# task-7-report.md's fix-up appendix) hung a suite forever with zero
+# diagnostic output, which would have hung CI indefinitely rather than
+# failing with a message. `timeout` converts that into a fast, loud,
+# non-zero-exit failure every time, not just for exp -- any future hang in
+# any suite gets the same treatment.
 for suite in "$here"/tests/*_test "$here"/tests/kernel_bc_sweep; do
 	[ -x "$suite" ] || continue
 	name="$(basename "$suite")"
 	if [ -n "$filter" ] && [[ "$name" != *"$filter"* ]]; then continue; fi
 	ran=$((ran + 1))
-	if ! "$suite"; then
+	# NOTE: deliberately NOT `if ! timeout ...; then rc=$?`. `!` inverts the
+	# exit status bash's `if` sees, and `$?` after entering the `then`
+	# branch reflects THAT inverted (already-negated-to-0) status, not
+	# timeout's real 124 -- confirmed directly: `if ! timeout 1 sleep 5;
+	# then rc=$?; fi` captures rc=0, not 124. Run bare, capture $? first,
+	# branch on it after.
+	timeout "$SUITE_TIMEOUT" "$suite"
+	rc=$?
+	if [ "$rc" -ne 0 ]; then
 		failed=$((failed + 1))
-		echo "SUITE FAILED: $name" >&2
+		if [ "$rc" -eq 124 ]; then
+			echo "SUITE TIMED OUT after ${SUITE_TIMEOUT}s: $name" >&2
+		else
+			echo "SUITE FAILED: $name" >&2
+		fi
 	fi
 done
 
