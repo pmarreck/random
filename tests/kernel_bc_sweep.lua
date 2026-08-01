@@ -456,22 +456,56 @@ local EXPFN_R_RTOL = 1e-17
 -- cancellation blind spot here and a pure relative bound is sufficient
 -- (no atol needed).
 local EXPFN_X_RTOL = 4e-15
--- cos combines an rtol/atol pair like ln, for the same structural reason:
--- verification item 4 (task-8-report.md) measured the near-1/4-turn and
--- near-3/4-turn probe cases directly and found relative error DOES grow as
--- the true value shrinks toward cos's zeros, exactly the cancellation
--- dynamic ln's own near-1.0 case documents above -- though bounded here,
--- unlike ln's continuous domain, by the k/2^32 domain's own quantization:
--- the closest a real RNG-fed input can land next to a zero is k = zk +/- 1,
--- one part in 2^32 of a turn (~1.46e-9 rad), which floors how small the
--- true reference value can get and therefore how far relative error can
--- blow up. Measured worst case (cos_nearzero_..._m1/p1, the k=zk+/-1
--- cases): relative error ~6.8e-11, absolute error ~1e-19 -- both reported
--- below. COS_RTOL covers the general (non-cancellation) case; COS_ATOL is
--- the fallback for cases failing COS_RTOL purely from a near-zero true
--- value, matching LN_RTOL/LN_ATOL's combined-bound rationale exactly.
-local COS_RTOL = 5e-18
-local COS_ATOL = 5e-15
+-- cos uses an rtol/atol pair for the SAME structural reason ln does
+-- (catastrophic cancellation near a zero makes relative error ill-
+-- conditioned), but the ATOL escape hatch is deliberately NOT applied to
+-- every cos_ label the way LN_ATOL is applied to every ln_ label.
+--
+-- WHY NOT: a first version of this bound used a single universal
+-- (COS_RTOL, COS_ATOL) pair, COS_ATOL = 5e-15, applied to every cos_
+-- label. Mutation-tested by perturbing M.PI_2_M by +1000 (a ~1.4e-16
+-- relative error) and re-running: kernel_bc_sweep still PASSED, 10/10
+-- runs -- the mutant SURVIVED. Root cause: the ATOL check has no idea
+-- WHY a case's absolute error is small. On a well-conditioned point
+-- (|cos| ~ O(1), the cos_uniform_ cases), a ~1.4e-16 relative PI_2 error
+-- shows up as a ~1e-16 ABSOLUTE error too (error scales with the
+-- reference magnitude when the reference isn't near zero) -- comfortably
+-- under a 5e-15 ATOL, so the "OR absolute error is tiny" branch silently
+-- rescued a real, detectable bug on cases where nothing was actually
+-- ill-conditioned. A universal ATOL doesn't just cover the cancellation
+-- case it was sized for, it accidentally covers ANY sufficiently-subtle
+-- bug on EVERY case, because every cos/sin value in this domain is
+-- already O(1) or smaller -- exactly the shotgun-without-a-specificity-
+-- corpus trap.
+--
+-- FIX: restrict the ATOL rescue to the labels that are STRUCTURALLY
+-- ill-conditioned by construction -- cos_nearzero_ (the near-1/4/3/4-turn
+-- cancellation probes) and cos_boundary_ (bc's own l()/c() near an exact
+-- zero can report a nonzero-but-tiny reference purely from scale=90
+-- rounding) -- see the parsing loop below. cos_uniform_ gets COS_RTOL
+-- ONLY, no escape hatch, so a subtle whole-domain bug like the PI_2
+-- mutant above cannot hide behind it. See task-8-report.md's mutation
+-- section for the re-run transcript confirming this actually catches it.
+--
+-- Values: a first COS_RTOL guess of 5e-18 (23x the 2^-62 floor, copying
+-- LN_RTOL's own margin without re-measuring for cos) turned out too
+-- tight -- it FAILED THE CORRECT, UNMUTATED kernel: a standalone sweep of
+-- just the 236 cos_uniform_ cases (same LCG stream this file uses) found
+-- a real worst case of 6.140488e-18 (cos_uniform_67), above 5e-18 by
+-- construction, not a bug -- 28 mul/add ops per series compounding to
+-- ~28x the ULP floor is the same order of magnitude ln's own ~40-op
+-- series lands at. COS_RTOL = 2e-17 gives ~3.3x margin above that
+-- measured worst case (matching EXPFN_R_RTOL's own ~3x margin practice)
+-- while staying ~7x tighter than the PI_2-class mutant's ~1.4e-16
+-- relative error, so it still catches that mutant on cos_uniform_ (see
+-- below). COS_ATOL = 1e-16 is ~90x the worst measured absolute error on
+-- the correct kernel across BOTH rescued categories (cos_nearzero_ and
+-- cos_boundary_ combined, measured worst 1.1e-18) -- enough margin for
+-- ordinary noise, tight enough that the same mutant's ~1e-16 absolute
+-- error still trips it on the rescued labels too, not just on
+-- cos_uniform_.
+local COS_RTOL = 2e-17
+local COS_ATOL = 1e-16
 
 local worst_div_rel, worst_div_label = 0, nil
 local worst_ln_rel, worst_ln_rel_label = 0, nil
@@ -514,7 +548,14 @@ for line in out:gmatch("[^\n]+") do
 				if label:match("^cos_nearzero_") and arel > worst_cos_nearzero_rel then
 					worst_cos_nearzero_rel, worst_cos_nearzero_rel_label = arel, label
 				end
-				if arel > COS_RTOL and aabs > COS_ATOL then cos_bad = cos_bad + 1 end
+				-- ATOL rescue restricted to labels that are STRUCTURALLY
+				-- ill-conditioned (near a genuine zero of cos) -- see the
+				-- COS_RTOL/COS_ATOL comment above for the mutation-tested
+				-- reason cos_uniform_ must NOT get this escape hatch.
+				local ill_conditioned = label:match("^cos_nearzero_") or label:match("^cos_boundary_")
+				if arel > COS_RTOL and not (ill_conditioned and aabs <= COS_ATOL) then
+					cos_bad = cos_bad + 1
+				end
 			end
 		end
 	end
