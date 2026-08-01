@@ -169,14 +169,35 @@ local function pcg32_seed(seed)
 	pcg32_random()
 end
 
+-- Uniform integer in [start_val, end_val] by rejection sampling.
+-- Ranges up to 2^32 use a single 32-bit draw; wider ranges compose two draws
+-- into 64 bits. The original single-draw form computed bound = 0 for any
+-- range > 2^32 and looped forever.
 local function pcg32_range(start_val, end_val)
 	local range = end_val - start_val + 1
 	if range <= 1 then return start_val end
-	local bound = 4294967296 - (4294967296 % range)
+	if range <= 4294967296 then
+		local bound = 4294967296 - (4294967296 % range)
+		while true do
+			local r = pcg32_random()
+			if r < bound then
+				return start_val + (r % range)
+			end
+		end
+	end
+	-- Wide path: build a 64-bit draw from two 32-bit draws.
+	local urange = ffi.cast(u64, range)
+	-- Compute 2^64 % range using (2^32 % range)^2 % range, then bound = 0 - that value
+	local t32 = 4294967296
+	local m1 = t32 % range
+	local m2 = (m1 * m1) % range  -- This equals 2^64 % range
+	local bound = ffi.cast(u64, 0) - ffi.cast(u64, m2)  -- 2^64 - (2^64 % range)
 	while true do
-		local r = pcg32_random()
+		local hi = ffi.cast(u64, pcg32_random())
+		local lo = ffi.cast(u64, pcg32_random())
+		local r = hi * 4294967296ULL + lo
 		if r < bound then
-			return start_val + (r % range)
+			return start_val + tonumber(r % urange)
 		end
 	end
 end

@@ -353,6 +353,27 @@ test_random() {
 		(( fails++ ))
 	fi
 
+	# Test 20b: ranges wider than 2^32 must terminate (regression: infinite loop)
+	(( tests++ ))
+	echo "Testing range wider than 2^32 terminates..."
+
+	local wide_out wide_status
+	wide_out=$(timeout 5 random -d --seed 7 0 5000000000 2>/dev/null)
+	wide_status=$?
+
+	if [ $wide_status -eq 124 ]; then
+		echo "✗ Wide range test failed: timed out (infinite loop)" >&2
+		(( fails++ ))
+	elif [ $wide_status -ne 0 ]; then
+		echo "✗ Wide range test failed: exit $wide_status" >&2
+		(( fails++ ))
+	elif [ "$wide_out" -ge 0 ] && [ "$wide_out" -le 5000000000 ]; then
+		echo "✓ Wide range test passed ($wide_out in [0, 5000000000])"
+	else
+		echo "✗ Wide range test failed: $wide_out out of range" >&2
+		(( fails++ ))
+	fi
+
 	# ===== SECTION 4: --normalized mode =====
 	echo ""
 	echo "--- Section 4: --normalized mode ---"
