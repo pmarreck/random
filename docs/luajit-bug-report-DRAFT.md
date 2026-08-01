@@ -1,6 +1,8 @@
 # DRAFT v2 — LuaJIT issue report (for Peter's review before filing)
 
 Revised after an independent critique by Codex (GPT-5.1-codex), which verified
+
+**FILED:** https://github.com/LuaJIT/LuaJIT/issues/1499 (2026-08-01)
 every empirical claim and found one real defect in v1: the benchmark's baseline
 was mislabeled. Details in "Notes for Peter" at the bottom.
 

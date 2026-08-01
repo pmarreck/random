@@ -1,5 +1,7 @@
 -- Minimal reproduction: LuaJIT trace-compiler miscompilation.
 --
+--
+-- Filed upstream: https://github.com/LuaJIT/LuaJIT/issues/1499
 -- LuaJIT 2.1.1774638290 (also the newest in nixpkgs-unstable as of 2026-08-01).
 -- Run:  luajit docs/luajit-div-miscompilation.lua
 --       luajit -joff docs/luajit-div-miscompilation.lua
