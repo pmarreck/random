@@ -126,6 +126,19 @@ ok(j1 == a1 and j2 == a2, "0 + x == x")
 local c1, c2 = fx.sub(a1, a2, a1, a2)
 ok(c1 == 0LL and c2 == 0, "x - x == canonical zero", ("got m=%s e=%d"):format(tostring(c1), c2))
 
+-- Mutation-testing note: add()'s own "if sum == 0" short-circuit is provably
+-- redundant -- M.norm(0, e) already canonicalizes to (0,0) for ANY e, so
+-- deleting add's check is an equivalent mutant (verified: it does not change
+-- behavior for any input, so no test should or can "kill" it). What DOES need
+-- direct coverage, and had none until this task, is norm()'s own zero guard
+-- itself, since every other norm() caller (from_int, mul) short-circuits on
+-- zero before ever reaching norm.
+for _, e in ipairs({0, 1, -1, 12345, -99999}) do
+	local zm, ze = fx.norm(0LL, e)
+	ok(zm == 0LL and ze == 0, ("norm(0, %d) canonicalizes to (0, 0)"):format(e),
+	   ("got m=%s e=%d"):format(tostring(zm), ze))
+end
+
 -- PARTIAL cancellation must NOT be mistaken for total cancellation: two
 -- adjacent odd mantissas at the same exponent have a true difference of
 -- exactly 1 ULP. A naive implementation that pre-halves EACH operand toward
