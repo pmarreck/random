@@ -7,6 +7,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PATH="$here/../bin:$PATH"
 export DRANDOM_STATE_HOME="$(mktemp -d)"
 trap 'rm -rf "$DRANDOM_STATE_HOME"' EXIT
+unset IFS
 
 fails=0
 checked=0
@@ -34,6 +35,12 @@ for set_file in "$here"/golden/*.txt; do
 done
 
 echo "============================================"
+# A control that passes when it checked nothing is worse than no control: a
+# deleted or renamed golden directory would otherwise report success forever.
+if [ "$checked" -eq 0 ]; then
+	echo "golden test FAILED: no golden sets found in $here/golden" >&2
+	exit 1
+fi
 if [ "$fails" -gt 0 ]; then
 	echo "golden test FAILED: $fails of $checked set(s) changed" >&2
 	exit "$fails"
