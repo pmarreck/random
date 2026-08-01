@@ -26,7 +26,18 @@ local i64 = ffi.typeof("int64_t")
 local u64 = ffi.typeof("uint64_t")
 local TWO62 = 0x4000000000000000ULL
 
+-- `FAST=` (set but empty) is how ./test requests the deep sweep -- its own
+-- wrapper unconditionally does `export FAST="${FAST-1}"`, which can never
+-- leave FAST literally unset for a child process, only empty or "1". Lua's
+-- os.getenv returns "" (not nil) for a set-but-empty var, and "" is
+-- TRUTHY in Lua (only nil/false are falsy) -- so a bare `fast and X or Y`
+-- truthiness test silently stayed in fast mode for BOTH `FAST=1` and
+-- `FAST=`, and there was no way to reach deep mode through ./test at all.
+-- Confirmed directly before this fix: `FAST=1` and `FAST=` both measured
+-- exactly 1783 cases (identical -- deep mode never engaged). Normalize the
+-- empty-string case to nil before testing it.
 local fast = os.getenv("FAST")
+if fast == "" then fast = nil end
 -- FAST (./test's default) still comfortably clears "a few hundred operand
 -- pairs" per the task brief; unsetting FAST runs a deeper statistical sweep.
 local MANTISSA_COUNT = fast and 20 or 60
