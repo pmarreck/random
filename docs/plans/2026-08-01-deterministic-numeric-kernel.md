@@ -549,6 +549,26 @@ local hi2, lo2 = fx.mul128(0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL)
 ok(hi2 == 0xFFFFFFFFFFFFFFFEULL and lo2 == 1ULL, "mul128(2^64-1, 2^64-1) carries correctly",
    ("got hi=%s lo=%s"):format(tostring(hi2), tostring(lo2)))
 
+-- The precondition asserts must be tested on BOTH operands and must be
+-- distinguishable from each other. Corrupting only operand 1 lets a
+-- copy-paste typo in operand 2's assert survive: verified by mutation, a
+-- second assert re-checking `a` passes the whole suite while silently
+-- accepting the bad operand the guard exists to reject.
+local function rejects(label, m1, e1, m2, e2, want_msg)
+	local okc, err = pcall(fx.mul, m1, e1, m2, e2)
+	if okc then return false, "accepted" end
+	if not tostring(err):find(want_msg, 1, true) then
+		return false, "wrong assert fired: " .. tostring(err)
+	end
+	return true
+end
+local r1, why1 = rejects("op1", 1LL, 0, ONE_M, ONE_E, "operand 1 not normalized")
+ok(r1, "mul rejects an unnormalized operand 1", why1)
+local r2, why2 = rejects("op2", ONE_M, ONE_E, 1LL, 0, "operand 2 not normalized")
+ok(r2, "mul rejects an unnormalized operand 2", why2)
+local r3, why3 = rejects("min", -0x8000000000000000LL, 0, ONE_M, ONE_E, "operand 1 not normalized")
+ok(r3, "mul rejects INT64_MIN (magnitude 2^63 is outside the invariant)", why3)
+
 print("")
 print("============================================")
 if fails > 0 then
