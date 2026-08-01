@@ -5,14 +5,35 @@
 # twice -- once under luajit's trace compiler, once under `luajit -joff`
 # (JIT fully disabled) -- and fails if the two stdout digests differ.
 # Verified directly (see task-11-report.md): with lib/fixed.lua's
-# jit.off(div_signed) temporarily removed, this control fires 10/10 (FAST
-# mode) and 5/5 (deep mode) trials; with it restored, both modes agree
-# 5/5. This is a complementary, symptom-level, whole-kernel control -- the
-# deterministic, function-scoped one (div_signed is never trace-compiled)
-# lives in tests/fixed_test.lua via jit.attach and is not replaced by this.
+# jit.off(div_signed) temporarily removed, this control fires 15/15 at
+# COUNT=30000 and 5/5 at COUNT=60000; with it restored, every trial run
+# in that task agreed. This is a complementary, symptom-level, whole-kernel
+# control -- the deterministic, function-scoped one (div_signed is never
+# trace-compiled) lives in tests/fixed_test.lua via jit.attach and is not
+# replaced by this.
+#
+# DEEP-MODE ONLY, by deliberate design, not an oversight: this control
+# alone measured ~31s (73% of the ~42s FAST-mode ./test total, coordinator's
+# measurement on 2026-08-01) against fixed_test.lua's jit.attach check,
+# which covers the SAME mitigation (div_signed is never trace-compiled,
+# proven 10/10 with zero flake) in 62ms as part of the default run. Gating
+# this file out of FAST mode therefore does not remove coverage of
+# "someone removed jit.off(div_signed)" from the default run -- it removes
+# only coverage of the broader, currently-hypothetical class ("a DIFFERENT
+# JIT miscompilation somewhere else in the kernel"), which nothing has
+# ever exhibited. Losing that from every routine invocation is the correct
+# trade against a slow suite stopping being run; the deep run (`FAST=
+# ./test`, or this file directly) is where the full-kernel net actually
+# gets cast. Do not silently re-widen this to FAST mode without re-doing
+# that cost/benefit call -- ask first.
 # NOTE: no `set -e` -- see ./test.
 set -u
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [ -n "${FAST-}" ]; then
+	echo "kernel_jit_diff: SKIPPED in FAST mode (deep-mode-only control -- run 'FAST= ./test' or 'FAST= $0' to exercise it)" >&2
+	exit 0
+fi
 
 if ! command -v luajit >/dev/null 2>&1; then
 	echo "kernel_jit_diff: SKIPPED (luajit not found on PATH)" >&2
