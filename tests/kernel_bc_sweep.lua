@@ -226,6 +226,30 @@ end
 -- -- like the original div overflow, or the original 12-term series gap --
 -- fails BOTH bounds simultaneously (relative error near 1, absolute error
 -- comparable to ln2 itself), so this does not paper over real defects.
+-- LIMITATION, stated precisely rather than left implicit: no tolerance
+-- defined below, however tight, can detect a rounding-DIRECTION
+-- regression in div (e.g. truncate-toward-zero silently becoming
+-- floor-toward-negative-infinity for negative, inexact results -- the
+-- exact mutant this project's own review process caught once). For random
+-- operands, floor-toward-negative-infinity's error magnitude is `1 - f`,
+-- where `f` is the true fractional remainder in [0, 1) at the mantissa's
+-- own scale; truncate-toward-zero's error magnitude is `f` itself. Both
+-- `f` and `1 - f` are uniformly distributed over [0, 1) for the same
+-- input distribution -- they have the SAME distribution, just mirrored.
+-- Any magnitude-only relative-error bound wide enough to accept the
+-- CORRECT algorithm's own ordinary truncation error therefore necessarily
+-- accepts the mutant's error too; there is no DIV_RTOL, tight or loose,
+-- that admits one distribution and rejects the other, because they are
+-- the same distribution. This is not a tuning problem -- it is what a
+-- magnitude-only control can and cannot see, structurally. Rounding-
+-- direction regressions are caught EXCLUSIVELY by fixed_test.lua's pinned
+-- exact-value tests (six negative-operand cases, hand-verified against
+-- bc's own exact big-integer division, asserting the precise expected
+-- mantissa with zero tolerance) -- never by this sweep. This matters most
+-- for the eventual Zig port: `@divTrunc` vs `@divFloor` is exactly this
+-- divergence, and a reader who believes this sweep already covers
+-- rounding direction will under-test that port.
+--
 -- DIV_RTOL is 2^-61, not 2^-62: div's PRE-normalization quotient
 -- q = floor((a/b) * 2^62) can be as small as just above 2^61 (whenever
 -- a/b is close to its minimum of 0.5, i.e. a < b and nearly equal), and a
