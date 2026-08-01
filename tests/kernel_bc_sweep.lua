@@ -61,17 +61,26 @@ end
 local bc_lines = { "scale=90", "define abs(x) { if (x < 0) return -x; return x; }" }
 local labels = {}
 
-local function u64dec(v)
-	-- MUST go through tostring(), never tonumber(): tonumber() on a u64
-	-- cdata converts through an IEEE double (53-bit mantissa), silently
-	-- rounding any value above 2^53 -- exactly the double-precision-floor
-	-- trap this whole sweep exists to route around (see the top-of-file
-	-- comment). Confirmed by direct probe: tonumber(0x7FFFFFFFFFFFFFFEULL)
-	-- formatted as "%.0f" prints 9223372036854775808, two off from the
-	-- true 9223372036854775806 that tostring() gives exactly. This was
-	-- caught by the sweep itself (a spuriously large "kernel" error that
-	-- traced back to a wrong reference operand, not a wrong kernel result).
-	return (tostring(v):gsub("ULL$", ""))
+local function i64dec(v)
+	-- MUST go through tostring(), never tonumber(): tonumber() on a 63-bit
+	-- mantissa converts through an IEEE double (53-bit mantissa), silently
+	-- rounding it -- exactly the double-precision-floor trap this whole
+	-- sweep exists to route around (see the top-of-file comment). Confirmed
+	-- by direct probe: tonumber(0x7FFFFFFFFFFFFFFEULL) formatted as "%.0f"
+	-- prints 9223372036854775808, two off from the true
+	-- 9223372036854775806 that tostring() gives exactly. This was caught
+	-- by the sweep itself (a spuriously large "kernel" error that traced
+	-- back to a wrong reference operand, not a wrong kernel result).
+	--
+	-- Takes a SIGNED int64_t cdata directly (never ffi.cast(u64, ...) it
+	-- first): div's operands can be negative, and bc's decimal literals
+	-- handle a leading "-" natively, so there is no reason to detour
+	-- through an unsigned bit-pattern reinterpretation -- doing that on a
+	-- negative m1/m2 would silently hand bc the WRONG (huge positive)
+	-- reference operand. This was the shape of the negative-operand
+	-- coverage gap: the sweep only ever generated positive mantissas, so
+	-- this latent bug in the conversion itself was never exercised either.
+	return (tostring(v):gsub("LL$", ""))
 end
 
 -- Each case prints "<label> <relerr> <absdiff>". Both are needed: relative
@@ -95,7 +104,7 @@ local function add_div_case(m1, e1, m2, e2, label)
 	-- reference = (m1/m2) * 2^(e1-e2) computed directly in bc; our =
 	-- rm * 2^(re-62). All exponent scaling is expressed via bc's own
 	-- (negative-exponent-capable) ^, so nothing is pre-scaled in Lua.
-	local m1s, m2s = u64dec(ffi.cast(u64, m1)), u64dec(ffi.cast(u64, m2))
+	local m1s, m2s = i64dec(m1), i64dec(m2)
 	local rms = tostring(rm):gsub("LL$", "")
 	local expr = ("ref = (%s/%s) * 2^(%d); our = %s * 2^(%d); " ..
 		"if (ref == 0) print \"%s SKIP\\n\"; " ..
@@ -121,14 +130,34 @@ local function add_ln_case(m, e, label)
 	labels[#labels + 1] = label
 end
 
+-- Sign quadrants cycle deterministically across the sweep so it exercises
+-- the negative/inexact truncation path (M.div computes a magnitude via
+-- floor, then reapplies the sign) exactly as often as the positive path.
+-- This is the coverage gap that let a truncate-vs-floor rounding-mode
+-- mutant (add 1 to the magnitude when negative-and-inexact, silently
+-- switching from truncate-toward-zero to floor-toward-negative-infinity)
+-- pass every suite undetected: mantissa_set/next_mantissa previously
+-- produced only positive u64 magnitudes cast straight to i64, so ALL
+-- generated div cases were non-negative on both sides. Index-based, not
+-- randomized -- every case still cross-checks against bc regardless of
+-- which quadrant it lands in, so there's no need for extra randomness on
+-- top of the mantissa LCG already in play.
+local SIGN_QUADRANTS = { { 1, 1 }, { -1, 1 }, { 1, -1 }, { -1, -1 } }
+local function signed_i64(v, sign)
+	local r = ffi.cast(i64, v)
+	if sign < 0 then r = -r end
+	return r
+end
+
 -- === div: mantissa sweep (e1 = e2 = 0), the part directly at risk from ===
 -- === the overflow bug this file exists to catch.                      ===
 local mset = mantissa_set(MANTISSA_COUNT)
 local div_pair_count = 0
 for i = 1, #mset do
 	for j = 1, #mset do
-		add_div_case(ffi.cast(i64, mset[i]), 0, ffi.cast(i64, mset[j]), 0,
-			("div_mant_%d_%d"):format(i, j))
+		local q = SIGN_QUADRANTS[((i + j) % 4) + 1]
+		add_div_case(signed_i64(mset[i], q[1]), 0, signed_i64(mset[j], q[2]), 0,
+			("div_mant_%d_%d_%d_%d"):format(i, j, q[1], q[2]))
 		div_pair_count = div_pair_count + 1
 	end
 end
@@ -137,9 +166,10 @@ end
 -- === of magnitudes without depending on the mantissa sweep above.    ===
 local eset = mantissa_set(EXP_MANTISSA_COUNT)
 for i = 1, #eset do
-	for _, d in ipairs(EXP_DIFFS) do
-		add_div_case(ffi.cast(i64, eset[i]), d, ffi.cast(i64, eset[(i % #eset) + 1]), 0,
-			("div_exp_%d_%d"):format(i, d))
+	for di, d in ipairs(EXP_DIFFS) do
+		local q = SIGN_QUADRANTS[((i + di) % 4) + 1]
+		add_div_case(signed_i64(eset[i], q[1]), d, signed_i64(eset[(i % #eset) + 1], q[2]), 0,
+			("div_exp_%d_%d_%d_%d"):format(i, d, q[1], q[2]))
 		div_pair_count = div_pair_count + 1
 	end
 end

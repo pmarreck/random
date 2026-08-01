@@ -281,6 +281,15 @@ local ONEm, ONEe = fx.from_int(1)
 local dr1, dwhy1 = rejects_div(ONEm, ONEe, 0LL, 0, "fixed.div: division by zero")
 ok(dr1, "div by zero asserts", dwhy1)
 
+-- 0/0 must ALSO assert, not silently return canonical zero: the divisor
+-- check has to run before the m1==0 shortcut, or 0/0 slips through. This
+-- pins the ordering bug directly (an earlier version had the shortcut
+-- first, which returned (0LL, 0) for 0/0 -- unreachable from any current
+-- call site, but a live footgun, and a direct contradiction of the domain
+-- stance M.ln takes on its own undefined point at 0).
+local dr0, dwhy0 = rejects_div(0LL, 0, 0LL, 0, "fixed.div: division by zero")
+ok(dr0, "0 / 0 asserts rather than returning canonical zero", dwhy0)
+
 -- div carries the same normalization precondition as mul, checked on both
 -- operands and distinguishably (see mul's identical mutation-testing note
 -- above -- a copy-pasted assert on the wrong operand must not survive).
@@ -340,6 +349,93 @@ for _, c in ipairs({{6,3,2},{-6,3,-2},{6,-3,-2},{-6,-3,2}}) do
 	if not (q1 == w1 and q2 == w2) then div_sign_ok = false end
 end
 ok(div_sign_ok, "divide handles all four sign combinations")
+
+-- CRITICAL GAP the above did not close: {6,3},{-6,3},{6,-3},{-6,-3} are all
+-- EXACT integer divisions (rem == 0 in div's fractional loop every time),
+-- so they never touch the sign/rounding decision at all. The kernel commits
+-- to truncation TOWARD ZERO unconditionally (see the file's own top-of-file
+-- doc comment) -- for an INEXACT negative quotient, that means the
+-- magnitude must be floor()'d (rounding the result closer to zero, not
+-- further from it) before the sign is reapplied. A mutant that instead
+-- rounds the magnitude UP when inexact-and-negative silently switches to
+-- floor-toward-negative-infinity (Zig's @divFloor, not @divTrunc) and nets
+-- a genuinely different mantissa on real input -- and every test above,
+-- including the sign-quadrant one, was blind to it (confirmed: inserting
+-- that exact mutation left all four suites green before these checks
+-- existed; see task-6-report.md's mutation-testing appendix). Values below
+-- are cross-verified independently against bc's own exact big-integer
+-- floor((|m1|*2^62)/|m2|), not just against this kernel's own output.
+local neg1_m, neg1_e = fx.neg(ONEm, ONEe)
+local three_m, three_e = fx.from_int(3)
+local neg3_m, neg3_e = fx.neg(three_m, three_e)
+local seven_m, seven_e = fx.from_int(7)
+local neg7_m, neg7_e = fx.neg(seven_m, seven_e)
+local eleven_m, eleven_e = fx.from_int(11)
+local neg11_m, neg11_e = fx.neg(eleven_m, eleven_e)
+
+local function check_div(m1, e1, m2, e2, want_m, want_e, label)
+	local rm, re = fx.div(m1, e1, m2, e2)
+	ok(rm == want_m and re == want_e, label,
+	   ("got m=%s e=%d want m=%s e=%d"):format(tostring(rm), re, tostring(want_m), want_e))
+end
+
+-- -1/3: bc floor(|−1|*2^62 / |3|) = 3074457345618258602 (pre-norm); norm
+-- doubles it (< 2^62) to 6148914691236517204 at e=-2. Truncating toward
+-- zero means the NEGATIVE result's magnitude is <= the true magnitude
+-- (closer to zero), which is exactly what a floor on the magnitude gives.
+check_div(neg1_m, neg1_e, three_m, three_e, -6148914691236517204LL, -2,
+	"-1 / 3 truncates toward zero (inexact, negative result)")
+check_div(ONEm, ONEe, neg3_m, neg3_e, -6148914691236517204LL, -2,
+	"1 / -3 gives the same magnitude as -1/3 (sign lives in the divisor instead)")
+check_div(neg1_m, neg1_e, neg3_m, neg3_e, 6148914691236517204LL, -2,
+	"-1 / -3 == 1/3: double negation, positive inexact result, same magnitude")
+
+-- A second, less power-of-two-adjacent pair for broader coverage: -7/11.
+-- bc floor(7*2^62/11) = 5869418568907584605, already normalized (no
+-- doubling needed, e = 2-3 = -1 directly).
+check_div(neg7_m, neg7_e, eleven_m, eleven_e, -5869418568907584605LL, -1,
+	"-7 / 11 truncates toward zero (inexact, negative result)")
+check_div(seven_m, seven_e, neg11_m, neg11_e, -5869418568907584605LL, -1,
+	"7 / -11 gives the same magnitude as -7/11")
+check_div(neg7_m, neg7_e, neg11_m, neg11_e, 5869418568907584605LL, -1,
+	"-7 / -11 == 7/11: double negation, positive inexact result")
+
+-- JIT miscompilation regression (warmed): discovered while extending
+-- tests/kernel_bc_sweep.lua to cover negative operands (a positive-only
+-- sweep can NEVER see this -- it only manifests through the sign-handling
+-- branches). LuaJIT 2.1.1774638290's trace compiler returns the WRONG
+-- mantissa for fx.div(-4735866454561506793, e, -6988739120546013429, 0)
+-- once M.div has been JIT-warmed by ~500+ prior calls -- verified against
+-- bc's exact big-integer floor((|m1|*2^62)/|m2|), and against
+-- `luajit -joff` on the identical script, both of which agree on
+-- 6250148628221868064 (e adjusts by the usual normalization step). This
+-- is a LANGUAGE-RUNTIME bug, not a logic bug in this file; M.div carries a
+-- `jit.off(M.div, true)` specifically to neutralize it. This test exists
+-- to catch a regression if that protection is ever accidentally removed:
+-- it warms the JIT the same way the bug's discovery did (many prior
+-- varied div calls, mixing signs) and then checks the known-bad case.
+-- 2000 warmup calls is 4x the ~500 observed to reliably trigger the bug
+-- when unprotected.
+do
+	local jit_m1, jit_m2 = -4735866454561506793LL, -6988739120546013429LL
+	local lcg = 0x9E3779B97F4A7C15ULL
+	local TWO62_JIT = 0x4000000000000000ULL
+	local function warm_mantissa()
+		lcg = lcg * 6364136223846793005ULL + 1ULL
+		return TWO62_JIT + ((lcg / 4ULL) % TWO62_JIT)
+	end
+	for i = 1, 2000 do
+		local wa = ffi.cast("int64_t", warm_mantissa())
+		local wb = ffi.cast("int64_t", warm_mantissa())
+		if i % 2 == 0 then wa = -wa end
+		if i % 3 == 0 then wb = -wb end
+		fx.div(wa, i, wb, 0)
+	end
+	local jrm, jre = fx.div(jit_m1, 5000, jit_m2, 0)
+	ok(jrm == 6250148628221868064LL and jre == 4999,
+		"div stays correct on the known JIT-miscompilation trigger after 2000 warmup calls",
+		("got m=%s e=%d want m=6250148628221868064 e=4999"):format(tostring(jrm), jre))
+end
 
 print("")
 print("--- Section 4: natural log (ln) ---")
