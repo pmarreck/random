@@ -101,6 +101,37 @@ local em, ee = fx.from_int(6)
 ok(pm == em and pe == ee, "2 * 3 == 6 exactly",
    ("got m=%s e=%d want m=%s e=%d"):format(tostring(pm), pe, tostring(em), ee))
 
+-- M.mul's i32 exponent contract. Unlike M.norm's assert (which every
+-- OTHER caller routes through), M.mul computes e = e1+e2[+1] directly --
+-- the coordinator found this REACHABLE from entirely in-contract
+-- operands, not hypothetical: mul(e1=2000000000, e2=2000000000) ->
+-- e=4000000000, and M.norm accepts each 2000000000 individually. Same
+-- pcall + exact-message style as the M.norm tests above, plus boundary
+-- pins so a >= vs > or off-by-one on the NEW check itself would be
+-- caught, not just "does it ever raise".
+local function rejects_mul(m1, e1, m2, e2, want_msg)
+	local okc, err = pcall(fx.mul, m1, e1, m2, e2)
+	if okc then return false, "accepted" end
+	if not tostring(err):find(want_msg, 1, true) then
+		return false, "wrong assert fired: " .. tostring(err)
+	end
+	return true
+end
+local mul_r1, mul_why1 = rejects_mul(0x4000000000000000LL, 2000000000, 0x4000000000000000LL, 2000000000,
+   "fixed.mul: exponent outside i32")
+ok(mul_r1, "mul: two in-contract exponents (2000000000 each) whose sum overflows i32 asserts", mul_why1)
+-- Exact boundary: e1+e2 landing precisely on 2147483647 must NOT raise.
+-- 0x4000000000000000LL * 0x4000000000000000LL lands in the "product
+-- >= 2^125, shift down 63, e1+e2+1" branch (mantissa 2^62 squared is
+-- exactly 2^124, which is < 2^125 -- use a mantissa just above 2^62 so
+-- the product's top bit is actually set and the +1 branch is the one
+-- under test, matching what a real boundary call would hit).
+local mul_ok_boundary = pcall(fx.mul, 0x7FFFFFFFFFFFFFFFLL, 1073741823, 0x7FFFFFFFFFFFFFFFLL, 1073741823)
+ok(mul_ok_boundary, "mul: exponents landing exactly at the i32 max (2147483647) do not raise")
+local mul_r2, mul_why2 = rejects_mul(0x4000000000000000LL, -2000000000, 0x4000000000000000LL, -2000000000,
+   "fixed.mul: exponent outside i32")
+ok(mul_r2, "mul: two in-contract exponents (-2000000000 each) whose sum underflows past i32 min", mul_why2)
+
 -- sign handling across all four quadrants
 local cases = {{2,3,6},{-2,3,-6},{2,-3,-6},{-2,-3,6}}
 local sign_ok = true
@@ -340,6 +371,25 @@ local dr2, dwhy2 = rejects_div(1LL, 0, ONEm, ONEe, "operand 1 not normalized")
 ok(dr2, "div rejects an unnormalized operand 1", dwhy2)
 local dr3, dwhy3 = rejects_div(ONEm, ONEe, 1LL, 0, "operand 2 not normalized")
 ok(dr3, "div rejects an unnormalized operand 2", dwhy3)
+
+-- div's i32 exponent contract: CHECKED rather than assumed to need a new
+-- assert, per instruction ("check rather than assume, and say what you
+-- found either way"). Unlike M.mul, BOTH of div's dispatch paths (the
+-- fast positive-only path and div_signed) already call
+-- `M.norm(result, e1 - e2)` directly -- confirmed by reading, then
+-- confirmed by execution below -- so M.norm's own i32 assert already
+-- covers div's exponent difference on both paths; no new code was
+-- needed here, and none was added (this pins that finding as a
+-- regression test, not a change in behavior). Exercises BOTH dispatch
+-- paths with two in-contract exponents (M.norm accepts each alone)
+-- whose DIFFERENCE underflows past i32's min.
+local dr4, dwhy4 = rejects_div(ONEm, -2000000000, ONEm, 2000000000, "fixed.norm: exponent outside i32")
+ok(dr4, "div (fast positive path): e1-e2 underflowing past i32 min asserts " ..
+   "(already covered by M.norm, not new code)", dwhy4)
+local negONEm = fx.neg(ONEm, ONEe)
+local dr5, dwhy5 = rejects_div(negONEm, -2000000000, ONEm, 2000000000, "fixed.norm: exponent outside i32")
+ok(dr5, "div (div_signed path, negative operand): same e1-e2 underflow asserts " ..
+   "(already covered by M.norm, not new code)", dwhy5)
 
 -- 0 / x == canonical zero
 local zd1, zd2 = fx.div(0LL, 0, ONEm, ONEe)

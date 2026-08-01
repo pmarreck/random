@@ -154,6 +154,22 @@ end
 --- mul(0, e, garbage, e) is accepted without validating the other operand.
 --- That is intentional, not a gap: 0 * x = 0 exactly regardless of x, so the
 --- check would cost hot-path work for no correctness gain.
+---
+--- EXPONENT CONTRACT (i32, see M.norm's own doc comment): this function
+--- computes `e = e1 + e2 [+ 1]` directly rather than through M.norm --
+--- the whole point of the "take hi and e1+e2(+1)" optimization above is
+--- to avoid an unnecessary renormalization search, since the product's
+--- magnitude bucket is already known from `hi` alone. That optimization
+--- is exactly what let this bypass M.norm's i32 assert -- and the
+--- coordinator found it is REACHABLE from entirely in-contract operands,
+--- not just a theoretical gap: mul(e1=2000000000, e2=2000000000) ->
+--- e=4000000000, both operands individually within i32 (norm accepts
+--- each alone), the sum is not. Confirmed the Zig-port argument this
+--- whole contract rests on applies identically here: `e1 + e2` on two
+--- i32s this close to the max PANICS in Zig's Debug/ReleaseSafe modes --
+--- silently producing 4e9 in Lua is the exact reference/port disagreement
+--- on a reachable input this kernel exists to prevent, not a hypothetical.
+--- Checked directly, not assumed a priori.
 function M.mul(m1, e1, m2, e2)
 	if m1 == 0 or m2 == 0 then return 0LL, 0 end
 	-- Magnitudes are taken by UNSIGNED negation, never `-a`. Negating INT64_MIN
@@ -176,6 +192,7 @@ function M.mul(m1, e1, m2, e2)
 		m = hi * 4ULL + lo / TWO62
 		e = e1 + e2
 	end
+	assert(e >= -2147483648 and e <= 2147483647, "fixed.mul: exponent outside i32")
 	local r = ffi.cast(i64, m)
 	if neg then r = -r end
 	return r, e
