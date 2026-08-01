@@ -1038,6 +1038,39 @@ end
 ok(int_exp_ok, "sqrt always returns an integer exponent (representation invariant)",
    int_exp_bad_at and ("first bad at " .. int_exp_bad_at) or nil)
 
+-- === sqrt: domain -- negative argument asserts (MUTATION TARGET) =======
+-- Follows M.ln's own convention (see its "domain: ln(0) and ln(negative)
+-- must assert" check above): pcall plus an EXACT message match, not just
+-- "does it error". The exact-message requirement matters here specifically
+-- for M.sqrt: unlike M.pow (see below), there is no other assert anywhere
+-- downstream that would incidentally catch a removed `assert(m >= 0, ...)`
+-- -- ffi.cast(u64, mm) on a negative mantissa silently REINTERPRETS the
+-- bit pattern as a large unsigned value and returns a wrong, non-erroring
+-- result, which is exactly the failure mode this whole file's soft-float
+-- kernel exists to eliminate (see the top-of-file comment on why libm was
+-- replaced at all). A bare "pcall fails" check would still pass if some
+-- unrelated later operation happened to error for a different reason; the
+-- message match pins that the SPECIFIC guard fired.
+local function rejects_sqrt(m, e, want_msg)
+	local okc, err = pcall(fx.sqrt, m, e)
+	if okc then return false, "accepted" end
+	if not tostring(err):find(want_msg, 1, true) then
+		return false, "wrong assert fired: " .. tostring(err)
+	end
+	return true
+end
+local negonem_sqrt, negonee_sqrt = fx.from_int(-1)
+local sr1, swhy1 = rejects_sqrt(negonem_sqrt, negonee_sqrt, "fixed.sqrt: argument must be non-negative")
+ok(sr1, "sqrt(negative) asserts rather than silently reinterpreting the bit pattern", swhy1)
+
+-- === sqrt: domain -- zero is a POSITIVE case, must NOT raise ===========
+-- m == 0 is this file's canonical-zero encoding (see M.norm), not a
+-- degenerate negative case -- sqrt(0) == 0 exactly, and the function must
+-- return it directly rather than falling into the m >= 0 assert or the
+-- Newton loop at all.
+local sqrt_zero_m, sqrt_zero_e = fx.sqrt(0LL, 0)
+ok(sqrt_zero_m == 0LL and sqrt_zero_e == 0, "sqrt(0) returns canonical zero, does not raise")
+
 -- === pow: brief's own case (Step 1), bit-exact ==========================
 local base_m, base_e = fx.from_int(2)
 local pm, pe = fx.pow(base_m, base_e, fx.from_int(10))
@@ -1085,7 +1118,37 @@ end
 ok(pow_diff_ok, "pow(1/3, n) matches (1/3)*(1/3)*...*(1/3) via an independent mul-only path",
    ("worst=%.6e"):format(pow_diff_worst))
 
+-- === pow: FRACTIONAL, non-power-of-two exponent (MUTATION TARGET) ======
+-- Every y tested above (and in kernel_bc_sweep.lua's POW_Y_VALUES before
+-- this fix) is an integer or a power of two -- {1,2,5,10,20} above,
+-- {-20,-3,-1,1,3,20} there -- and even the "realistic alpha=0.1" case
+-- immediately below has 1/alpha = 10, conveniently exact. But the
+-- motivating use (gamma's alpha<1 branch, x^(1/alpha)) gives FRACTIONAL y
+-- almost always for a real alpha; that was unproven by the suite until
+-- now. Verified via an algebraic identity, not an external oracle (see
+-- kernel_bc_sweep.lua's pow_frac_y_10_3 case for the independent bc
+-- cross-check of the same y): if y = a/b for integers a, b, then
+-- pow(x, y)^b == pow(x, a) -- both sides reachable via the same
+-- already-trusted, independent mul-only path used above, so this
+-- exercises M.pow's ln/mul/exp machinery at a genuinely fractional,
+-- non-power-of-two exponent (y = 10/3, i.e. 1/0.3 -- alpha = 0.3) with no
+-- bc dependency in this file. Measured worst relerr 5.861303e-18.
+local ten_m, ten_e = fx.from_int(10)
+local frac_y_m, frac_y_e = fx.div(ten_m, ten_e, fx.from_int(3))   -- y = 10/3 = 1/0.3
+local pow_frac_m, pow_frac_e = fx.pow(third_m, third_e, frac_y_m, frac_y_e)
+local frac_lhs_m, frac_lhs_e = pow_by_repeated_mul(pow_frac_m, pow_frac_e, 3)   -- pow(x,y)^3
+local frac_rhs_m, frac_rhs_e = pow_by_repeated_mul(third_m, third_e, 10)        -- x^10
+local frac_err = true_fixed_relerr(frac_lhs_m, frac_lhs_e, frac_rhs_m, frac_rhs_e)
+ok(frac_err < 1e-14,
+   "pow(1/3, 10/3)^3 == (1/3)^10 -- fractional, non-power-of-two exponent, via (x^(a/b))^b == x^a",
+   ("worst=%.6e"):format(frac_err))
+
 -- === pow: realistic gamma-sampler domain (alpha<1, x in (0,1)) succeeds ==
+-- NOTE: this specific case (alpha=0.1, y=1/alpha=10) is an INTEGER y, not
+-- representative of a typical fractional alpha -- the fractional case
+-- immediately above is what actually validates the general gamma-sampler
+-- domain; this one just confirms the pipeline doesn't error for an
+-- ordinary alpha.
 local realistic_ok = pcall(fx.pow, third_m, third_e, fx.from_int(10))
 ok(realistic_ok, "pow succeeds for a realistic alpha=0.1 gamma-sampler case ((1/3)^10)")
 
@@ -1096,6 +1159,32 @@ local tiny_m, tiny_e = fx.div(one_m, one_e, fx.from_int(4294967296))  -- x = 2^-
 local hy_m, hy_e = fx.norm(one_m, 57)                                 -- y = 2^57
 local pow_raises_ok = not pcall(fx.pow, tiny_m, tiny_e, hy_m, hy_e)
 ok(pow_raises_ok, "pow raises (not hang, not garbage) once y*ln(x) exceeds M.exp's inherited bound")
+
+-- === pow: domain -- non-positive base asserts (MUTATION TARGET) ========
+-- Follows M.ln's own convention (pcall + exact message match), same as
+-- sqrt's domain test above. The exact-message requirement matters
+-- DIFFERENTLY here than for sqrt: if M.pow's own `assert(bm > 0, ...)`
+-- were deleted, fx.pow(0, 0, ...) would still fall through to
+-- M.ln(0, 0), which asserts on its own -- so a bare "does pcall fail"
+-- check would still PASS even with the mutant applied, accidentally
+-- saved by ln's guard rather than pow's own. Confirmed directly: a raw
+-- call to fx.ln(0, 0) raises "fixed.ln: argument must be positive" --
+-- different text from pow's own "fixed.pow: base must be positive". The
+-- message match below distinguishes the two, so it is the mutant-killing
+-- assertion; a bare error check would not be.
+local function rejects_pow(bm, be, ym, ye, want_msg)
+	local okc, err = pcall(fx.pow, bm, be, ym, ye)
+	if okc then return false, "accepted" end
+	if not tostring(err):find(want_msg, 1, true) then
+		return false, "wrong assert fired: " .. tostring(err)
+	end
+	return true
+end
+local pr1, pwhy1 = rejects_pow(0LL, 0, one_m, one_e, "fixed.pow: base must be positive")
+ok(pr1, "pow(0, y) asserts with pow's OWN message, not ln's incidental one", pwhy1)
+local negtwo_m, negtwo_e = fx.from_int(-2)
+local pr2, pwhy2 = rejects_pow(negtwo_m, negtwo_e, one_m, one_e, "fixed.pow: base must be positive")
+ok(pr2, "pow(negative, y) asserts with pow's OWN message", pwhy2)
 
 end
 

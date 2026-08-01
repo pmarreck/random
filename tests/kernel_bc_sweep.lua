@@ -460,9 +460,18 @@ for _ = 1, POW_MANTISSA_COUNT do
 	powset[#powset + 1] = ffi.cast(i64, next_pow_mantissa())
 end
 -- base exponents kept small (x roughly in [2^-5, 2^5]) and y drawn from
--- both small integers and fractional (negative-exponent) soft-floats, so
--- |y * ln x| stays comfortably under ~200 -- nowhere near the ~2^57
--- boundary M.pow inherits from M.exp.
+-- small integers of both signs, so |y * ln x| stays comfortably under
+-- ~200 -- nowhere near the ~2^57 boundary M.pow inherits from M.exp.
+-- CORRECTION: an earlier version of this comment claimed y was "drawn
+-- from both small integers and fractional (negative-exponent) soft-
+-- floats" -- false; POW_Y_VALUES below are all plain integers via
+-- fx.from_int, so this sweep exercised INTEGER y exclusively. That is a
+-- real gap: the motivating use (gamma's alpha<1 branch, x^(1/alpha)) gives
+-- FRACTIONAL y almost always for a real alpha -- POW_Y_VALUES = {-20,-3,
+-- -1,1,3,20} are all integers or powers of two, and even the differential
+-- pow test in fixed_test.lua only ever used integer n before this fix.
+-- See the pow_frac_y case immediately below, which closes that gap with a
+-- genuinely fractional, non-power-of-two y.
 local POW_BASE_EXPS = {-5, -1, 0, 1, 5}
 local POW_Y_VALUES = {-20, -3, -1, 1, 3, 20}
 local pow_case_count = 0
@@ -474,6 +483,22 @@ for i = 1, #powset do
 		pow_case_count = pow_case_count + 1
 	end
 end
+
+-- Explicit fractional, non-power-of-two y = 10/3 (== 1/0.3 -- the
+-- motivating case: gamma's alpha<1 branch computes x^(1/alpha), and a
+-- real alpha gives a fractional y almost always; alpha = 0.3 here). Every
+-- y elsewhere in this sweep, and in fixed_test.lua's differential check
+-- before this fix, was an integer or a power of two -- this is the first
+-- case anywhere in the suite that actually exercises M.pow's ln/mul/exp
+-- pipeline at a fractional exponent. x is the first sampled base mantissa
+-- (bexp = -1, x roughly in [0.5, 1)) so this sits squarely in the gamma
+-- sampler's real domain (a uniform (0,1) draw raised to a fractional
+-- power).
+local frac_y_num, frac_y_den = 10, 3
+local frac_y_num_m, frac_y_num_e = fx.from_int(frac_y_num)
+local frac_ym, frac_ye = fx.div(frac_y_num_m, frac_y_num_e, fx.from_int(frac_y_den))
+add_pow_case(powset[1], -1, frac_ym, frac_ye, "pow_frac_y_10_3")
+pow_case_count = pow_case_count + 1
 
 io.stderr:write(("kernel_bc_sweep: %d div cases, %d ln cases, %d exp cases " ..
 	"(%d r-domain + %d x-domain), %d cos cases, %d sqrt cases, %d pow cases (FAST=%s)\n"):format(
