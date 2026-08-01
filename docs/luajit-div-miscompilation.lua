@@ -55,9 +55,10 @@ local EXPECT = 3125074314110934032LL
 
 local cold = div(A, B)
 
--- Warm the trace with varied, MIXED-SIGN operands.
+-- Warm the trace with varied, MIXED-SIGN operands. 500 is comfortably above
+-- the threshold; it begins failing at a few hundred on this build.
 local lcg = 0x9E3779B97F4A7C15ULL
-for i = 1, 3000 do
+for i = 1, 500 do
 	lcg = lcg * 6364136223846793005ULL + 1ULL
 	local wa = ffi.cast(i64, TWO62 + ((lcg / 4ULL) % TWO62))
 	lcg = lcg * 6364136223846793005ULL + 1ULL
