@@ -504,7 +504,9 @@ for _, v in ipairs({1, 2, 3, 7, 100, -1, -2, -12345, 4294967296}) do
 	local m, e = fx.from_int(v)
 	if m ~= 0 then
 		local a = m < 0 and -m or m
-		if not (a >= 0x4000000000000000LL and a < 0x7FFFFFFFFFFFFFFFLL + 1) then
+		-- `< 0x7FFFFFFFFFFFFFFFLL + 1` would overflow int64 and wrap to
+		-- INT64_MIN, making this guard always false. Use <= on the max.
+		if not (a >= 0x4000000000000000LL and a <= 0x7FFFFFFFFFFFFFFFLL) then
 			inv_ok = false
 		end
 	end
