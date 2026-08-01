@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Verify committed golden vectors still reproduce exactly.
+# NOTE: no `set -e` — see ./test.
+set -u
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="$here/../bin:$PATH"
+export DRANDOM_STATE_HOME="$(mktemp -d)"
+trap 'rm -rf "$DRANDOM_STATE_HOME"' EXIT
+
+fails=0
+checked=0
+
+echo "Verifying golden vectors..."
+echo "============================================"
+
+for set_file in "$here"/golden/*.txt; do
+	[ -f "$set_file" ] || continue
+	set_name="$(basename "$set_file" .txt)"
+	# Regenerate into a temp file and diff against the committed one. Never write
+	# to a tracked file during a test run: that would clobber deliberate
+	# uncommitted golden edits and make ./test mutate the repo.
+	tmp="$(mktemp)"
+	"$here/bless-goldens" "$set_name" "$tmp" >/dev/null 2>&1
+	if diff -q "$set_file" "$tmp" >/dev/null 2>&1; then
+		echo "✓ $set_name: all vectors reproduce"
+	else
+		echo "✗ $set_name: vectors CHANGED" >&2
+		diff --unified=0 "$set_file" "$tmp" | head -20 >&2
+		fails=$((fails + 1))
+	fi
+	checked=$((checked + 1))
+	rm -f "$tmp"
+done
+
+echo "============================================"
+if [ "$fails" -gt 0 ]; then
+	echo "golden test FAILED: $fails of $checked set(s) changed" >&2
+	exit "$fails"
+fi
+echo "golden test PASSED: All $checked set(s) reproduce"
+exit 0

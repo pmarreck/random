@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Regenerate golden vectors. Run DELIBERATELY, never from ./test.
+# Usage: tests/bless-goldens integer   (integer paths — Task 3)
+#        tests/bless-goldens dist      (distributions — Task 13)
+set -u
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="$here/../bin:$PATH"
+export DRANDOM_STATE_HOME="$(mktemp -d)"
+trap 'rm -rf "$DRANDOM_STATE_HOME"' EXIT
+
+which="${1-}"
+[ -n "$which" ] || { echo "usage: bless-goldens integer|dist [output_path]" >&2; exit 1; }
+# Second argument redirects output. golden_test uses it to generate into a temp
+# file and diff, so a test run never writes to tracked files.
+outfile="${2-}"
+
+emit() {  # emit <label> <command...>
+	local label="$1"; shift
+	local out
+	out="$("$@" 2>/dev/null | sed -z 's/\n/\\n/g')"
+	printf '%s\t%s\n' "$label" "$out"
+}
+
+emit_stdin() {  # emit_stdin <label> <input> <command...>
+	local label="$1" input="$2"; shift 2
+	local out
+	out="$(printf '%s' "$input" | "$@" 2>/dev/null | sed -z 's/\n/\\n/g')"
+	printf '%s\t%s\n' "$label" "$out"
+}
+
+mkdir -p "$here/golden"
+
+case "$which" in
+integer)
+	{
+		for seed in 1 42 12345 0xDEADBEEF 18446744073709551615; do
+			emit "uniform/$seed/default" random -d --seed "$seed" -c 8
+			emit "uniform/$seed/0-9"     random -d --seed "$seed" -c 8 0 9
+			emit "uniform/$seed/1-6"     random -d --seed "$seed" -c 20 1 6
+			emit "uniform/$seed/wide"    random -d --seed "$seed" -c 4 0 5000000000
+			emit "uniform/$seed/single"  random -d --seed "$seed" -c 3 5 5
+			emit "hex/$seed"             random -d --seed "$seed" -c 8 --hex
+			emit "delim/$seed"           random -d --seed "$seed" -c 5 --delimiter , 0 10
+			emit "binhex/$seed"          bash -c "random -d --seed $seed -b -c 64 | xxd -p | tr -d '\n'"
+			emit "b64/$seed"             random -d --seed "$seed" -b -c 30 --base64
+			emit_stdin "choose/$seed"   $'apple\nbanana\ncherry\ndate' random --choose -d --seed "$seed"
+			emit_stdin "shuffle/$seed"  $'1\n2\n3\n4\n5\n6\n7\n8' random --shuffle -d --seed "$seed"
+			emit_stdin "weighted/$seed" $'rare:1\ncommon:10\nverycommon:100' random --weighted -d --seed "$seed"
+		done
+	} > "${outfile:-$here/golden/integer.txt}"
+	echo "wrote $(wc -l < "${outfile:-$here/golden/integer.txt}") integer vectors" >&2
+	;;
+dist)
+	{
+		for seed in 1 42 12345; do
+			emit "normal/$seed"      random -d -n --seed "$seed" -c 12 0 100
+			emit "normalms/$seed"    random -d -n --seed "$seed" -c 12 --mean 75 --stddev 5
+			emit "exponential/$seed" random -d --exponential --seed "$seed" -c 12
+			emit "poisson/$seed"     random -d --poisson --mean 5 --seed "$seed" -c 12
+			emit "lognormal/$seed"   random -d --log-normal --seed "$seed" -c 12
+			emit "beta/$seed"        random -d --beta --alpha 2 --beta-param 5 --seed "$seed" -c 12
+		done
+	} > "${outfile:-$here/golden/dist.txt}"
+	echo "wrote $(wc -l < "${outfile:-$here/golden/dist.txt}") distribution vectors" >&2
+	;;
+*)
+	echo "unknown set: $which" >&2; exit 1 ;;
+esac
