@@ -681,13 +681,26 @@ end
 --- Soft-float multiply. Mantissa product lands in [2^124, 2^126); take 62 or
 --- 63 bits off the top depending on which, so the result is normalized without
 --- a renormalization loop.
+---
+--- PRECONDITION: both operands are already normalized (2^62 <= |m| < 2^63) or
+--- canonical zero. The branch selection below is only valid under that premise
+--- -- an unnormalized mantissa yields a silently wrong product rather than an
+--- error -- so it is asserted rather than assumed. Tasks that build on this
+--- must never hand `mul` an unrenormalized intermediate.
 function M.mul(m1, e1, m2, e2)
 	if m1 == 0 or m2 == 0 then return 0LL, 0 end
-	local neg = false
-	local a, b = m1, m2
-	if a < 0 then neg = not neg; a = -a end
-	if b < 0 then neg = not neg; b = -b end
-	local hi, lo = M.mul128(ffi.cast(u64, a), ffi.cast(u64, b))
+	-- Magnitudes are taken by UNSIGNED negation, never `-a`. Negating INT64_MIN
+	-- in signed arithmetic is a wraparound coincidence in LuaJIT and a panic in
+	-- Zig's safe build modes; `0 - x` in u64 is well-defined in both, so the
+	-- eventual port stays bit-identical instead of trapping. (The assert below
+	-- rejects INT64_MIN anyway -- |INT64_MIN| is 2^63, outside the invariant --
+	-- but the port must not depend on which check fires first.)
+	local neg = (m1 < 0) ~= (m2 < 0)
+	local a = ffi.cast(u64, m1); if m1 < 0 then a = ffi.cast(u64, 0) - a end
+	local b = ffi.cast(u64, m2); if m2 < 0 then b = ffi.cast(u64, 0) - b end
+	assert(a >= TWO62 and a < 0x8000000000000000ULL, "fixed.mul: operand 1 not normalized")
+	assert(b >= TWO62 and b < 0x8000000000000000ULL, "fixed.mul: operand 2 not normalized")
+	local hi, lo = M.mul128(a, b)
 	local m, e
 	if hi >= TWO61 then           -- product >= 2^125: shift down 63
 		m = hi * 2ULL + lo / 0x8000000000000000ULL
