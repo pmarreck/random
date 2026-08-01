@@ -117,6 +117,10 @@ end
 --- -- an unnormalized mantissa yields a silently wrong product rather than an
 --- error -- so it is asserted rather than assumed. Tasks that build on this
 --- must never hand `mul` an unrenormalized intermediate.
+--- NOTE: the zero short-circuit below returns before either assert runs, so
+--- mul(0, e, garbage, e) is accepted without validating the other operand.
+--- That is intentional, not a gap: 0 * x = 0 exactly regardless of x, so the
+--- check would cost hot-path work for no correctness gain.
 function M.mul(m1, e1, m2, e2)
 	if m1 == 0 or m2 == 0 then return 0LL, 0 end
 	-- Magnitudes are taken by UNSIGNED negation, never `-a`. Negating INT64_MIN
