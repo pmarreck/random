@@ -187,11 +187,10 @@ local function pcg32_range(start_val, end_val)
 	end
 	-- Wide path: build a 64-bit draw from two 32-bit draws.
 	local urange = ffi.cast(u64, range)
-	-- Compute 2^64 % range using (2^32 % range)^2 % range, then bound = 0 - that value
-	local t32 = 4294967296
-	local m1 = t32 % range
-	local m2 = (m1 * m1) % range  -- This equals 2^64 % range
-	local bound = ffi.cast(u64, 0) - ffi.cast(u64, m2)  -- 2^64 - (2^64 % range)
+	-- Compute bound using unsigned arithmetic that stays entirely in u64.
+	-- 0 - urange gives 2^64 - range by wraparound; mod range gives 2^64 mod range.
+	local remainder = (ffi.cast(u64, 0) - urange) % urange   -- 2^64 mod range
+	local bound = ffi.cast(u64, 0) - remainder               -- 2^64 - (2^64 mod range)
 	while true do
 		local hi = ffi.cast(u64, pcg32_random())
 		local lo = ffi.cast(u64, pcg32_random())

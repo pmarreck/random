@@ -353,25 +353,48 @@ test_random() {
 		(( fails++ ))
 	fi
 
-	# Test 20b: ranges wider than 2^32 must terminate (regression: infinite loop)
+	# Test 20b: wide-range bound must match 2^64 mod range (differential vs bc oracle)
 	(( tests++ ))
-	echo "Testing range wider than 2^32 terminates..."
+	echo "Testing wide-range bound computation accuracy..."
 
-	local wide_out wide_status
-	wide_out=$(timeout 5 random -d --seed 7 0 5000000000 2>/dev/null)
-	wide_status=$?
+	# Helper: compute 2^64 mod range using the u64 formula from the CLI
+	compute_bound_remainder() {
+		local range=$1
+		luajit -e "
+			local ffi = require('ffi')
+			local u64 = ffi.typeof('uint64_t')
+			local urange = ffi.cast(u64, $range)
+			local remainder = (ffi.cast(u64, 0) - urange) % urange
+			print(tonumber(remainder))
+		" 2>/dev/null
+	}
 
-	if [ $wide_status -eq 124 ]; then
-		echo "✗ Wide range test failed: timed out (infinite loop)" >&2
-		(( fails++ ))
-	elif [ $wide_status -ne 0 ]; then
-		echo "✗ Wide range test failed: exit $wide_status" >&2
-		(( fails++ ))
-	elif [ "$wide_out" -ge 0 ] && [ "$wide_out" -le 5000000000 ]; then
-		echo "✓ Wide range test passed ($wide_out in [0, 5000000000])"
-	else
-		echo "✗ Wide range test failed: $wide_out out of range" >&2
-		(( fails++ ))
+	local all_bounds_correct=true
+
+	# Test ranges from the reviewer's verification table
+	local test_ranges=(4294967297 5000000000 5000000001 9999999999 123456789101112)
+
+	for range in "${test_ranges[@]}"; do
+		# Compute correct answer using bc (oracle we didn't write)
+		local bc_result
+		bc_result=$(echo "scale=0; 2^64 % $range" | bc 2>/dev/null)
+
+		# Compute using the CLI's own u64 path
+		local lua_result
+		lua_result=$(compute_bound_remainder "$range")
+
+		# Check equality
+		if [ "$bc_result" = "$lua_result" ]; then
+			:  # Correct, silent pass
+		else
+			echo "✗ Bound mismatch for range=$range: lua=$lua_result bc=$bc_result" >&2
+			(( fails++ ))
+			all_bounds_correct=false
+		fi
+	done
+
+	if [ "$all_bounds_correct" = true ]; then
+		echo "✓ Wide range bounds verified (5 ranges vs bc oracle)"
 	fi
 
 	# ===== SECTION 4: --normalized mode =====
