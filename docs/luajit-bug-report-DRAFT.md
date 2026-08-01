@@ -36,10 +36,18 @@ any of `dse`, `abc`, `sink`, or `fuse` individually does not help; disabling
 
 ## Environment
 
-- LuaJIT 2.1.1774638290 (also the newest currently in nixpkgs-unstable)
+Reproduced on both:
+
+- **Upstream HEAD, built from source, unpatched** — `4886b67` ("FFI: Set cur_L
+  in FFI callback"), reporting `LuaJIT 2.1.1785577137`. Plain `make`, no flags.
+- LuaJIT 2.1.1774638290 as packaged by Nixpkgs (also the newest currently in
+  nixpkgs-unstable).
+
+Both show identical behaviour, including the same `-O` bisect below, so this is
+not a downstream packaging artifact.
+
 - x86_64, `jit.arch = "x64"`, 8-byte pointers (GC64)
 - Linux 6.18.40, NixOS 26.11.20260726.624af66
-- Built by Nixpkgs, unpatched
 
 ## Reproduction
 
