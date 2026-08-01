@@ -124,8 +124,17 @@ local function pcg32_range(start_val, end_val)
 		end
 	end
 	-- Wide path: build a 64-bit draw from two 32-bit draws.
+	-- The bound must be computed entirely in u64. Two tempting forms are wrong:
+	--   (0 - (0 % urange))        -- 0 % urange is 0, so bound is 0 and this
+	--                             -- reintroduces the infinite loop being fixed
+	--   ((2^32 % r) * (2^32 % r) % r)  -- Lua's % on doubles loses precision past
+	--                             -- 2^53; verified wrong against bc for 5 of 5
+	--                             -- sampled ranges, biasing low output buckets
+	-- (0 - urange) is 2^64 - range by unsigned wraparound, and taking that mod
+	-- range yields 2^64 mod range exactly. Verified against bc.
 	local urange = ffi.cast(u64, range)
-	local bound = ffi.cast(u64, 0) - (ffi.cast(u64, 0) % urange)  -- 2^64 - (2^64 % range)
+	local remainder = (ffi.cast(u64, 0) - urange) % urange   -- 2^64 mod range
+	local bound = ffi.cast(u64, 0) - remainder               -- 2^64 - (2^64 mod range)
 	while true do
 		local hi = ffi.cast(u64, pcg32_random())
 		local lo = ffi.cast(u64, pcg32_random())
