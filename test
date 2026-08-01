@@ -1,10 +1,43 @@
 #!/usr/bin/env bash
-# Run the random test suite with this project's bin/ on PATH.
+# Run every test suite with this project's bin/ on PATH.
 # Usage: ./test            (FAST mode by default — quick, quiet on success)
 #        FAST= ./test      (full statistical run)
-set -euo pipefail
+#        ./test fixed      (run only suites whose name matches 'fixed')
+# Accumulates per-suite failures and returns the count as the exit code.
+# NOTE: no `set -e` here on purpose. Suites deliberately exercise non-zero
+# exit paths, and errexit would abort the runner on the first one.
+set -u
+
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PATH="$here/bin:$PATH"
 export RANDOM_TEST_FILE="$here/tests/random_test"
 export FAST="${FAST-1}"
-exec "$here/tests/random_test" "$@"
+
+filter="${1-}"
+failed=0
+ran=0
+
+for suite in "$here"/tests/*_test "$here"/tests/kernel_bc_sweep; do
+	[ -x "$suite" ] || continue
+	name="$(basename "$suite")"
+	if [ -n "$filter" ] && [[ "$name" != *"$filter"* ]]; then continue; fi
+	ran=$((ran + 1))
+	if ! "$suite"; then
+		failed=$((failed + 1))
+		echo "SUITE FAILED: $name" >&2
+	fi
+done
+
+if [ "$ran" -eq 0 ]; then
+	echo "No test suites matched '${filter}'" >&2
+	exit 1
+fi
+
+if [ "$failed" -gt 0 ]; then
+	echo "" >&2
+	echo "$failed of $ran suite(s) FAILED" >&2
+else
+	echo ""
+	echo "All $ran suite(s) passed"
+fi
+exit "$failed"
