@@ -616,29 +616,66 @@ end
 -- run after run, exactly as the frozen-`k` analysis above predicts.
 -- exp(2^61)/exp(2^62)/exp(2^70) (mechanism (a), the explicit clamp) hang
 -- under the JIT too -- there is no lucky JIT-artifact escape for those.
--- This program's real callers stay nowhere near either mechanism:
--- exponential/Poisson need |x| in the low tens (-ln(u)); log-normal's mu
--- is documented as reaching "into the thousands," not 2^52+.
+-- M.exp has NO live callers in this program as of this writing --
+-- bin/random still calls math.exp directly for --exponential/--poisson/
+-- --log-normal, and is scheduled to switch to this kernel in Task 12, not
+-- before. So there is no currently-enforced argument bound to cite here:
+-- the design spec allows --mean "up to +/-1000 and beyond", and
+-- bin/random performs NO numeric range validation on --mean at all. Do
+-- not read anything below as a guarantee that large arguments won't
+-- happen -- they might, once a caller exists. What IS true regardless of
+-- what a future caller passes: raising loudly here is strictly safer than
+-- either of the two failure modes this fix replaces (silently hanging
+-- forever, or silently returning a JIT-artifact-dependent wrong answer).
 --
 -- FIX: bound the loop instead of trying to make it converge for arguments
--- this large. The proven invariant is "at most 1" in the regime where the
--- proof holds; EXP_MAX_CORRECTIONS = 3 gives a small margin above that
--- without ever letting the loop run away -- and empirically stops WAY
--- before iteration 17, so the JIT-artifact-vs-`-joff`-hang discrepancy
--- above is moot: the bound below never lets the loop run long enough to
--- reach it. A loud, immediate error is the right behavior here, the same
--- way M.ln refuses a non-positive argument outright rather than trying to
--- return something for it -- exp is not meant to be total either.
+-- this large. The IDEALIZED proof this file used to rely on ("at most 1
+-- combined adjustment," assuming exact arithmetic throughout) is not the
+-- proven maximum in REAL execution: M.div's own tiny (~2^-62 relative)
+-- rounding error, though negligible almost everywhere, can very rarely
+-- compound enough near this failure boundary to need a SECOND correction.
+-- An exhaustive search (over 600,000 trials across e in [45, 58], plus
+-- neighborhood probing around every case found) confirms 2 is the true
+-- observed maximum -- it happens in roughly 1 in 1,600 to 1 in 4,700
+-- otherwise-successful large-|x| calls near the boundary (rate varies by
+-- exponent), never more, and
+-- 3 never occurred naturally in that search (see task-7-report.md's
+-- fix-up appendix for the full sweep and two concrete m,e examples that
+-- reproducibly need exactly 2, confirmed against the real M.exp, not just
+-- a standalone reproduction). EXP_MAX_CORRECTIONS = 3 is therefore
+-- deliberately 1 unit of headroom ABOVE the empirically-confirmed
+-- maximum, not a number that was picked because it happened to pass --
+-- and correction_guard's own boundary (3 must succeed, 4 must fail) is
+-- pinned directly in the test suite (see M._correction_guard_for_tests
+-- below), independent of whether a natural exactly-3 input exists (none
+-- was found; if one did, this bound would still need to reject it, since
+-- letting the loop run indefinitely is exactly the bug being fixed). A
+-- loud, immediate error is the right behavior once the bound is hit, the
+-- same way M.ln refuses a non-positive argument outright rather than
+-- trying to return something for it -- exp is not meant to be total
+-- either.
 local EXP_MAX_CORRECTIONS = 3
 local function correction_guard(count, e)
 	if count > EXP_MAX_CORRECTIONS then
-		error(("fixed.exp: argument too large to range-reduce (e=%d): correction loop " ..
-			"exceeded %d iteration(s) without converging -- k has grown too large for " ..
+		error(("fixed.exp: argument too large to range-reduce (e=%d): correction attempt " ..
+			"#%d exceeded the bound of %d without converging -- k has grown too large for " ..
 			"Lua's double-precision arithmetic to nudge by +/-1 (see the comment above " ..
 			"this function), so this range reduction cannot correct for it. See M.exp's " ..
-			"doc comment."):format(e, EXP_MAX_CORRECTIONS))
+			"doc comment."):format(e, count, EXP_MAX_CORRECTIONS))
 	end
 end
+
+-- TEST-ONLY. Not part of the public API -- matches M._div_signed_for_tests'
+-- established pattern. Exposed so the test suite can pin
+-- EXP_MAX_CORRECTIONS' EXACT boundary directly (correction_guard(3, _)
+-- must not raise, correction_guard(4, _) must raise), rather than relying
+-- on a naturally-occurring M.exp input to happen to need precisely
+-- EXP_MAX_CORRECTIONS corrections. That reliance would not have worked:
+-- an exhaustive search (600,000+ trials, see task-7-report.md) found the
+-- natural maximum is 2 corrections, never 3 -- so no real M.exp call can
+-- distinguish `count > 3` from a `count >= 3` off-by-one mutant; only a
+-- direct test of the guard's own boundary can.
+M._correction_guard_for_tests = correction_guard
 
 --- Exponential. Range-reduce x = k*ln2 + r with |r| <= ln2/2, evaluate
 --- exp(r) by Taylor series, and return (exp(r), k) directly -- adding k to
@@ -649,31 +686,53 @@ end
 --- file's top-of-file REPRESENTATION note).
 ---
 --- DOMAIN: NOT total. Raises via correction_guard (see above) if range
---- reduction cannot converge within EXP_MAX_CORRECTIONS steps whenever a
---- correction is actually needed and k has grown too large for double
---- arithmetic to nudge by +/-1 -- in practice this can start as early as
---- |x| in the mid-2^10^15 range (empirically: e=54 still works, e=55
---- reliably raises) and is guaranteed once |x/ln2| >= 2^62 (~3.2e18,
---- to_int_trunc's own explicit clamp threshold). This program's real
---- callers stay far below either: exponential/Poisson need |x| in the low
---- tens (-ln(u)), and log-normal's mu is documented as reaching "into the
---- thousands," not 10^15+.
+--- reduction cannot converge within EXP_MAX_CORRECTIONS steps.
+---
+--- This is a GRADIENT, not a sharp cutoff at some single |x| value --
+--- measured directly (500-2000 trials per exponent, see
+--- task-7-report.md): failure rate is 0 for |x| < 2^52ish, then rises
+--- roughly monotonically (~8% at e=52, ~24% at e=53, ~49% at e=54, ~72%
+--- at e=55, still ~7.5% SUCCEEDING even at e=57) before reaching
+--- certainty once |x/ln2| >= 2^62 (~3.2e18, to_int_trunc's own explicit
+--- clamp threshold, where it is unconditional). The underlying cause is
+--- the same across the whole gradient: `k` is a plain Lua double, and once
+--- its magnitude crosses ~2^53 the double's ULP exceeds 1, so `k +/- 1`
+--- can stop moving `k` at all (see correction_guard's comment above for
+--- the full derivation and the two distinct ways this was confirmed by
+--- execution, not just reasoned about). WHICH specific inputs near a
+--- given exponent succeed or fail depends on their exact mantissa, not
+--- just their exponent -- hence a gradient rather than a threshold. The
+--- guard bounds the loop by ITERATION COUNT, not by checking any
+--- magnitude threshold directly, which is exactly why it stays correct
+--- regardless of where this gradient sits or how it might shift (e.g. if
+--- LN2_M's own representation ever changed).
+---
+--- M.exp has no live callers in this program as of this writing (see
+--- correction_guard's comment above) -- raising loudly rather than
+--- hanging or returning a wrong answer is the safety property that
+--- matters here, independent of what any future caller's argument range
+--- turns out to be.
 function M.exp(m, e)
 	if m == 0 then return M.from_int(1) end
-	-- k = round(x / ln2): truncate first, then nudge by at most one step.
-	-- Provably at most ONE combined adjustment across both while loops, not
-	-- "at most one each": to_int_trunc truncates TOWARD ZERO, so
-	-- |x/ln2 - k| < 1 strictly right after the initial truncation --  i.e.
-	-- the untruncated r/ln2 always starts inside the OPEN interval (-1, 1).
-	-- At most one of the two loops below can therefore ever fire, and
-	-- firing once shifts r by exactly one ln2, landing it inside
-	-- [-ln2/2, ln2/2] immediately. See task-7-report.md for the empirical
-	-- confirmation (large |x|, both signs, WITHIN the domain this proof
-	-- actually covers) that neither loop ever iterates more than once.
-	-- This proof holds ONLY while to_int_trunc truncates rather than
-	-- clamps -- see correction_guard's comment above for the regime where
-	-- it breaks down, and why the loops below are bounded rather than
-	-- trusted to always terminate on their own.
+	-- k = round(x / ln2): truncate first, then nudge by a small number of
+	-- steps (bounded below by correction_guard). IDEALIZED proof, assuming
+	-- exact arithmetic throughout: at most ONE combined adjustment across
+	-- both while loops, not "at most one each" -- to_int_trunc truncates
+	-- TOWARD ZERO, so |x/ln2 - k| < 1 strictly right after the initial
+	-- truncation, i.e. the untruncated r/ln2 always starts inside the OPEN
+	-- interval (-1, 1), and firing one correction shifts r by exactly one
+	-- ln2, landing it inside [-ln2/2, ln2/2].
+	--
+	-- REAL execution does not always match that idealized bound: M.div's
+	-- own small (~2^-62 relative) rounding error can very rarely compound
+	-- enough, near the failure boundary described above, to need a SECOND
+	-- correction -- confirmed empirically (2 is the observed maximum
+	-- across 600,000+ trials; see correction_guard's comment and
+	-- task-7-report.md). This is exactly why the loops below are bounded
+	-- by correction_guard rather than trusted to always terminate at 1 on
+	-- their own -- the idealized proof is real and useful (it is why
+	-- EXP_MAX_CORRECTIONS can be a SMALL constant instead of a large one),
+	-- but it is not, by itself, a termination guarantee.
 	local qm, qe = M.div(m, e, M.LN2_M, M.LN2_E)
 	local k = M.to_int_trunc(qm, qe)
 	local rm, re = reduce_r(m, e, k)

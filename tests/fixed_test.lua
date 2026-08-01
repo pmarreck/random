@@ -719,8 +719,21 @@ end
 -- This is where to_int_trunc's own explicit clamp branch guarantees
 -- non-convergence -- the case the coordinator's review measured directly.
 local pow62_m, pow62_e = 0x4000000000000000LL, 62
-local r62_ok, r62_why = rejects_exp(pow62_m, pow62_e, "correction loop")
+local r62_ok, r62_why = rejects_exp(pow62_m, pow62_e, "exceeded the bound")
 ok(r62_ok, "exp(2^62) raises naming the correction-loop failure, rather than hanging", r62_why)
+
+-- Pin the EXACT attempt count the guard fires at (#4 = EXP_MAX_CORRECTIONS
+-- + 1), not just that it fires at all. This is the second, cheaper half of
+-- pinning the > vs >= boundary: correction_guard's own doc comment
+-- promises it never fires before attempt #4 under the correct `count >
+-- EXP_MAX_CORRECTIONS` semantics; a `>=` mutant would fire at #3 instead,
+-- and this assertion on the real M.exp's error message (not just the
+-- isolated guard call below) catches that the count variable threaded
+-- through M.exp's own loop is the one actually reaching correction_guard.
+local _, pow62_err = pcall(fx.exp, pow62_m, pow62_e)
+ok(tostring(pow62_err):find("#4", 1, true) ~= nil,
+   "exp(2^62)'s error reports the actual failing attempt number (#4), pinning > vs >= directly",
+   tostring(pow62_err))
 
 -- A SECOND, lower-magnitude case: 2^62 is where to_int_trunc's own clamp
 -- branch guarantees non-convergence, but investigation (see the report)
@@ -738,8 +751,40 @@ ok(r62_ok, "exp(2^62) raises naming the correction-loop failure, rather than han
 -- catches this earlier, sneakier case too, not just the obvious
 -- explicit-clamp one above.
 local pow55_m, pow55_e = 0x4000000000000000LL, 55
-local r55_ok, r55_why = rejects_exp(pow55_m, pow55_e, "correction loop")
+local r55_ok, r55_why = rejects_exp(pow55_m, pow55_e, "exceeded the bound")
 ok(r55_ok, "exp(2^55) raises rather than silently returning a JIT-artifact wrong answer", r55_why)
+
+-- EXP_MAX_CORRECTIONS' exact boundary, pinned DIRECTLY against
+-- correction_guard itself (TEST-ONLY hook, matching
+-- fx._div_signed_for_tests' established pattern) rather than via a
+-- naturally-occurring M.exp input. That was tried first and does not
+-- work: an exhaustive search (600,000+ trials across e in [45, 58], plus
+-- neighborhood probing -- see task-7-report.md) found the natural
+-- maximum is 2 corrections, never 3, so no real M.exp call can
+-- distinguish `count > 3` (correct) from a `count >= 3` off-by-one
+-- mutant -- both behave identically on every input that actually occurs.
+-- This is a real, previously-missing gap: changing `>` to `>=` survived
+-- the entire suite before this check existed (confirmed by the
+-- coordinator's review, and reproduced independently below in the
+-- mutation-testing section).
+local guard_ok3 = pcall(fx._correction_guard_for_tests, 3, 0)
+ok(guard_ok3, "correction_guard(3, _) does not raise -- 3 corrections is within EXP_MAX_CORRECTIONS")
+local guard_ok4 = pcall(fx._correction_guard_for_tests, 4, 0)
+ok(not guard_ok4, "correction_guard(4, _) raises -- 4 corrections exceeds EXP_MAX_CORRECTIONS " ..
+   "(this pair is what actually kills a > -> >= off-by-one mutant; see task-7-report.md)")
+
+-- A REAL M.exp input needing exactly 2 corrections, found by search (not
+-- analytically constructed -- the idealized "at most 1" proof in M.exp's
+-- own doc comment does not by itself predict this; M.div's own tiny
+-- compounding rounding error at this magnitude is what pushes it to 2,
+-- confirmed empirically). Documents, with a concrete regression pin, that
+-- the correction loop genuinely exercises more than the single-iteration
+-- case every other check in this file happens to hit, and that
+-- EXP_MAX_CORRECTIONS = 3 has real (not just nominal) headroom above it.
+local corr2_m, corr2_e = 6978193117490312577LL, 50
+local corr2_okc, corr2_err = pcall(fx.exp, corr2_m, corr2_e)
+ok(corr2_okc, "a real M.exp input known to need exactly 2 corrections still succeeds",
+   tostring(corr2_err))
 
 end
 
