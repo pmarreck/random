@@ -235,6 +235,37 @@ function M.from_int(v)
 	return M.norm(ffi.cast(i64, v), 62)
 end
 
+--- Truncate a soft-float toward zero into a Lua integer. Values whose
+--- magnitude exceeds 2^53 are clamped, since beyond that a Lua number
+--- (a double) cannot represent consecutive integers exactly.
+---
+--- PRECONDITION-derived shortcut: e >= 62 (sh >= 0) means the shift is a
+--- LEFT shift or none at all, and since |m| is already >= 2^62 by the
+--- normalization invariant, the true magnitude is already >= 2^62 -- past
+--- the 2^53 clamp threshold -- before any shift is even applied. So this
+--- branch clamps immediately rather than computing `m * POW2[sh]`, which
+--- the brief this was built from did NOT: for sh in [1, 62] that product
+--- overflows int64 and silently wraps (m alone occupies bits 62-63,
+--- leaving no headroom for a left shift of even 1 more bit), returning
+--- garbage instead of the documented clamp. Confirmed directly: probing
+--- the brief's version at m=2^62 (minimum normalized mantissa), e=70
+--- (sh=8) returned -9223372036854775808 (INT64_MIN, a wrapped negative
+--- garbage value) instead of the documented +2^53 clamp for a genuinely
+--- huge POSITIVE value -- silently wrong sign included. Unreachable by
+--- exp() for any argument in this program's real domain (would need
+--- |x| ~ 2^62 * ln2 ~= 3.2e18), but a latent bug in a function this task
+--- introduces is still a bug.
+function M.to_int_trunc(m, e)
+	if m == 0 then return 0 end
+	local sh = e - 62
+	if sh >= 0 then
+		return (m < 0) and -9007199254740992 or 9007199254740992
+	end
+	local s = -sh
+	if s > 62 then return 0 end
+	return tonumber(m / POW2[s])
+end
+
 --- Magnitude-only division: q = floor(a * 2^62 / b), via restoring binary
 --- long division, one bit at a time. q0 = floor(a/b) gives the integer
 --- part (0 or 1, since normalized a,b are within a factor of 2 of each
@@ -502,6 +533,101 @@ function M.ln(m, e)
 		lm, le = M.add(lm, le, sm, se)
 	end
 	return lm, le
+end
+
+-- ln2 / 2, precomputed once: it never depends on exp's argument, so
+-- computing it fresh via M.div on every M.exp call (as the brief's inline
+-- version did) would be wasted work re-derived from a constant every time.
+-- Same "precompute once at module load" pattern as ODD_RECIP/FACT_RECIP.
+local HALF_LN2_M, HALF_LN2_E = M.div(M.LN2_M, M.LN2_E, M.from_int(2))
+local NEG_HALF_LN2_M, NEG_HALF_LN2_E = M.neg(HALF_LN2_M, HALF_LN2_E)
+
+--- r = x - k*ln2, recomputed from x and a candidate k (never from a running
+--- r), so each candidate k in M.exp's correction loop is evaluated exactly,
+--- not by accumulating a drifting adjustment. Factored out so the range
+--- reduction's one arithmetic decision -- SUBTRACT k*ln2, not add it --
+--- exists at a single call site instead of being copy-pasted at each of
+--- the three places (initial estimate, +1 correction, -1 correction) that
+--- need it, which would otherwise let a sign typo survive in one of three
+--- near-identical blocks undetected.
+local function reduce_r(m, e, k)
+	local km, ke = M.from_int(k)
+	local sm, se = M.mul(M.LN2_M, M.LN2_E, km, ke)
+	return M.sub(m, e, sm, se)
+end
+
+-- Reciprocals of 1!..16! as soft-floats, for the exp Taylor series below.
+-- Built at module load via M.mul/M.div, same pattern as ODD_RECIP above for
+-- ln's atanh series -- keeps division out of exp's hot loop.
+--
+-- "16 terms" is measured, not assumed from the brief (see
+-- task-7-report.md): at the worst case this series ever sees, |r| = ln2/2,
+-- the bc-computed idealized n=16 term is ~2.07e-21 -- already ~100x below
+-- this kernel's own ~62-bit ULP floor (2^-62 ~= 2.168e-19) -- and the tail
+-- beyond n=16 is ~4.2e-23, negligible. Unlike ln's atanh series (which
+-- needed 20 terms, not the brief's claimed 12, because convergence depends
+-- on t up to 1/3 with no factorial in the denominator), exp's
+-- factorial-weighted Taylor series converges far faster over the bounded
+-- |r| <= ln2/2 range reduction guarantees -- 16 terms here is independently
+-- the right number for THIS series, not a coincidence of matching the
+-- brief. No overflow risk despite growing factorials: every intermediate
+-- is a normalized soft-float (2^62 <= |mantissa| < 2^63), where magnitude
+-- lives entirely in the exponent field -- unlike a fixed-point format,
+-- 16! growing large costs nothing but a bigger exponent.
+local FACT_RECIP = {}
+do
+	local fm, fe = M.from_int(1)
+	for n = 1, 16 do
+		local nm, ne = M.from_int(n)
+		fm, fe = M.mul(fm, fe, nm, ne)          -- fm, fe = n!
+		local om, oe = M.from_int(1)
+		FACT_RECIP[n] = { M.div(om, oe, fm, fe) }
+	end
+end
+
+--- Exponential. Range-reduce x = k*ln2 + r with |r| <= ln2/2, evaluate
+--- exp(r) by Taylor series, and return (exp(r), k) directly -- adding k to
+--- exp(r)'s own exponent IS multiplying by 2^k, so no renormalization is
+--- needed and no fold-back into a fixed-width mantissa ever happens (that
+--- fold is exactly what would overflow log-normal's exp() for a large mu,
+--- the reason this soft-float representation exists at all -- see the
+--- file's top-of-file REPRESENTATION note).
+function M.exp(m, e)
+	if m == 0 then return M.from_int(1) end
+	-- k = round(x / ln2): truncate first, then nudge by at most one step.
+	-- Provably at most ONE combined adjustment across both while loops, not
+	-- "at most one each": to_int_trunc truncates TOWARD ZERO, so
+	-- |x/ln2 - k| < 1 strictly right after the initial truncation --  i.e.
+	-- the untruncated r/ln2 always starts inside the OPEN interval (-1, 1).
+	-- At most one of the two loops below can therefore ever fire, and
+	-- firing once shifts r by exactly one ln2, landing it inside
+	-- [-ln2/2, ln2/2] immediately. See task-7-report.md for the empirical
+	-- confirmation (large |x|, both signs) that neither loop ever iterates
+	-- more than once in practice, matching this proof.
+	local qm, qe = M.div(m, e, M.LN2_M, M.LN2_E)
+	local k = M.to_int_trunc(qm, qe)
+	local rm, re = reduce_r(m, e, k)
+	while M.cmp(rm, re, HALF_LN2_M, HALF_LN2_E) > 0 do
+		k = k + 1
+		rm, re = reduce_r(m, e, k)
+	end
+	while M.cmp(rm, re, NEG_HALF_LN2_M, NEG_HALF_LN2_E) < 0 do
+		k = k - 1
+		rm, re = reduce_r(m, e, k)
+	end
+	-- exp(r) = sum_{n=0..16} r^n / n!, computed incrementally: pow_m/pow_e
+	-- tracks r^n, updated by one multiply per term rather than recomputed
+	-- from scratch each time.
+	local acc_m, acc_e = M.from_int(1)
+	local pow_m, pow_e = M.from_int(1)
+	for n = 1, 16 do
+		pow_m, pow_e = M.mul(pow_m, pow_e, rm, re)
+		local cm, ce = M.mul(pow_m, pow_e, FACT_RECIP[n][1], FACT_RECIP[n][2])
+		if cm == 0 then break end
+		acc_m, acc_e = M.add(acc_m, acc_e, cm, ce)
+	end
+	-- multiply by 2^k purely in the exponent -- see the doc comment above.
+	return acc_m, acc_e + k
 end
 
 return M

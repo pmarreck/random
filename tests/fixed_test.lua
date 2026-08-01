@@ -29,6 +29,18 @@ print("Testing integer-only numeric kernel...")
 print("============================================")
 print("")
 print("--- Section 1: representation and multiply ---")
+-- Each section below is wrapped in its own `do ... end` block purely to
+-- scope its locals out of existence once the section finishes. LuaJIT caps
+-- a single function (the whole chunk counts as one) at 200 simultaneously
+-- ACTIVE locals; this file's checks are deliberately verbose (many small,
+-- readable named locals per assertion, matching the rest of the project's
+-- style), and by Section 5 the unscoped total exceeded that cap --
+-- "main function has more than 200 local variables" is a real compile
+-- error, hit while adding this task's exp tests, not a hypothetical. No
+-- section references another section's locals (verified by grep before
+-- this change), so the wrap is a pure scoping fix with zero behavior
+-- change -- ok()/fails/checks are upvalues captured by closure, unaffected.
+do
 
 -- 1.0 is mantissa 2^62 with exponent 0
 local ONE_M, ONE_E = fx.from_int(1)
@@ -108,8 +120,11 @@ local hi2, lo2 = fx.mul128(0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL)
 ok(hi2 == 0xFFFFFFFFFFFFFFFEULL and lo2 == 1ULL, "mul128(2^64-1, 2^64-1) carries correctly",
    ("got hi=%s lo=%s"):format(tostring(hi2), tostring(lo2)))
 
+end
+
 print("")
 print("--- Section 2: addition, subtraction, comparison ---")
+do
 
 local function eqint(m, e, want)
 	local wm, we = fx.from_int(want)
@@ -260,8 +275,11 @@ ok(rt1 == five1 and rt2 == five2, "neg(neg(5)) == 5 (double negation round-trips
 local zsum1, zsum2 = fx.add(five1, five2, negfive1, negfive2)
 ok(zsum1 == 0LL and zsum2 == 0, "x + neg(x) == canonical zero")
 
+end
+
 print("")
 print("--- Section 3: divide ---")
+do
 
 -- division by zero must assert, not silently produce garbage
 local function rejects_div(m1, e1, m2, e2, want_msg)
@@ -478,8 +496,11 @@ do
 		("got m=%s e=%d want m=6250148628221868064 e=4999"):format(tostring(jrm), jre))
 end
 
+end
+
 print("")
 print("--- Section 4: natural log (ln) ---")
+do
 
 -- ln(1) == 0 exactly
 local l1, l2 = fx.ln(fx.from_int(1))
@@ -595,6 +616,86 @@ ok(lnbelow_m < 0, "ln(1023/1024) is negative (value just below 1.0)",
 ok(math_abs_rel(belowsum_m, belowsum_e, 0LL, 0) < 1e-16 or belowsum_m == 0,
    "ln(1023/1024) + ln(1024/1023) == 0",
    ("got m=%s e=%d"):format(tostring(belowsum_m), belowsum_e))
+
+end
+
+print("")
+print("--- Section 5: exp ---")
+-- NOTE: the brief this task was built from labeled this "Section 4" --
+-- stale, since ln (landed in Task 6, after the brief was written) already
+-- occupies that slot above. Renumbered for a monotonic file.
+do
+
+-- exp(0) == 1 exactly. m == 0 takes M.exp's early-return short circuit, so
+-- this ALONE never touches range reduction or the Taylor series -- the same
+-- blind spot the ln section's own "CRITICAL" comment warns about for
+-- power-of-two inputs. Kept as the base case; the round-trip and
+-- metamorphic checks below are what actually exercise the series.
+local e1m, e1e = fx.exp(0LL, 0)
+ok(fx.cmp(e1m, e1e, fx.from_int(1)) == 0, "exp(0) == 1 exactly")
+
+-- exp(ln(x)) == x round-trip over a sampled set. Every ln(x) here is
+-- POSITIVE (all v > 1), so on its own this only exercises exp with a
+-- non-negative argument -- see the negative-argument coverage below, the
+-- path M.div actually dispatches to div_signed (the JIT-mitigated cold
+-- path div's own tests exercise, but exp's tests did not until now).
+local rt_ok, rt_worst = true, 0
+for _, v in ipairs({2, 3, 5, 10, 100, 1000}) do
+	local xm, xe = fx.from_int(v)
+	local lm, le = fx.ln(xm, xe)
+	local rm, re = fx.exp(lm, le)
+	local err = math_abs_rel(rm, re, xm, xe)
+	if err > rt_worst then rt_worst = err end
+	if err > 1e-15 then rt_ok = false end
+end
+ok(rt_ok, "exp(ln(x)) == x for sampled x (rel err < 1e-15)", ("worst=%.3e"):format(rt_worst))
+-- Printed unconditionally (not just on failure, which is all `ok`'s own
+-- detail message gives you) -- matching kernel_bc_sweep's own convention
+-- of always surfacing its worst-case metric so a maintainer can see the
+-- actual measured number without forcing a failure first.
+print(("  worst exp(ln(x)) == x relative error: %.3e"):format(rt_worst))
+
+-- exp of a large positive argument must not overflow: the 2^k factor has to
+-- stay in the exponent field, never get folded into the (fixed-width)
+-- mantissa. exp(50) ~ 5.18e21 -- if the range-reduction "return acc, e + k"
+-- step were dropped (returning exp(r) alone, k discarded), this exponent
+-- would stay near 0 instead of far exceeding 62. See "drop the 2^k
+-- exponent adjustment" in task-7-report.md's mutation results.
+local bm, be = fx.exp(fx.from_int(50))
+ok(be > 62, "exp(50) uses the exponent rather than overflowing", ("e=%d"):format(be))
+
+-- exp of a large NEGATIVE argument must not underflow to canonical zero,
+-- mirroring the overflow check above. This is also the first check in this
+-- section to feed M.exp's range reduction a NEGATIVE mantissa end to end:
+-- x = -50 makes the internal M.div(x, ln2, ...) dispatch through
+-- div_signed (the jit.off'd cold path) rather than the fast positive-only
+-- path -- exactly the scenario this task's brief warned would be exercised
+-- "heavily" by real callers (exponential and Poisson both compute -ln(u)).
+local nbm, nbe = fx.exp(fx.neg(fx.from_int(50)))
+ok(nbm ~= 0 and nbe < -62, "exp(-50) uses the exponent rather than underflowing to zero",
+   ("m=%s e=%d"):format(tostring(nbm), nbe))
+
+-- Metamorphic, oracle-free: exp(x) * exp(-x) == 1 for a genuinely
+-- fractional, non-power-of-two x (37/10 = 3.7), independently exercising
+-- BOTH of M.div's dispatch paths against each other (positive x through
+-- the fast path, -x through div_signed) via a property that must hold
+-- regardless of which internal path computed which factor.
+local n37m, n37e = fx.from_int(37)
+local n10m, n10e = fx.from_int(10)
+local x37m, x37e = fx.div(n37m, n37e, n10m, n10e)            -- x = 3.7
+local negx37m, negx37e = fx.neg(x37m, x37e)
+local pexpm, pexpe = fx.exp(x37m, x37e)
+local nexpm, nexpe = fx.exp(negx37m, negx37e)
+local prodm, prode = fx.mul(pexpm, pexpe, nexpm, nexpe)
+ok(math_abs_rel(prodm, prode, fx.from_int(1)) < 1e-15,
+   "exp(3.7) * exp(-3.7) == 1 (metamorphic; exercises both div dispatch paths)",
+   ("got m=%s e=%d"):format(tostring(prodm), prode))
+-- Rules out the vacuous mutant where a broken exp always returns 1: if it
+-- did, the product-== -1 property above would pass for the wrong reason.
+ok(fx.cmp(pexpm, pexpe, fx.from_int(1)) ~= 0 and fx.cmp(nexpm, nexpe, fx.from_int(1)) ~= 0,
+   "exp(3.7) and exp(-3.7) are each individually != 1 (rules out an always-return-1 mutant)")
+
+end
 
 print("")
 print("============================================")

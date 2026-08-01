@@ -1,4 +1,4 @@
--- Sweeps M.div and M.ln against `bc -l` (arbitrary precision) as an
+-- Sweeps M.div, M.ln, and M.exp against `bc -l` (arbitrary precision) as an
 -- independent oracle. This exists because a Lua-double comparison CANNOT
 -- validate this kernel's ~2^-62 (~2.2e-19) precision claim: tonumber() on a
 -- 63-bit mantissa collapses it into an IEEE double's 53-bit mantissa,
@@ -8,7 +8,13 @@
 -- from that lossy conversion, before bc's exact rational arithmetic showed
 -- the REAL error was three orders of magnitude smaller. Only bc's
 -- arbitrary-precision decimal arithmetic can actually measure error down
--- at the scale this kernel claims to carry.
+-- at the scale this kernel claims to carry. (Task 7 hit the identical trap
+-- again independently, in fixed_test.lua's own exp(ln(x))==x round-trip
+-- check: it reports a flat 0.000e+00 worst-case error because
+-- math_abs_rel's double-precision scoring cannot resolve the ~1e-18-scale
+-- error that is actually there -- see this file's exp sweep below for the
+-- real number, and task-7-report.md for the mantissa-level proof it is
+-- not bit-exact.)
 --
 -- No `math.*`, no float literals, never `^` -- except here, deliberately:
 -- this file is test-only infrastructure that talks to bc, not kernel code.
@@ -28,6 +34,29 @@ local EXP_MANTISSA_COUNT = fast and 5 or 10
 local EXP_DIFFS = {-5000, -500, -50, -7, -1, 0, 1, 7, 50, 500, 5000}
 local LN_MANTISSA_COUNT = fast and 12 or 40
 local LN_EXPS = {-50, -5, -1, 0, 1, 5, 50}
+-- "EXPFN" (never "EXP", already taken above by div's EXPONENT sweep) is
+-- the exp() FUNCTION sweep count, split into two domains that stress
+-- different things: RDOMAIN samples |r| <= ln2/2 directly (k forced to 0
+-- by construction), isolating the Taylor series' own convergence from any
+-- range-reduction arithmetic -- this is the domain task-7-report.md's
+-- "worst-case series error" figure is measured over. XDOMAIN instead
+-- samples whole integers x, exercising the FULL pipeline (div-based k
+-- estimate, the +/-1 correction loop, and the series) exactly as a real
+-- caller would.
+local EXPFN_RDOMAIN_COUNT = fast and 40 or 150
+-- x = -700 and x = -5000 are EXPECTED to print "SKIP" (ref == 0), same as
+-- any ln case near ref == 0: e(-700) ~= 1e-304 and e(-5000) ~= 1e-2172,
+-- both far below what `scale=90` can represent (bc rounds anything under
+-- ~1e-90 to exactly 0 at this scale) -- not a bug in add_exp_case or in
+-- M.exp, just bc's own fixed decimal precision running out at extreme
+-- magnitudes. Their positive counterparts (700, 5000) are NOT skipped:
+-- e(x) for large positive x is merely a huge integer, and scale (which
+-- only bounds FRACTIONAL digits) does not limit integer-part magnitude at
+-- all. Confirmed by direct A/B measurement at FAST=1: 21 skips for
+-- div+ln alone (this file's state before this task) vs. 23 after adding
+-- the exp sweep -- exactly the +2 these two labels predict, not more.
+local EXPFN_XDOMAIN_VALUES = {1, -1, 2, -2, 7, -7, 22, -22, 50, -50, 100, -100,
+                               700, -700, 5000, -5000}
 
 -- Deterministic LCG (Knuth/PCG multiplier), fixed seed: reproducible across
 -- machines and runs, no dependency on wall-clock time. High bits are used
@@ -130,6 +159,22 @@ local function add_ln_case(m, e, label)
 	labels[#labels + 1] = label
 end
 
+local function add_exp_case(m, e, label)
+	local rm, re = fx.exp(m, e)
+	local ms = tostring(m):gsub("LL$", "")
+	local rms = tostring(rm):gsub("LL$", "")
+	-- bc -l's e() is its built-in exponential -- the natural oracle
+	-- counterpart to l() above, same rationale: lean on bc's arbitrary-
+	-- precision e() as ground truth for THIS TEST, never inside the
+	-- shipped kernel (see the file's top-of-file comment).
+	local expr = ("val = %s * 2^(%d); ref = e(val); our = %s * 2^(%d); " ..
+		"if (ref == 0) print \"%s SKIP\\n\"; " ..
+		"if (ref != 0) print \"%s \", (our - ref) / abs(ref), \" \", abs(our - ref), \"\\n\""):format(
+		ms, e - 62, rms, re - 62, label, label)
+	bc_lines[#bc_lines + 1] = expr
+	labels[#labels + 1] = label
+end
+
 -- Sign quadrants cycle deterministically across the sweep so it exercises
 -- the negative/inexact truncation path (M.div computes a magnitude via
 -- floor, then reapplies the sign) exactly as often as the positive path.
@@ -185,8 +230,51 @@ for i = 1, #lnset do
 	end
 end
 
-io.stderr:write(("kernel_bc_sweep: %d div cases, %d ln cases (FAST=%s)\n"):format(
-	div_pair_count, ln_case_count, tostring(fast ~= nil)))
+-- === exp: r-domain sweep, |r| <= ln2/2 (k forced to 0), isolating the ===
+-- === Taylor series' own convergence -- see task-7-report.md's         ===
+-- === "worst-case series error" figure, measured exactly over this     ===
+-- === same domain.                                                     ===
+local HALF_LN2_M, HALF_LN2_E = fx.div(fx.LN2_M, fx.LN2_E, fx.from_int(2))
+local NEG_HALF_LN2_M, NEG_HALF_LN2_E = fx.neg(HALF_LN2_M, HALF_LN2_E)
+local expfn_r_count = 0
+for _, e in ipairs({ -1, -2, -3 }) do
+	local rset = mantissa_set(EXPFN_RDOMAIN_COUNT)
+	for i = 1, #rset do
+		local mm = ffi.cast(i64, rset[i])
+		local rm, re = fx.norm(mm, e)
+		if (i % 2) == 0 then rm, re = fx.neg(rm, re) end
+		-- Only keep cases actually inside the series' documented domain --
+		-- a case outside |r| <= ln2/2 here would still get exp()'d
+		-- correctly (range reduction handles any x), but would no longer
+		-- isolate series-only error, which is the point of this sweep.
+		if fx.cmp(rm, re, HALF_LN2_M, HALF_LN2_E) <= 0 and
+		   fx.cmp(rm, re, NEG_HALF_LN2_M, NEG_HALF_LN2_E) >= 0 then
+			add_exp_case(rm, re, ("expfn_r_%d_%d"):format(e, i))
+			expfn_r_count = expfn_r_count + 1
+		end
+	end
+end
+-- Exact boundary: r = +ln2/2 and r = -ln2/2, the edges the series has to
+-- cover per M.exp's own documented range-reduction guarantee.
+add_exp_case(HALF_LN2_M, HALF_LN2_E, "expfn_r_boundary_pos")
+add_exp_case(NEG_HALF_LN2_M, NEG_HALF_LN2_E, "expfn_r_boundary_neg")
+expfn_r_count = expfn_r_count + 2
+
+-- === exp: x-domain sweep, whole integers through the FULL pipeline ===
+-- === (div-based k estimate, +/-1 correction loop, series) -- both   ===
+-- === signs, small and large |x|, matching real callers             ===
+-- === (exponential/Poisson: -ln(u); log-normal: mu + sigma*z).       ===
+local expfn_x_count = 0
+for _, v in ipairs(EXPFN_XDOMAIN_VALUES) do
+	local m, e = fx.from_int(v)
+	add_exp_case(m, e, ("expfn_x_%d"):format(v))
+	expfn_x_count = expfn_x_count + 1
+end
+
+io.stderr:write(("kernel_bc_sweep: %d div cases, %d ln cases, %d exp cases " ..
+	"(%d r-domain + %d x-domain) (FAST=%s)\n"):format(
+	div_pair_count, ln_case_count, expfn_r_count + expfn_x_count,
+	expfn_r_count, expfn_x_count, tostring(fast ~= nil)))
 
 local bc_script = table.concat(bc_lines, "\n") .. "\n"
 local tmp = os.tmpname()
@@ -266,11 +354,28 @@ end
 local DIV_RTOL = 5e-19
 local LN_RTOL = 5e-18     -- ~23x the 2^-62 ULP, budget for series + compounding
 local LN_ATOL = 1e-15     -- ~350x the observed cancellation-case absolute error
+-- exp's r-domain (|r| <= ln2/2, k=0) isolates the Taylor series' own
+-- convergence: measured worst case (task-7-report.md) 3.32e-18 -- roughly
+-- 3x this bound, giving margin without hiding a real regression the way
+-- an order-of-magnitude-looser bound would.
+local EXPFN_R_RTOL = 1e-17
+-- exp's x-domain (full pipeline, |x| up to 5000) additionally compounds
+-- M.LN2_M's own fixed ~1e-19-scale truncation error, AMPLIFIED linearly by
+-- k = round(x/ln2) -- k ~ 7213 at x=5000 -- exactly the same mechanism
+-- M.ln's own k*ln2 term is documented to suffer from (see M.ln's doc
+-- comment and this file's LN_ATOL note above), not a series or
+-- range-reduction defect. Measured worst case 1.51e-15 at x=5000; unlike
+-- ln, exp(x) is never zero for finite x, so there is no near-zero
+-- cancellation blind spot here and a pure relative bound is sufficient
+-- (no atol needed).
+local EXPFN_X_RTOL = 4e-15
 
 local worst_div_rel, worst_div_label = 0, nil
 local worst_ln_rel, worst_ln_rel_label = 0, nil
 local worst_ln_abs, worst_ln_abs_label = 0, nil
-local div_bad, ln_bad = 0, 0
+local worst_expfn_r_rel, worst_expfn_r_label = 0, nil
+local worst_expfn_x_rel, worst_expfn_x_label = 0, nil
+local div_bad, ln_bad, expfn_bad = 0, 0, 0
 local skipped = 0
 local seen = 0
 for line in out:gmatch("[^\n]+") do
@@ -291,16 +396,26 @@ for line in out:gmatch("[^\n]+") do
 				if arel > worst_ln_rel then worst_ln_rel, worst_ln_rel_label = arel, label end
 				if aabs > worst_ln_abs then worst_ln_abs, worst_ln_abs_label = aabs, label end
 				if arel > LN_RTOL and aabs > LN_ATOL then ln_bad = ln_bad + 1 end
+			elseif label:match("^expfn_r_") then
+				if arel > worst_expfn_r_rel then worst_expfn_r_rel, worst_expfn_r_label = arel, label end
+				if arel > EXPFN_R_RTOL then expfn_bad = expfn_bad + 1 end
+			elseif label:match("^expfn_x_") then
+				if arel > worst_expfn_x_rel then worst_expfn_x_rel, worst_expfn_x_label = arel, label end
+				if arel > EXPFN_X_RTOL then expfn_bad = expfn_bad + 1 end
 			end
 		end
 	end
 end
 
-local expected = div_pair_count + ln_case_count
+local expected = div_pair_count + ln_case_count + expfn_r_count + expfn_x_count
 print(("bc sweep: %d/%d cases measured (%d skipped as ref==0)"):format(seen, expected, skipped))
 print(("worst div relative error: %.6e (%s)"):format(worst_div_rel, tostring(worst_div_label)))
 print(("worst ln  relative error: %.6e (%s)"):format(worst_ln_rel, tostring(worst_ln_rel_label)))
 print(("worst ln  absolute error: %.6e (%s)"):format(worst_ln_abs, tostring(worst_ln_abs_label)))
+print(("worst exp r-domain (k=0, series-only) relative error: %.6e (%s)"):format(
+	worst_expfn_r_rel, tostring(worst_expfn_r_label)))
+print(("worst exp x-domain (full pipeline)     relative error: %.6e (%s)"):format(
+	worst_expfn_x_rel, tostring(worst_expfn_x_label)))
 
 local fails = 0
 if seen == 0 then
@@ -315,6 +430,14 @@ end
 if ln_bad > 0 then
 	io.stderr:write(("kernel_bc_sweep FAILED: %d ln case(s) exceeded BOTH rtol %.1e and atol %.1e\n"):format(
 		ln_bad, LN_RTOL, LN_ATOL))
+	fails = fails + 1
+end
+if expfn_bad > 0 then
+	io.stderr:write(("kernel_bc_sweep FAILED: %d exp case(s) exceeded rtol (r-domain %.1e / x-domain %.1e) " ..
+		"(worst r=%.6e %s, worst x=%.6e %s)\n"):format(
+		expfn_bad, EXPFN_R_RTOL, EXPFN_X_RTOL,
+		worst_expfn_r_rel, tostring(worst_expfn_r_label),
+		worst_expfn_x_rel, tostring(worst_expfn_x_label)))
 	fails = fails + 1
 end
 
