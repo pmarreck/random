@@ -400,22 +400,32 @@ check_div(seven_m, seven_e, neg11_m, neg11_e, -5869418568907584605LL, -1,
 check_div(neg7_m, neg7_e, neg11_m, neg11_e, 5869418568907584605LL, -1,
 	"-7 / -11 == 7/11: double negation, positive inexact result")
 
--- JIT miscompilation regression (warmed): discovered while extending
--- tests/kernel_bc_sweep.lua to cover negative operands (a positive-only
--- sweep can NEVER see this -- it only manifests through the sign-handling
--- branches). LuaJIT 2.1.1774638290's trace compiler returns the WRONG
--- mantissa for fx.div(-4735866454561506793, e, -6988739120546013429, 0)
--- once M.div has been JIT-warmed by ~500+ prior calls -- verified against
--- bc's exact big-integer floor((|m1|*2^62)/|m2|), and against
--- `luajit -joff` on the identical script, both of which agree on
--- 6250148628221868064 (e adjusts by the usual normalization step). This
--- is a LANGUAGE-RUNTIME bug, not a logic bug in this file; M.div carries a
--- `jit.off(M.div, true)` specifically to neutralize it. This test exists
--- to catch a regression if that protection is ever accidentally removed:
--- it warms the JIT the same way the bug's discovery did (many prior
--- varied div calls, mixing signs) and then checks the known-bad case.
--- 2000 warmup calls is 4x the ~500 observed to reliably trigger the bug
--- when unprotected.
+-- JIT miscompilation regression, split dispatch (warmed): discovered
+-- while extending tests/kernel_bc_sweep.lua to cover negative operands (a
+-- positive-only sweep can NEVER see this -- it only manifests through the
+-- sign-handling branches). LuaJIT 2.1.1774638290's trace compiler returns
+-- the WRONG mantissa for fx.div(-4735866454561506793, e,
+-- -6988739120546013429, 0) once its trace has been JIT-warmed by ~500+
+-- prior calls -- verified against bc's exact big-integer
+-- floor((|m1|*2^62)/|m2|), and against `luajit -joff` on the identical
+-- script, both of which agree on 6250148628221868064 (e adjusts by the
+-- usual normalization step). Filed upstream as LuaJIT/LuaJIT#1499. This
+-- is a LANGUAGE-RUNTIME bug, not a logic bug in this file.
+--
+-- M.div now dispatches negative operands to div_signed (which carries
+-- `jit.off(div_signed)`) and positive operands to a fast path that calls
+-- divmag directly, with no sign branches of its own -- see the
+-- jit.off(div_signed) doc comment in lib/fixed.lua for why that split,
+-- not a blanket jit.off(M.div), is what neutralizes the bug. This test
+-- exercises fx.div's PUBLIC entry point (not div_signed directly), so it
+-- guards the split dispatch as actually wired up, not just the
+-- lower-level pieces in isolation: it warms the JIT the same way the
+-- bug's discovery did (many prior varied div calls, mixing signs, routed
+-- through the same M.div every real caller uses) and then checks the
+-- known-bad case. 2000 warmup calls is 4x the ~500 observed to reliably
+-- trigger the bug when unprotected. Verified this test fails if
+-- jit.off(div_signed) is removed, and passes with it restored -- see
+-- task-6-report.md's split-dispatch verification appendix for both runs.
 do
 	local jit_m1, jit_m2 = -4735866454561506793LL, -6988739120546013429LL
 	local lcg = 0x9E3779B97F4A7C15ULL
@@ -433,7 +443,7 @@ do
 	end
 	local jrm, jre = fx.div(jit_m1, 5000, jit_m2, 0)
 	ok(jrm == 6250148628221868064LL and jre == 4999,
-		"div stays correct on the known JIT-miscompilation trigger after 2000 warmup calls",
+		"div's split dispatch stays correct on the known JIT-miscompilation trigger after 2000 warmup calls",
 		("got m=%s e=%d want m=6250148628221868064 e=4999"):format(tostring(jrm), jre))
 end
 

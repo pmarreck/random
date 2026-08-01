@@ -235,11 +235,11 @@ function M.from_int(v)
 	return M.norm(ffi.cast(i64, v), 62)
 end
 
---- Soft-float divide. Computes q = floor(a * 2^62 / b) via restoring binary
---- long division, one bit at a time: q0 = floor(a/b) gives the integer part
---- (0 or 1, since normalized a,b are within a factor of 2 of each other),
---- then 62 more quotient bits come from repeatedly doubling the remainder
---- and subtracting b whenever it exceeds b.
+--- Magnitude-only division: q = floor(a * 2^62 / b), via restoring binary
+--- long division, one bit at a time. q0 = floor(a/b) gives the integer
+--- part (0 or 1, since normalized a,b are within a factor of 2 of each
+--- other), then 62 more quotient bits come from repeatedly doubling the
+--- remainder and subtracting b whenever it exceeds b.
 ---
 --- The brief this was built from tried to extract those 62 bits in two
 --- 31-bit jumps (t1 = (r0 * 2^31) / b, then t2 from the leftover remainder),
@@ -256,32 +256,18 @@ end
 --- there is no larger uniformly-safe chunk. See tests/kernel_bc_sweep for
 --- the sweep against `bc -l` that caught this.
 ---
---- PRECONDITION: both operands normalized (2^62 <= |m| < 2^63) or canonical
---- zero, matching M.mul's precondition and asserted the same way. Unlike
---- mul's assert this one is not purely defensive: q0 = floor(a/b) is only
+--- PRECONDITION: both a and b are already-extracted magnitudes of
+--- normalized operands (2^62 <= a,b < 2^63) -- checked by every caller
+--- below, not here (see M.div and div_signed). q0 = floor(a/b) is only
 --- guaranteed to be 0 or 1 (so q0 * 2^62 cannot overflow) when a and b are
 --- within a factor of 2 of each other, which normalization guarantees and
---- nothing else does. The 62-bit fractional loop itself is safe for any
---- nonzero magnitudes below 2^63; it is q0's bound that depends on the
---- invariant.
-function M.div(m1, e1, m2, e2)
-	-- Divisor-zero check MUST come before the m1==0 shortcut: 0/0 is
-	-- undefined, not canonical zero, and M.ln takes exactly this stance on
-	-- its own domain (asserts on m<=0 rather than returning -inf). An
-	-- earlier ordering let `div(0, e, 0, e)` return (0LL, 0) silently,
-	-- unreachable from any current call site but a live footgun for
-	-- anything that isn't guaranteed to have already ruled out a zero
-	-- divisor by construction.
-	assert(m2 ~= 0, "fixed.div: division by zero")
-	if m1 == 0 then return 0LL, 0 end
-	-- Magnitudes taken by UNSIGNED negation, matching M.mul's rationale:
-	-- signed `-a` on INT64_MIN is a wraparound coincidence in LuaJIT and a
-	-- panic in Zig's safe build modes.
-	local neg = (m1 < 0) ~= (m2 < 0)
-	local a = ffi.cast(u64, m1); if m1 < 0 then a = ffi.cast(u64, 0) - a end
-	local b = ffi.cast(u64, m2); if m2 < 0 then b = ffi.cast(u64, 0) - b end
-	assert(a >= TWO62 and a < 0x8000000000000000ULL, "fixed.div: operand 1 not normalized")
-	assert(b >= TWO62 and b < 0x8000000000000000ULL, "fixed.div: operand 2 not normalized")
+--- nothing else does.
+---
+--- DELIBERATELY has no sign handling at all -- not even a comment
+--- mentioning it. This function must never gain a negation branch: see the
+--- jit.off(div_signed) note below for why the JIT-safety of this whole
+--- module now depends on that separation.
+local function divmag(a, b)
 	local q0, rem = a / b, a % b
 	local frac = 0ULL
 	for _ = 1, 62 do
@@ -292,72 +278,106 @@ function M.div(m1, e1, m2, e2)
 			frac = frac + 1ULL
 		end
 	end
-	local q = q0 * TWO62 + frac
-	local r = ffi.cast(i64, q)
+	return q0 * TWO62 + frac
+end
+
+--- Cold path for M.div: any operand with a negative sign. Extracts
+--- magnitudes and reapplies the sign around a call to divmag. This
+--- function, not divmag or M.div, is the one disabled below --
+--- see that comment for why.
+local function div_signed(m1, e1, m2, e2)
+	-- Magnitudes taken by UNSIGNED negation, matching M.mul's rationale:
+	-- signed `-a` on INT64_MIN is a wraparound coincidence in LuaJIT and a
+	-- panic in Zig's safe build modes.
+	local neg = (m1 < 0) ~= (m2 < 0)
+	local a = ffi.cast(u64, m1); if m1 < 0 then a = ffi.cast(u64, 0) - a end
+	local b = ffi.cast(u64, m2); if m2 < 0 then b = ffi.cast(u64, 0) - b end
+	assert(a >= TWO62 and a < 0x8000000000000000ULL, "fixed.div: operand 1 not normalized")
+	assert(b >= TWO62 and b < 0x8000000000000000ULL, "fixed.div: operand 2 not normalized")
+	local r = ffi.cast(i64, divmag(a, b))
 	if neg then r = -r end
 	return M.norm(r, e1 - e2)
 end
 
--- jit.off(M.div, true): LuaJIT 2.1.1774638290 (checked via `luajit -v`)
--- JIT-COMPILES M.div INCORRECTLY for negative operands once its trace
--- compiler has warmed up on this function. Reproduced with hard evidence,
--- not suspicion: dividing -4735866454561506793 by -6988739120546013429
--- returns the WRONG mantissa 7736760332538321936 once M.div has been
--- called ~500+ times previously (any operands; the specific pair only
--- needs to warm up the trace, not match), where a fresh, cold, or
--- `luajit -joff` call with IDENTICAL arguments returns the correct
--- 6250148628221868064 (verified independently against bc's exact
--- floor((|m1|*2^62)/|m2|) big-integer division). The exponent is
--- irrelevant (reproduces at e1=0 and e1=5000 alike); positive-only
--- operands never reproduce it in extensive testing -- the miscompilation
--- appears specific to the unsigned-negation sign-handling branches
--- (`if m1 < 0 then a = ... end` / `if neg then r = -r end`), not the
--- division loop itself.
+-- LuaJIT/LuaJIT#1499 (https://github.com/LuaJIT/LuaJIT/issues/1499):
+-- LuaJIT 2.1.1774638290's trace compiler JIT-COMPILES the combination of
+-- a conditional unsigned-negation branch followed by a loop INCORRECTLY,
+-- once warmed (~500+ prior calls, any operands). Reproduced with hard
+-- evidence: dividing -4735866454561506793 by -6988739120546013429 once
+-- returned the WRONG mantissa 7736760332538321936 (vs. the correct
+-- 6250148628221868064, verified independently against bc's exact
+-- floor((|m1|*2^62)/|m2|) big-integer division, and against `luajit
+-- -joff`). Filed upstream and confirmed by the coordinator's own
+-- reproduction on both upstream HEAD (4886b676a698acc4bbdf54adfabb3e33
+-- a8c020e8) and the nixpkgs build; bisects to the `fwd` (store-forwarding)
+-- optimization specifically -- `-O2 -O+fwd` reproduces, `-O3 -O-fwd`
+-- does not. Positive-only operands never reproduce it.
 --
--- CORRECTION: `true` here is LuaJIT's "recursive" flag, which descends
--- into LEXICALLY NESTED CHILD PROTOTYPES (closures defined inside this
--- function's own source) -- NOT the runtime call graph. M.div has no
--- nested closures, so `true` covers nothing beyond M.div's own bytecode.
--- It does NOT reach M.norm, even though M.div calls it every time it
--- returns. Verified with `luajit -jv` while warming M.div exclusively:
--- M.norm (line 100) gets its own independent [TRACE ...] entries and
--- side-traces, right alongside the
--- "[TRACE --- JIT compilation disabled for function at fixed.lua:267]"
--- line confirming M.div itself is protected. An earlier version of this
--- comment claimed the `true` flag "covers M.norm" -- it does not, and the
--- claim was never checked against `-jv` output before being written.
+-- MITIGATION: `divmag` (the loop) and `div_signed` (the negation
+-- branches) were split into separate functions specifically so the
+-- negation-then-loop pattern LuaJIT#1499 miscompiles never appears in one
+-- prototype. Only `div_signed` is disabled below -- `divmag` and `M.norm`
+-- are NOT covered by this call (an earlier version of this file
+-- mistakenly believed `jit.off(f, true)`'s recursive flag reached
+-- callees; it does not -- it only descends into LEXICALLY NESTED CHILD
+-- PROTOTYPES, and neither div_signed nor M.div has any). `divmag` stays
+-- fully JIT-eligible, including when called from this disabled function:
+-- since it contains no sign branches of its own, it never exhibits the
+-- pattern LuaJIT#1499 miscompiles regardless of who calls it. This was
+-- verified directly (see tests/fixed_test.lua's "JIT miscompilation
+-- regression, split dispatch" check and task-6-report.md), not assumed
+-- from the theory above -- the instruction that produced this split was
+-- explicit that if the separation didn't hold in this file, the correct
+-- response was to revert to disabling M.div wholesale, not to trust the
+-- reasoning.
 --
--- So M.norm's (and M.mul's) apparent safety is NOT a property of this
--- flag -- it rests entirely on empirical testing, the same honesty
--- already given to M.mul below: 200000 iterations of mul/add/sub/norm/ln
--- with mixed-sign operands, M.div excluded so no mitigation is in play,
--- comparing JIT-on output against `-joff` output by digest -- IDENTICAL
--- across the run. That is evidence the blast radius seen so far is
--- confined to M.div, not proof that M.norm or any other function sharing
--- the same unsigned-negation idiom is immune -- the same caveat M.mul's
--- own targeted check below carries.
+-- M.norm's and M.mul's own apparent safety remains NOT a property of any
+-- jit.off call -- it rests entirely on the same empirical check given to
+-- M.mul elsewhere in this file: 200000 iterations of mul/add/sub/norm/ln
+-- with mixed-sign operands, JIT-on output compared against `-joff` output
+-- by digest, identical across the run. That is evidence the blast radius
+-- observed so far is confined to this exact pattern, not proof any other
+-- function using unsigned negation is immune.
 --
--- `jit.off(M.div, true)` eliminates the reproduced mismatch with zero
--- mismatches across 20000 warmup iterations in testing, at the cost of
--- losing JIT compilation for M.div's own bytecode (M.norm, called from
--- inside it, keeps its normal JIT treatment -- and per the above, that is
--- believed safe only because it was independently tested, not because
--- this flag protects it). No evidence of the same bug in M.mul was found
--- in targeted testing (200000 negative-operand calls cross-checked
--- against jit.off), but that is not proof of absence -- M.mul was not
--- built to withstand adversarial fuzzing for this specific failure mode,
--- only checked for it after the fact. This is a LATENT LANGUAGE-RUNTIME
--- BUG, not a defect in this file's logic; given this file's entire
--- purpose is guaranteeing bit-exact results, a JIT compiler that silently
--- returns a different answer for the same inputs after enough prior
--- calls is disqualifying for the affected function until fixed upstream
--- or otherwise worked around. See tests/fixed_test.lua's "JIT
--- miscompilation regression (warmed)" check, which re-triggers the
--- warmup pattern and would fail loudly if this protection is ever
--- removed. The `true` flag is kept as-is (harmless, if narrower than
--- first documented) pending a decision on whether to widen the
--- mitigation to M.norm/M.mul explicitly.
-jit.off(M.div, true)
+-- DO NOT inline div_signed's body back into M.div, and do not inline
+-- divmag's loop back into div_signed. Either merge puts the negation
+-- branches and the loop back in the SAME prototype, which is precisely
+-- the shape LuaJIT#1499 miscompiles -- collapsing this split back to one
+-- function silently VOIDS the mitigation, and jit.off(div_signed) alone
+-- would then no longer be covering the loop at all.
+jit.off(div_signed)
+
+--- Soft-float divide. See divmag for the algorithm and div_signed for the
+--- sign-handling cold path this dispatches negative operands to.
+---
+--- PRECONDITION: both operands normalized (2^62 <= |m| < 2^63) or
+--- canonical zero, matching M.mul's precondition and asserted the same
+--- way -- on BOTH the fast (positive) path below and inside div_signed,
+--- deliberately duplicated rather than factored into one shared check, so
+--- the fast path's own bytecode stays free of the sign-handling code that
+--- div_signed exists to isolate (see the jit.off(div_signed) note above).
+function M.div(m1, e1, m2, e2)
+	-- Divisor-zero check MUST come before the m1==0 shortcut: 0/0 is
+	-- undefined, not canonical zero, and M.ln takes exactly this stance on
+	-- its own domain (asserts on m<=0 rather than returning -inf). An
+	-- earlier ordering let `div(0, e, 0, e)` return (0LL, 0) silently,
+	-- unreachable from any current call site but a live footgun for
+	-- anything that isn't guaranteed to have already ruled out a zero
+	-- divisor by construction.
+	assert(m2 ~= 0, "fixed.div: division by zero")
+	if m1 == 0 then return 0LL, 0 end
+	if m1 > 0 and m2 > 0 then
+		-- Fast path: both operands already known positive, so the
+		-- magnitude is a direct cast -- no conditional negation, no
+		-- branch LuaJIT#1499 can miscompile. Stays fully JIT-compiled.
+		local a = ffi.cast(u64, m1)
+		local b = ffi.cast(u64, m2)
+		assert(a >= TWO62 and a < 0x8000000000000000ULL, "fixed.div: operand 1 not normalized")
+		assert(b >= TWO62 and b < 0x8000000000000000ULL, "fixed.div: operand 2 not normalized")
+		return M.norm(ffi.cast(i64, divmag(a, b)), e1 - e2)
+	end
+	return div_signed(m1, e1, m2, e2)
+end
 
 -- ln 2, generated by:  echo 'scale=60; l(2)' | bc -l  ->
 --   .693147180559945309417232121458176568075500134360255254120680...
