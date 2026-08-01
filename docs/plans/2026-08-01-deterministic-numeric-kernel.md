@@ -274,6 +274,9 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PATH="$here/../bin:$PATH"
 export DRANDOM_STATE_HOME="$(mktemp -d)"
 trap 'rm -rf "$DRANDOM_STATE_HOME"' EXIT
+# bin/random derives its default output delimiter from $IFS. If a caller has
+# exported IFS, every default-delimiter vector silently changes. Pin it.
+unset IFS
 
 which="${1-}"
 [ -n "$which" ] || { echo "usage: bless-goldens integer|dist [output_path]" >&2; exit 1; }
@@ -306,9 +309,15 @@ integer)
 			emit "uniform/$seed/1-6"     random -d --seed "$seed" -c 20 1 6
 			emit "uniform/$seed/wide"    random -d --seed "$seed" -c 4 0 5000000000
 			emit "uniform/$seed/single"  random -d --seed "$seed" -c 3 5 5
+			# no -c: locks the `count = options.count or 1` default branch
+			emit "uniform/$seed/defcount" random -d --seed "$seed"
 			emit "hex/$seed"             random -d --seed "$seed" -c 8 --hex
 			emit "delim/$seed"           random -d --seed "$seed" -c 5 --delimiter , 0 10
 			emit "binhex/$seed"          bash -c "random -d --seed $seed -b -c 64 | xxd -p | tr -d '\n'"
+			# no -c: locks the `count = options.count or 1024` binary default branch
+			emit "bindef/$seed"          bash -c "random -d --seed $seed -b | xxd -p | tr -d '\n'"
+			# ranged binary: locks the constrained-range branch, not just 0..255
+			emit "binrange/$seed"        bash -c "random -d --seed $seed -b -c 32 64 192 | xxd -p | tr -d '\n'"
 			emit "b64/$seed"             random -d --seed "$seed" -b -c 30 --base64
 			emit_stdin "choose/$seed"   $'apple\nbanana\ncherry\ndate' random --choose -d --seed "$seed"
 			emit_stdin "shuffle/$seed"  $'1\n2\n3\n4\n5\n6\n7\n8' random --shuffle -d --seed "$seed"
@@ -376,6 +385,12 @@ for set_file in "$here"/golden/*.txt; do
 done
 
 echo "============================================"
+# A control that passes when it checked nothing is worse than no control: a
+# deleted or renamed golden directory would otherwise report success forever.
+if [ "$checked" -eq 0 ]; then
+	echo "golden test FAILED: no golden sets found in $here/golden" >&2
+	exit 1
+fi
 if [ "$fails" -gt 0 ]; then
 	echo "golden test FAILED: $fails of $checked set(s) changed" >&2
 	exit "$fails"
