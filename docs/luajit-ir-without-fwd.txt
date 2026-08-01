@@ -1,0 +1,2376 @@
+---- TRACE 1 start luajit-div-miscompilation.lua:40
+---- TRACE 1 IR
+0001    [35mint[m SLOAD  #10   CI
+0002 >  [33mcdt[m SLOAD  #8    T
+0003    [35mu16[m FLOAD  0002  cdata.ctypeid
+0004 >  [35mint[m EQ     0003  [35m+12 [m
+0005    [35mu64[m FLOAD  0002  cdata.int64
+0006    [35mu16[m FLOAD  [33m2ULL[m  cdata.ctypeid
+0007 >  [35mint[m EQ     0006  [35m+12 [m
+0008    [35mu64[m FLOAD  [33m2ULL[m  cdata.int64
+0009    [35mu64[m MUL    0008  0005
+0010 >+ [33mcdt[m CNEWI  [35m+12 [m  0009
+0011 >  [33mcdt[m SLOAD  #9    T
+0012    [35mu16[m FLOAD  0011  cdata.ctypeid
+0013 >  [35mint[m EQ     0012  [35m+12 [m
+0014    [35mu64[m FLOAD  0011  cdata.int64
+0015    [35mu16[m FLOAD  [33m2ULL[m  cdata.ctypeid
+0016 >  [35mint[m EQ     0015  [35m+12 [m
+0017    [35mu64[m FLOAD  [33m2ULL[m  cdata.int64
+0018    [35mu64[m MUL    0017  0014
+0019 >+ [33mcdt[m CNEWI  [35m+12 [m  0018
+0020 >  [33mcdt[m SLOAD  #6    T
+0021    [35mu16[m FLOAD  0020  cdata.ctypeid
+0022 >  [35mint[m EQ     0021  [35m+12 [m
+0023    [35mu64[m FLOAD  0020  cdata.int64
+0024    [35mu16[m FLOAD  0010  cdata.ctypeid
+0025 >  [35mint[m EQ     0024  [35m+12 [m
+0026    [35mu64[m FLOAD  0010  cdata.int64
+0027 >  [35mu64[m ULT    0026  0023
+0028  + [35mint[m ADD    0001  [35m+1  [m
+0029 >  [35mint[m LE     0028  [35m+62 [m
+0030 ------ LOOP ------------
+0031    [35mu16[m FLOAD  0010  cdata.ctypeid
+0032 >  [35mint[m EQ     0031  [35m+12 [m
+0033    [35mu64[m FLOAD  0010  cdata.int64
+0034    [35mu16[m FLOAD  [33m2ULL[m  cdata.ctypeid
+0035 >  [35mint[m EQ     0034  [35m+12 [m
+0036    [35mu64[m FLOAD  [33m2ULL[m  cdata.int64
+0037    [35mu64[m MUL    0036  0033
+0038 >+ [33mcdt[m CNEWI  [35m+12 [m  0037
+0039    [35mu16[m FLOAD  0019  cdata.ctypeid
+0040 >  [35mint[m EQ     0039  [35m+12 [m
+0041    [35mu64[m FLOAD  0019  cdata.int64
+0042    [35mu16[m FLOAD  [33m2ULL[m  cdata.ctypeid
+0043 >  [35mint[m EQ     0042  [35m+12 [m
+0044    [35mu64[m FLOAD  [33m2ULL[m  cdata.int64
+0045    [35mu64[m MUL    0044  0041
+0046 >+ [33mcdt[m CNEWI  [35m+12 [m  0045
+0047    [35mu16[m FLOAD  0020  cdata.ctypeid
+0048 >  [35mint[m EQ     0047  [35m+12 [m
+0049    [35mu64[m FLOAD  0020  cdata.int64
+0050    [35mu16[m FLOAD  0038  cdata.ctypeid
+0051 >  [35mint[m EQ     0050  [35m+12 [m
+0052    [35mu64[m FLOAD  0038  cdata.int64
+0053 >  [35mu64[m ULT    0052  0049
+0054  + [35mint[m ADD    0028  [35m+1  [m
+0055 >  [35mint[m LE     0054  [35m+62 [m
+0056    [35mint[m PHI    0028  0054
+0057    [33mcdt[m PHI    0010  0038
+0058    [33mcdt[m PHI    0019  0046
+---- TRACE 1 stop -> loop
+
+---- TRACE 2 start 1/1 luajit-div-miscompilation.lua:43
+---- TRACE 2 IR
+0001    [33mcdt[m SLOAD  #8    PI
+0002    [33mcdt[m SLOAD  #9    PI
+0003    [35mint[m SLOAD  #10   PI
+0004 >  [33mcdt[m SLOAD  #6    T
+0005    [35mu16[m FLOAD  0004  cdata.ctypeid
+0006 >  [35mint[m EQ     0005  [35m+12 [m
+0007    [35mu64[m FLOAD  0004  cdata.int64
+0008    [35mu16[m FLOAD  0001  cdata.ctypeid
+0009 >  [35mint[m EQ     0008  [35m+12 [m
+0010    [35mu64[m FLOAD  0001  cdata.int64
+0011 >  [35mu64[m UGE    0010  0007
+0012    [35mu16[m FLOAD  0001  cdata.ctypeid
+0013 >  [35mint[m EQ     0012  [35m+12 [m
+0014    [35mu64[m FLOAD  0001  cdata.int64
+0015    [35mu16[m FLOAD  0004  cdata.ctypeid
+0016 >  [35mint[m EQ     0015  [35m+12 [m
+0017    [35mu64[m FLOAD  0004  cdata.int64
+0018    [35mu64[m SUB    0014  0017
+0019 >  [33mcdt[m CNEWI  [35m+12 [m  0018
+0020    [35mu16[m FLOAD  0002  cdata.ctypeid
+0021 >  [35mint[m EQ     0020  [35m+12 [m
+0022    [35mu64[m FLOAD  0002  cdata.int64
+0023    [35mu16[m FLOAD  [33m1ULL[m  cdata.ctypeid
+0024 >  [35mint[m EQ     0023  [35m+12 [m
+0025    [35mu64[m FLOAD  [33m1ULL[m  cdata.int64
+0026    [35mu64[m ADD    0025  0022
+0027 >  [33mcdt[m CNEWI  [35m+12 [m  0026
+0028    [35mint[m ADD    0003  [35m+1  [m
+0029 >  [35mint[m LE     0028  [35m+62 [m
+0030    [34mnum[m CONV   0028  [34mnum[m.[35mint[m
+---- TRACE 2 stop -> 1
+
+---- TRACE 3 start 1/4 luajit-div-miscompilation.lua:43
+---- TRACE 3 IR
+0001    [33mcdt[m SLOAD  #8    PI
+0002    [33mcdt[m SLOAD  #9    PI
+0003    [35mint[m SLOAD  #10   PI
+0004 >  [33mcdt[m SLOAD  #6    T
+0005    [35mu16[m FLOAD  0004  cdata.ctypeid
+0006 >  [35mint[m EQ     0005  [35m+12 [m
+0007    [35mu64[m FLOAD  0004  cdata.int64
+0008    [35mu16[m FLOAD  0001  cdata.ctypeid
+0009 >  [35mint[m EQ     0008  [35m+12 [m
+0010    [35mu64[m FLOAD  0001  cdata.int64
+0011 >  [35mu64[m UGE    0010  0007
+0012    [35mu16[m FLOAD  0001  cdata.ctypeid
+0013 >  [35mint[m EQ     0012  [35m+12 [m
+0014    [35mu64[m FLOAD  0001  cdata.int64
+0015    [35mu16[m FLOAD  0004  cdata.ctypeid
+0016 >  [35mint[m EQ     0015  [35m+12 [m
+0017    [35mu64[m FLOAD  0004  cdata.int64
+0018    [35mu64[m SUB    0014  0017
+0019 >  [33mcdt[m CNEWI  [35m+12 [m  0018
+0020    [35mu16[m FLOAD  0002  cdata.ctypeid
+0021 >  [35mint[m EQ     0020  [35m+12 [m
+0022    [35mu64[m FLOAD  0002  cdata.int64
+0023    [35mu16[m FLOAD  [33m1ULL[m  cdata.ctypeid
+0024 >  [35mint[m EQ     0023  [35m+12 [m
+0025    [35mu64[m FLOAD  [33m1ULL[m  cdata.int64
+0026    [35mu64[m ADD    0025  0022
+0027 >  [33mcdt[m CNEWI  [35m+12 [m  0026
+0028    [35mint[m ADD    0003  [35m+1  [m
+0029 >  [35mint[m LE     0028  [35m+62 [m
+0030    [34mnum[m CONV   0028  [34mnum[m.[35mint[m
+---- TRACE 3 stop -> 1
+
+---- TRACE 4 start 2/2 luajit-div-miscompilation.lua:48
+---- TRACE 4 IR
+0001    [33mcdt[m SLOAD  #8    PI
+0002    [33mcdt[m SLOAD  #9    PI
+0003    [1mfun[m SLOAD  #0    R
+0004 >  [35mi64[m UREFO  0003  #0  
+0005    p64 SUB    0004  0000
+0006 >  p64 UGT    0005  [35m+80 [m
+0007 >  [31mtab[m ULOAD  0004
+0008    [35mint[m FLOAD  0007  tab.hmask
+0009 >  [35mint[m EQ     0008  [35m+31 [m
+0010    p64 FLOAD  0007  tab.node
+0011 >  p64 HREFK  0010  [32m"cast"[m @23
+0012 >  [1mfun[m HLOAD  0011
+0013 >  [1mfun[m EQ     0003  [1mluajit-div-miscompilation.lua:34[m
+0014 >  [33mcdt[m SLOAD  #7    T
+0015    [35mu16[m FLOAD  0014  cdata.ctypeid
+0016 >  [35mint[m EQ     0015  [35m+12 [m
+0017    [35mu64[m FLOAD  0014  cdata.int64
+0018    [35mu16[m FLOAD  [33m4611686018427387904ULL[m  cdata.ctypeid
+0019 >  [35mint[m EQ     0018  [35m+12 [m
+0020    [35mu64[m FLOAD  [33m4611686018427387904ULL[m  cdata.int64
+0021    [35mu64[m MUL    0020  0017
+0022 >  [33mcdt[m CNEWI  [35m+12 [m  0021
+0023    [35mu16[m FLOAD  0022  cdata.ctypeid
+0024 >  [35mint[m EQ     0023  [35m+12 [m
+0025    [35mu64[m FLOAD  0022  cdata.int64
+0026    [35mu16[m FLOAD  0002  cdata.ctypeid
+0027 >  [35mint[m EQ     0026  [35m+12 [m
+0028    [35mu64[m FLOAD  0002  cdata.int64
+0029    [35mu64[m ADD    0028  0025
+0030 >  [33mcdt[m CNEWI  [35m+12 [m  0029
+0031 >  [1mfun[m EQ     0012  [1mffi.cast[m
+0032    [35mu16[m FLOAD  [33mctype<int64_t>[m  cdata.ctypeid
+0033 >  [35mint[m EQ     0032  [35m+24 [m
+0034    [35mint[m FLOAD  [33mctype<int64_t>[m  cdata.int
+0035 >  [35mint[m EQ     0034  [35m+11 [m
+0036    [35mu16[m FLOAD  0030  cdata.ctypeid
+0037 >  [35mint[m EQ     0036  [35m+12 [m
+0038    [35mu64[m FLOAD  0030  cdata.int64
+0039 >  [33mcdt[m CNEWI  [35m+11 [m  0038
+0040 >  fal SLOAD  #4    T
+0041 >  p64 RETF   proto: 0x7bd8df0fcfb8  [0x7bd8df0fd108]
+0042    [34mnum[m SLOAD  #12   I
+0043    [34mnum[m ADD    0042  [34m+1  [m
+0044 >  [34mnum[m LE     0043  [34m+3000[m
+0045 >  [33mcdt[m SLOAD  #11   T
+0046    [35mu16[m FLOAD  0045  cdata.ctypeid
+0047 >  [35mint[m EQ     0046  [35m+12 [m
+0048    [35mu64[m FLOAD  0045  cdata.int64
+0049    [35mu16[m FLOAD  [33m6364136223846793005ULL[m  cdata.ctypeid
+0050 >  [35mint[m EQ     0049  [35m+12 [m
+0051    [35mu64[m FLOAD  [33m6364136223846793005ULL[m  cdata.int64
+0052    [35mu64[m MUL    0051  0048
+0053 >  [33mcdt[m CNEWI  [35m+12 [m  0052
+0054    [35mu16[m FLOAD  0053  cdata.ctypeid
+0055 >  [35mint[m EQ     0054  [35m+12 [m
+0056    [35mu64[m FLOAD  0053  cdata.int64
+0057    [35mu16[m FLOAD  [33m1ULL[m  cdata.ctypeid
+0058 >  [35mint[m EQ     0057  [35m+12 [m
+0059    [35mu64[m FLOAD  [33m1ULL[m  cdata.int64
+0060    [35mu64[m ADD    0059  0056
+0061 >  [33mcdt[m CNEWI  [35m+12 [m  0060
+0062 >  [31mtab[m SLOAD  #2    T
+0063    [35mint[m FLOAD  0062  tab.hmask
+0064 >  [35mint[m EQ     0063  [35m+31 [m
+0065    p64 FLOAD  0062  tab.node
+0066 >  p64 HREFK  0065  [32m"cast"[m @23
+0067 >  [1mfun[m HLOAD  0066
+0068 >  [33mcdt[m SLOAD  #4    T
+0069    [35mu16[m FLOAD  0061  cdata.ctypeid
+0070 >  [35mint[m EQ     0069  [35m+12 [m
+0071    [35mu64[m FLOAD  0061  cdata.int64
+0072    [35mu16[m FLOAD  [33m4ULL[m  cdata.ctypeid
+0073 >  [35mint[m EQ     0072  [35m+12 [m
+0074    [35mu64[m FLOAD  [33m4ULL[m  cdata.int64
+0075    [35mu64[m DIV    0071  0074
+0076 >  [33mcdt[m CNEWI  [35m+12 [m  0075
+0077 >  [33mcdt[m SLOAD  #5    T
+0078    [35mu16[m FLOAD  0076  cdata.ctypeid
+0079 >  [35mint[m EQ     0078  [35m+12 [m
+0080    [35mu64[m FLOAD  0076  cdata.int64
+0081    [35mu16[m FLOAD  0077  cdata.ctypeid
+0082 >  [35mint[m EQ     0081  [35m+12 [m
+0083    [35mu64[m FLOAD  0077  cdata.int64
+0084    [35mu64[m MOD    0080  0083
+0085 >  [33mcdt[m CNEWI  [35m+12 [m  0084
+0086    [35mu16[m FLOAD  0077  cdata.ctypeid
+0087 >  [35mint[m EQ     0086  [35m+12 [m
+0088    [35mu64[m FLOAD  0077  cdata.int64
+0089    [35mu16[m FLOAD  0085  cdata.ctypeid
+0090 >  [35mint[m EQ     0089  [35m+12 [m
+0091    [35mu64[m FLOAD  0085  cdata.int64
+0092    [35mu64[m ADD    0091  0088
+0093 >  [33mcdt[m CNEWI  [35m+12 [m  0092
+0094 >  [1mfun[m EQ     0067  [1mffi.cast[m
+0095    [35mu16[m FLOAD  0068  cdata.ctypeid
+0096 >  [35mint[m EQ     0095  [35m+24 [m
+0097    [35mint[m FLOAD  0068  cdata.int
+0098 >  [35mint[m EQ     0097  [35m+11 [m
+0099    [35mu16[m FLOAD  0093  cdata.ctypeid
+0100 >  [35mint[m EQ     0099  [35m+12 [m
+0101    [35mu64[m FLOAD  0093  cdata.int64
+0102 >  [33mcdt[m CNEWI  [35m+11 [m  0101
+0103    [35mu16[m FLOAD  0061  cdata.ctypeid
+0104 >  [35mint[m EQ     0103  [35m+12 [m
+0105    [35mu64[m FLOAD  0061  cdata.int64
+0106    [35mu16[m FLOAD  [33m6364136223846793005ULL[m  cdata.ctypeid
+0107 >  [35mint[m EQ     0106  [35m+12 [m
+0108    [35mu64[m FLOAD  [33m6364136223846793005ULL[m  cdata.int64
+0109    [35mu64[m MUL    0108  0105
+0110 >  [33mcdt[m CNEWI  [35m+12 [m  0109
+0111    [35mu16[m FLOAD  0110  cdata.ctypeid
+0112 >  [35mint[m EQ     0111  [35m+12 [m
+0113    [35mu64[m FLOAD  0110  cdata.int64
+0114    [35mu16[m FLOAD  [33m1ULL[m  cdata.ctypeid
+0115 >  [35mint[m EQ     0114  [35m+12 [m
+0116    [35mu64[m FLOAD  [33m1ULL[m  cdata.int64
+0117    [35mu64[m ADD    0116  0113
+0118 >  [33mcdt[m CNEWI  [35m+12 [m  0117
+0119    [35mint[m FLOAD  0062  tab.hmask
+0120 >  [35mint[m EQ     0119  [35m+31 [m
+0121    p64 FLOAD  0062  tab.node
+0122 >  p64 HREFK  0121  [32m"cast"[m @23
+0123 >  [1mfun[m HLOAD  0122
+0124    [35mu16[m FLOAD  0118  cdata.ctypeid
+0125 >  [35mint[m EQ     0124  [35m+12 [m
+0126    [35mu64[m FLOAD  0118  cdata.int64
+0127    [35mu16[m FLOAD  [33m4ULL[m  cdata.ctypeid
+0128 >  [35mint[m EQ     0127  [35m+12 [m
+0129    [35mu64[m FLOAD  [33m4ULL[m  cdata.int64
+0130    [35mu64[m DIV    0126  0129
+0131 >  [33mcdt[m CNEWI  [35m+12 [m  0130
+0132    [35mu16[m FLOAD  0131  cdata.ctypeid
+0133 >  [35mint[m EQ     0132  [35m+12 [m
+0134    [35mu64[m FLOAD  0131  cdata.int64
+0135    [35mu16[m FLOAD  0077  cdata.ctypeid
+0136 >  [35mint[m EQ     0135  [35m+12 [m
+0137    [35mu64[m FLOAD  0077  cdata.int64
+0138    [35mu64[m MOD    0134  0137
+0139 >  [33mcdt[m CNEWI  [35m+12 [m  0138
+0140    [35mu16[m FLOAD  0077  cdata.ctypeid
+0141 >  [35mint[m EQ     0140  [35m+12 [m
+0142    [35mu64[m FLOAD  0077  cdata.int64
+0143    [35mu16[m FLOAD  0139  cdata.ctypeid
+0144 >  [35mint[m EQ     0143  [35m+12 [m
+0145    [35mu64[m FLOAD  0139  cdata.int64
+0146    [35mu64[m ADD    0145  0142
+0147 >  [33mcdt[m CNEWI  [35m+12 [m  0146
+0148 >  [1mfun[m EQ     0123  [1mffi.cast[m
+0149    [35mu16[m FLOAD  0068  cdata.ctypeid
+0150 >  [35mint[m EQ     0149  [35m+24 [m
+0151    [35mint[m FLOAD  0068  cdata.int
+0152 >  [35mint[m EQ     0151  [35m+11 [m
+0153    [35mu16[m FLOAD  0147  cdata.ctypeid
+0154 >  [35mint[m EQ     0153  [35m+12 [m
+0155    [35mu64[m FLOAD  0147  cdata.int64
+0156 >  [33mcdt[m CNEWI  [35m+11 [m  0155
+0157    [34mnum[m MUL    0043  [34m+0.5[m
+0158    [34mnum[m FPMATH 0157  floor
+0159    [34mnum[m ADD    0158  0158
+0160    [34mnum[m SUB    0043  0159
+0161 >  [34mnum[m EQ     0160  [34m+0  [m
+0162    [35mu16[m FLOAD  0102  cdata.ctypeid
+0163 >  [35mint[m EQ     0162  [35m+11 [m
+0164    [35mi64[m FLOAD  0102  cdata.int64
+0165    [35mu16[m FLOAD  0102  cdata.ctypeid
+0166 >  [35mint[m EQ     0165  [35m+11 [m
+0167    [35mi64[m FLOAD  0102  cdata.int64
+0168    [35mi64[m NEG    0164  0167
+0169 >  [33mcdt[m CNEWI  [35m+11 [m  0168
+0170    [34mnum[m DIV    0043  [34m+3  [m
+0171    [34mnum[m FPMATH 0170  floor
+0172    [34mnum[m MUL    0171  [34m+3  [m
+0173    [34mnum[m SUB    0043  0172
+0174 >  [34mnum[m NE     0173  [34m+0  [m
+0175 >  [1mfun[m SLOAD  #6    T
+0176 >  [1mfun[m EQ     0175  [1mluajit-div-miscompilation.lua:34[m
+0177    [35mu16[m FLOAD  0169  cdata.ctypeid
+0178 >  [35mint[m EQ     0177  [35m+11 [m
+0179    [35mi64[m FLOAD  0169  cdata.int64
+0180 >  [35mi64[m LT     0179  [35m+0  [m
+0181    [35mu16[m FLOAD  0156  cdata.ctypeid
+0182 >  [35mint[m EQ     0181  [35m+11 [m
+0183    [35mi64[m FLOAD  0156  cdata.int64
+0184 >  [35mi64[m GE     0183  [35m+0  [m
+0185    p64 UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0186 >  p64 EQ     0185  0000
+0187    [35mint[m FLOAD  0062  tab.hmask
+0188 >  [35mint[m EQ     0187  [35m+31 [m
+0189    p64 FLOAD  0062  tab.node
+0190 >  p64 HREFK  0189  [32m"cast"[m @23
+0191 >  [1mfun[m HLOAD  0190
+0192 >  [1mfun[m EQ     0191  [1mffi.cast[m
+0193    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0194 >  [35mint[m EQ     0193  [35m+24 [m
+0195    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0196 >  [35mint[m EQ     0195  [35m+12 [m
+0197    [35mu16[m FLOAD  0169  cdata.ctypeid
+0198 >  [35mint[m EQ     0197  [35m+11 [m
+0199    [35mi64[m FLOAD  0169  cdata.int64
+0200 >  [33mcdt[m CNEWI  [35m+12 [m  0199
+0201    [35mu16[m FLOAD  0169  cdata.ctypeid
+0202 >  [35mint[m EQ     0201  [35m+11 [m
+0203    [35mi64[m FLOAD  0169  cdata.int64
+0204 >  [35mi64[m LT     0203  [35m+0  [m
+0205    p64 UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0206 >  p64 EQ     0205  0000
+0207    [35mint[m FLOAD  0062  tab.hmask
+0208 >  [35mint[m EQ     0207  [35m+31 [m
+0209    p64 FLOAD  0062  tab.node
+0210 >  p64 HREFK  0209  [32m"cast"[m @23
+0211 >  [1mfun[m HLOAD  0210
+0212 >  [1mfun[m EQ     0211  [1mffi.cast[m
+0213    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0214 >  [35mint[m EQ     0213  [35m+24 [m
+0215    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0216 >  [35mint[m EQ     0215  [35m+12 [m
+0217 >  [33mcdt[m CNEWI  [35m+12 [m  [35m+0  [m
+0218    [35mu16[m FLOAD  0217  cdata.ctypeid
+0219 >  [35mint[m EQ     0218  [35m+12 [m
+0220    [35mu64[m FLOAD  0217  cdata.int64
+0221    [35mu16[m FLOAD  0200  cdata.ctypeid
+0222 >  [35mint[m EQ     0221  [35m+12 [m
+0223    [35mu64[m FLOAD  0200  cdata.int64
+0224    [35mu64[m SUB    0220  0223
+0225 >  [33mcdt[m CNEWI  [35m+12 [m  0224
+0226    p64 UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0227 >  p64 EQ     0226  0000
+0228    [35mint[m FLOAD  0062  tab.hmask
+0229 >  [35mint[m EQ     0228  [35m+31 [m
+0230    p64 FLOAD  0062  tab.node
+0231 >  p64 HREFK  0230  [32m"cast"[m @23
+0232 >  [1mfun[m HLOAD  0231
+0233 >  [1mfun[m EQ     0232  [1mffi.cast[m
+0234    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0235 >  [35mint[m EQ     0234  [35m+24 [m
+0236    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0237 >  [35mint[m EQ     0236  [35m+12 [m
+0238    [35mu16[m FLOAD  0156  cdata.ctypeid
+0239 >  [35mint[m EQ     0238  [35m+11 [m
+0240    [35mi64[m FLOAD  0156  cdata.int64
+0241 >  [33mcdt[m CNEWI  [35m+12 [m  0240
+0242    [35mu16[m FLOAD  0156  cdata.ctypeid
+0243 >  [35mint[m EQ     0242  [35m+11 [m
+0244    [35mi64[m FLOAD  0156  cdata.int64
+0245 >  [35mi64[m GE     0244  [35m+0  [m
+0246    [35mu16[m FLOAD  0225  cdata.ctypeid
+0247 >  [35mint[m EQ     0246  [35m+12 [m
+0248    [35mu64[m FLOAD  0225  cdata.int64
+0249    [35mu16[m FLOAD  0241  cdata.ctypeid
+0250 >  [35mint[m EQ     0249  [35m+12 [m
+0251    [35mu64[m FLOAD  0241  cdata.int64
+0252    [35mu64[m DIV    0248  0251
+0253 >  [33mcdt[m CNEWI  [35m+12 [m  0252
+0254    [35mu16[m FLOAD  0225  cdata.ctypeid
+0255 >  [35mint[m EQ     0254  [35m+12 [m
+0256    [35mu64[m FLOAD  0225  cdata.int64
+0257    [35mu16[m FLOAD  0241  cdata.ctypeid
+0258 >  [35mint[m EQ     0257  [35m+12 [m
+0259    [35mu64[m FLOAD  0241  cdata.int64
+0260    [35mu64[m MOD    0256  0259
+0261 >  [33mcdt[m CNEWI  [35m+12 [m  0260
+---- TRACE 4 stop -> 1
+
+---- TRACE 5 start 3/2 luajit-div-miscompilation.lua:48
+---- TRACE 5 IR
+0001    [33mcdt[m SLOAD  #8    PI
+0002    [33mcdt[m SLOAD  #9    PI
+0003    [1mfun[m SLOAD  #0    R
+0004 >  [35mi64[m UREFO  0003  #0  
+0005    p64 SUB    0004  0000
+0006 >  p64 UGT    0005  [35m+80 [m
+0007 >  [31mtab[m ULOAD  0004
+0008    [35mint[m FLOAD  0007  tab.hmask
+0009 >  [35mint[m EQ     0008  [35m+31 [m
+0010    p64 FLOAD  0007  tab.node
+0011 >  p64 HREFK  0010  [32m"cast"[m @23
+0012 >  [1mfun[m HLOAD  0011
+0013 >  [1mfun[m EQ     0003  [1mluajit-div-miscompilation.lua:34[m
+0014 >  [33mcdt[m SLOAD  #7    T
+0015    [35mu16[m FLOAD  0014  cdata.ctypeid
+0016 >  [35mint[m EQ     0015  [35m+12 [m
+0017    [35mu64[m FLOAD  0014  cdata.int64
+0018    [35mu16[m FLOAD  [33m4611686018427387904ULL[m  cdata.ctypeid
+0019 >  [35mint[m EQ     0018  [35m+12 [m
+0020    [35mu64[m FLOAD  [33m4611686018427387904ULL[m  cdata.int64
+0021    [35mu64[m MUL    0020  0017
+0022 >  [33mcdt[m CNEWI  [35m+12 [m  0021
+0023    [35mu16[m FLOAD  0022  cdata.ctypeid
+0024 >  [35mint[m EQ     0023  [35m+12 [m
+0025    [35mu64[m FLOAD  0022  cdata.int64
+0026    [35mu16[m FLOAD  0002  cdata.ctypeid
+0027 >  [35mint[m EQ     0026  [35m+12 [m
+0028    [35mu64[m FLOAD  0002  cdata.int64
+0029    [35mu64[m ADD    0028  0025
+0030 >  [33mcdt[m CNEWI  [35m+12 [m  0029
+0031 >  [1mfun[m EQ     0012  [1mffi.cast[m
+0032    [35mu16[m FLOAD  [33mctype<int64_t>[m  cdata.ctypeid
+0033 >  [35mint[m EQ     0032  [35m+24 [m
+0034    [35mint[m FLOAD  [33mctype<int64_t>[m  cdata.int
+0035 >  [35mint[m EQ     0034  [35m+11 [m
+0036    [35mu16[m FLOAD  0030  cdata.ctypeid
+0037 >  [35mint[m EQ     0036  [35m+12 [m
+0038    [35mu64[m FLOAD  0030  cdata.int64
+0039 >  [33mcdt[m CNEWI  [35m+11 [m  0038
+0040 >  tru SLOAD  #4    T
+0041    [35mu16[m FLOAD  0039  cdata.ctypeid
+0042 >  [35mint[m EQ     0041  [35m+11 [m
+0043    [35mi64[m FLOAD  0039  cdata.int64
+0044    [35mu16[m FLOAD  0039  cdata.ctypeid
+0045 >  [35mint[m EQ     0044  [35m+11 [m
+0046    [35mi64[m FLOAD  0039  cdata.int64
+0047    [35mi64[m NEG    0043  0046
+0048 >  [33mcdt[m CNEWI  [35m+11 [m  0047
+0049 >  p64 RETF   proto: 0x7bd8df0fcfb8  [0x7bd8df0fd108]
+0050    [34mnum[m SLOAD  #12   I
+0051    [34mnum[m ADD    0050  [34m+1  [m
+0052 >  [34mnum[m LE     0051  [34m+3000[m
+0053 >  [33mcdt[m SLOAD  #11   T
+0054    [35mu16[m FLOAD  0053  cdata.ctypeid
+0055 >  [35mint[m EQ     0054  [35m+12 [m
+0056    [35mu64[m FLOAD  0053  cdata.int64
+0057    [35mu16[m FLOAD  [33m6364136223846793005ULL[m  cdata.ctypeid
+0058 >  [35mint[m EQ     0057  [35m+12 [m
+0059    [35mu64[m FLOAD  [33m6364136223846793005ULL[m  cdata.int64
+0060    [35mu64[m MUL    0059  0056
+0061 >  [33mcdt[m CNEWI  [35m+12 [m  0060
+0062    [35mu16[m FLOAD  0061  cdata.ctypeid
+0063 >  [35mint[m EQ     0062  [35m+12 [m
+0064    [35mu64[m FLOAD  0061  cdata.int64
+0065    [35mu16[m FLOAD  [33m1ULL[m  cdata.ctypeid
+0066 >  [35mint[m EQ     0065  [35m+12 [m
+0067    [35mu64[m FLOAD  [33m1ULL[m  cdata.int64
+0068    [35mu64[m ADD    0067  0064
+0069 >  [33mcdt[m CNEWI  [35m+12 [m  0068
+0070 >  [31mtab[m SLOAD  #2    T
+0071    [35mint[m FLOAD  0070  tab.hmask
+0072 >  [35mint[m EQ     0071  [35m+31 [m
+0073    p64 FLOAD  0070  tab.node
+0074 >  p64 HREFK  0073  [32m"cast"[m @23
+0075 >  [1mfun[m HLOAD  0074
+0076 >  [33mcdt[m SLOAD  #4    T
+0077    [35mu16[m FLOAD  0069  cdata.ctypeid
+0078 >  [35mint[m EQ     0077  [35m+12 [m
+0079    [35mu64[m FLOAD  0069  cdata.int64
+0080    [35mu16[m FLOAD  [33m4ULL[m  cdata.ctypeid
+0081 >  [35mint[m EQ     0080  [35m+12 [m
+0082    [35mu64[m FLOAD  [33m4ULL[m  cdata.int64
+0083    [35mu64[m DIV    0079  0082
+0084 >  [33mcdt[m CNEWI  [35m+12 [m  0083
+0085 >  [33mcdt[m SLOAD  #5    T
+0086    [35mu16[m FLOAD  0084  cdata.ctypeid
+0087 >  [35mint[m EQ     0086  [35m+12 [m
+0088    [35mu64[m FLOAD  0084  cdata.int64
+0089    [35mu16[m FLOAD  0085  cdata.ctypeid
+0090 >  [35mint[m EQ     0089  [35m+12 [m
+0091    [35mu64[m FLOAD  0085  cdata.int64
+0092    [35mu64[m MOD    0088  0091
+0093 >  [33mcdt[m CNEWI  [35m+12 [m  0092
+0094    [35mu16[m FLOAD  0085  cdata.ctypeid
+0095 >  [35mint[m EQ     0094  [35m+12 [m
+0096    [35mu64[m FLOAD  0085  cdata.int64
+0097    [35mu16[m FLOAD  0093  cdata.ctypeid
+0098 >  [35mint[m EQ     0097  [35m+12 [m
+0099    [35mu64[m FLOAD  0093  cdata.int64
+0100    [35mu64[m ADD    0099  0096
+0101 >  [33mcdt[m CNEWI  [35m+12 [m  0100
+0102 >  [1mfun[m EQ     0075  [1mffi.cast[m
+0103    [35mu16[m FLOAD  0076  cdata.ctypeid
+0104 >  [35mint[m EQ     0103  [35m+24 [m
+0105    [35mint[m FLOAD  0076  cdata.int
+0106 >  [35mint[m EQ     0105  [35m+11 [m
+0107    [35mu16[m FLOAD  0101  cdata.ctypeid
+0108 >  [35mint[m EQ     0107  [35m+12 [m
+0109    [35mu64[m FLOAD  0101  cdata.int64
+0110 >  [33mcdt[m CNEWI  [35m+11 [m  0109
+0111    [35mu16[m FLOAD  0069  cdata.ctypeid
+0112 >  [35mint[m EQ     0111  [35m+12 [m
+0113    [35mu64[m FLOAD  0069  cdata.int64
+0114    [35mu16[m FLOAD  [33m6364136223846793005ULL[m  cdata.ctypeid
+0115 >  [35mint[m EQ     0114  [35m+12 [m
+0116    [35mu64[m FLOAD  [33m6364136223846793005ULL[m  cdata.int64
+0117    [35mu64[m MUL    0116  0113
+0118 >  [33mcdt[m CNEWI  [35m+12 [m  0117
+0119    [35mu16[m FLOAD  0118  cdata.ctypeid
+0120 >  [35mint[m EQ     0119  [35m+12 [m
+0121    [35mu64[m FLOAD  0118  cdata.int64
+0122    [35mu16[m FLOAD  [33m1ULL[m  cdata.ctypeid
+0123 >  [35mint[m EQ     0122  [35m+12 [m
+0124    [35mu64[m FLOAD  [33m1ULL[m  cdata.int64
+0125    [35mu64[m ADD    0124  0121
+0126 >  [33mcdt[m CNEWI  [35m+12 [m  0125
+0127    [35mint[m FLOAD  0070  tab.hmask
+0128 >  [35mint[m EQ     0127  [35m+31 [m
+0129    p64 FLOAD  0070  tab.node
+0130 >  p64 HREFK  0129  [32m"cast"[m @23
+0131 >  [1mfun[m HLOAD  0130
+0132    [35mu16[m FLOAD  0126  cdata.ctypeid
+0133 >  [35mint[m EQ     0132  [35m+12 [m
+0134    [35mu64[m FLOAD  0126  cdata.int64
+0135    [35mu16[m FLOAD  [33m4ULL[m  cdata.ctypeid
+0136 >  [35mint[m EQ     0135  [35m+12 [m
+0137    [35mu64[m FLOAD  [33m4ULL[m  cdata.int64
+0138    [35mu64[m DIV    0134  0137
+0139 >  [33mcdt[m CNEWI  [35m+12 [m  0138
+0140    [35mu16[m FLOAD  0139  cdata.ctypeid
+0141 >  [35mint[m EQ     0140  [35m+12 [m
+0142    [35mu64[m FLOAD  0139  cdata.int64
+0143    [35mu16[m FLOAD  0085  cdata.ctypeid
+0144 >  [35mint[m EQ     0143  [35m+12 [m
+0145    [35mu64[m FLOAD  0085  cdata.int64
+0146    [35mu64[m MOD    0142  0145
+0147 >  [33mcdt[m CNEWI  [35m+12 [m  0146
+0148    [35mu16[m FLOAD  0085  cdata.ctypeid
+0149 >  [35mint[m EQ     0148  [35m+12 [m
+0150    [35mu64[m FLOAD  0085  cdata.int64
+0151    [35mu16[m FLOAD  0147  cdata.ctypeid
+0152 >  [35mint[m EQ     0151  [35m+12 [m
+0153    [35mu64[m FLOAD  0147  cdata.int64
+0154    [35mu64[m ADD    0153  0150
+0155 >  [33mcdt[m CNEWI  [35m+12 [m  0154
+0156 >  [1mfun[m EQ     0131  [1mffi.cast[m
+0157    [35mu16[m FLOAD  0076  cdata.ctypeid
+0158 >  [35mint[m EQ     0157  [35m+24 [m
+0159    [35mint[m FLOAD  0076  cdata.int
+0160 >  [35mint[m EQ     0159  [35m+11 [m
+0161    [35mu16[m FLOAD  0155  cdata.ctypeid
+0162 >  [35mint[m EQ     0161  [35m+12 [m
+0163    [35mu64[m FLOAD  0155  cdata.int64
+0164 >  [33mcdt[m CNEWI  [35m+11 [m  0163
+0165    [34mnum[m MUL    0051  [34m+0.5[m
+0166    [34mnum[m FPMATH 0165  floor
+0167    [34mnum[m ADD    0166  0166
+0168    [34mnum[m SUB    0051  0167
+0169 >  [34mnum[m EQ     0168  [34m+0  [m
+0170    [35mu16[m FLOAD  0110  cdata.ctypeid
+0171 >  [35mint[m EQ     0170  [35m+11 [m
+0172    [35mi64[m FLOAD  0110  cdata.int64
+0173    [35mu16[m FLOAD  0110  cdata.ctypeid
+0174 >  [35mint[m EQ     0173  [35m+11 [m
+0175    [35mi64[m FLOAD  0110  cdata.int64
+0176    [35mi64[m NEG    0172  0175
+0177 >  [33mcdt[m CNEWI  [35m+11 [m  0176
+0178    [34mnum[m DIV    0051  [34m+3  [m
+0179    [34mnum[m FPMATH 0178  floor
+0180    [34mnum[m MUL    0179  [34m+3  [m
+0181    [34mnum[m SUB    0051  0180
+0182 >  [34mnum[m NE     0181  [34m+0  [m
+0183 >  [1mfun[m SLOAD  #6    T
+0184 >  [1mfun[m EQ     0183  [1mluajit-div-miscompilation.lua:34[m
+0185    [35mu16[m FLOAD  0177  cdata.ctypeid
+0186 >  [35mint[m EQ     0185  [35m+11 [m
+0187    [35mi64[m FLOAD  0177  cdata.int64
+0188 >  [35mi64[m LT     0187  [35m+0  [m
+0189    [35mu16[m FLOAD  0164  cdata.ctypeid
+0190 >  [35mint[m EQ     0189  [35m+11 [m
+0191    [35mi64[m FLOAD  0164  cdata.int64
+0192 >  [35mi64[m GE     0191  [35m+0  [m
+0193    p64 UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0194 >  p64 EQ     0193  0000
+0195    [35mint[m FLOAD  0070  tab.hmask
+0196 >  [35mint[m EQ     0195  [35m+31 [m
+0197    p64 FLOAD  0070  tab.node
+0198 >  p64 HREFK  0197  [32m"cast"[m @23
+0199 >  [1mfun[m HLOAD  0198
+0200 >  [1mfun[m EQ     0199  [1mffi.cast[m
+0201    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0202 >  [35mint[m EQ     0201  [35m+24 [m
+0203    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0204 >  [35mint[m EQ     0203  [35m+12 [m
+0205    [35mu16[m FLOAD  0177  cdata.ctypeid
+0206 >  [35mint[m EQ     0205  [35m+11 [m
+0207    [35mi64[m FLOAD  0177  cdata.int64
+0208 >  [33mcdt[m CNEWI  [35m+12 [m  0207
+0209    [35mu16[m FLOAD  0177  cdata.ctypeid
+0210 >  [35mint[m EQ     0209  [35m+11 [m
+0211    [35mi64[m FLOAD  0177  cdata.int64
+0212 >  [35mi64[m LT     0211  [35m+0  [m
+0213    p64 UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0214 >  p64 EQ     0213  0000
+0215    [35mint[m FLOAD  0070  tab.hmask
+0216 >  [35mint[m EQ     0215  [35m+31 [m
+0217    p64 FLOAD  0070  tab.node
+0218 >  p64 HREFK  0217  [32m"cast"[m @23
+0219 >  [1mfun[m HLOAD  0218
+0220 >  [1mfun[m EQ     0219  [1mffi.cast[m
+0221    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0222 >  [35mint[m EQ     0221  [35m+24 [m
+0223    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0224 >  [35mint[m EQ     0223  [35m+12 [m
+0225 >  [33mcdt[m CNEWI  [35m+12 [m  [35m+0  [m
+0226    [35mu16[m FLOAD  0225  cdata.ctypeid
+0227 >  [35mint[m EQ     0226  [35m+12 [m
+0228    [35mu64[m FLOAD  0225  cdata.int64
+0229    [35mu16[m FLOAD  0208  cdata.ctypeid
+0230 >  [35mint[m EQ     0229  [35m+12 [m
+0231    [35mu64[m FLOAD  0208  cdata.int64
+0232    [35mu64[m SUB    0228  0231
+0233 >  [33mcdt[m CNEWI  [35m+12 [m  0232
+0234    p64 UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0235 >  p64 EQ     0234  0000
+0236    [35mint[m FLOAD  0070  tab.hmask
+0237 >  [35mint[m EQ     0236  [35m+31 [m
+0238    p64 FLOAD  0070  tab.node
+0239 >  p64 HREFK  0238  [32m"cast"[m @23
+0240 >  [1mfun[m HLOAD  0239
+0241 >  [1mfun[m EQ     0240  [1mffi.cast[m
+0242    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0243 >  [35mint[m EQ     0242  [35m+24 [m
+0244    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0245 >  [35mint[m EQ     0244  [35m+12 [m
+0246    [35mu16[m FLOAD  0164  cdata.ctypeid
+0247 >  [35mint[m EQ     0246  [35m+11 [m
+0248    [35mi64[m FLOAD  0164  cdata.int64
+0249 >  [33mcdt[m CNEWI  [35m+12 [m  0248
+0250    [35mu16[m FLOAD  0164  cdata.ctypeid
+0251 >  [35mint[m EQ     0250  [35m+11 [m
+0252    [35mi64[m FLOAD  0164  cdata.int64
+0253 >  [35mi64[m GE     0252  [35m+0  [m
+0254    [35mu16[m FLOAD  0233  cdata.ctypeid
+0255 >  [35mint[m EQ     0254  [35m+12 [m
+0256    [35mu64[m FLOAD  0233  cdata.int64
+0257    [35mu16[m FLOAD  0249  cdata.ctypeid
+0258 >  [35mint[m EQ     0257  [35m+12 [m
+0259    [35mu64[m FLOAD  0249  cdata.int64
+0260    [35mu64[m DIV    0256  0259
+0261 >  [33mcdt[m CNEWI  [35m+12 [m  0260
+0262    [35mu16[m FLOAD  0233  cdata.ctypeid
+0263 >  [35mint[m EQ     0262  [35m+12 [m
+0264    [35mu64[m FLOAD  0233  cdata.int64
+0265    [35mu16[m FLOAD  0249  cdata.ctypeid
+0266 >  [35mint[m EQ     0265  [35m+12 [m
+0267    [35mu64[m FLOAD  0249  cdata.int64
+0268    [35mu64[m MOD    0264  0267
+0269 >  [33mcdt[m CNEWI  [35m+12 [m  0268
+---- TRACE 5 stop -> 1
+
+---- TRACE 6 start 1/2 luajit-div-miscompilation.lua:48
+---- TRACE 6 IR
+0001    [33mcdt[m SLOAD  #8    PI
+0002    [33mcdt[m SLOAD  #9    PI
+0003    [1mfun[m SLOAD  #0    R
+0004 >  [35mi64[m UREFO  0003  #0  
+0005    p64 SUB    0004  0000
+0006 >  p64 UGT    0005  [35m+80 [m
+0007 >  [31mtab[m ULOAD  0004
+0008    [35mint[m FLOAD  0007  tab.hmask
+0009 >  [35mint[m EQ     0008  [35m+31 [m
+0010    p64 FLOAD  0007  tab.node
+0011 >  p64 HREFK  0010  [32m"cast"[m @23
+0012 >  [1mfun[m HLOAD  0011
+0013 >  [1mfun[m EQ     0003  [1mluajit-div-miscompilation.lua:34[m
+0014 >  [33mcdt[m SLOAD  #7    T
+0015    [35mu16[m FLOAD  0014  cdata.ctypeid
+0016 >  [35mint[m EQ     0015  [35m+12 [m
+0017    [35mu64[m FLOAD  0014  cdata.int64
+0018    [35mu16[m FLOAD  [33m4611686018427387904ULL[m  cdata.ctypeid
+0019 >  [35mint[m EQ     0018  [35m+12 [m
+0020    [35mu64[m FLOAD  [33m4611686018427387904ULL[m  cdata.int64
+0021    [35mu64[m MUL    0020  0017
+0022 >  [33mcdt[m CNEWI  [35m+12 [m  0021
+0023    [35mu16[m FLOAD  0022  cdata.ctypeid
+0024 >  [35mint[m EQ     0023  [35m+12 [m
+0025    [35mu64[m FLOAD  0022  cdata.int64
+0026    [35mu16[m FLOAD  0002  cdata.ctypeid
+0027 >  [35mint[m EQ     0026  [35m+12 [m
+0028    [35mu64[m FLOAD  0002  cdata.int64
+0029    [35mu64[m ADD    0028  0025
+0030 >  [33mcdt[m CNEWI  [35m+12 [m  0029
+0031 >  [1mfun[m EQ     0012  [1mffi.cast[m
+0032    [35mu16[m FLOAD  [33mctype<int64_t>[m  cdata.ctypeid
+0033 >  [35mint[m EQ     0032  [35m+24 [m
+0034    [35mint[m FLOAD  [33mctype<int64_t>[m  cdata.int
+0035 >  [35mint[m EQ     0034  [35m+11 [m
+0036    [35mu16[m FLOAD  0030  cdata.ctypeid
+0037 >  [35mint[m EQ     0036  [35m+12 [m
+0038    [35mu64[m FLOAD  0030  cdata.int64
+0039 >  [33mcdt[m CNEWI  [35m+11 [m  0038
+0040 >  fal SLOAD  #4    T
+0041 >  p64 RETF   proto: 0x7bd8df0fcfb8  [0x7bd8df0fd108]
+0042    [34mnum[m SLOAD  #12   I
+0043    [34mnum[m ADD    0042  [34m+1  [m
+0044 >  [34mnum[m LE     0043  [34m+3000[m
+0045 >  [33mcdt[m SLOAD  #11   T
+0046    [35mu16[m FLOAD  0045  cdata.ctypeid
+0047 >  [35mint[m EQ     0046  [35m+12 [m
+0048    [35mu64[m FLOAD  0045  cdata.int64
+0049    [35mu16[m FLOAD  [33m6364136223846793005ULL[m  cdata.ctypeid
+0050 >  [35mint[m EQ     0049  [35m+12 [m
+0051    [35mu64[m FLOAD  [33m6364136223846793005ULL[m  cdata.int64
+0052    [35mu64[m MUL    0051  0048
+0053 >  [33mcdt[m CNEWI  [35m+12 [m  0052
+0054    [35mu16[m FLOAD  0053  cdata.ctypeid
+0055 >  [35mint[m EQ     0054  [35m+12 [m
+0056    [35mu64[m FLOAD  0053  cdata.int64
+0057    [35mu16[m FLOAD  [33m1ULL[m  cdata.ctypeid
+0058 >  [35mint[m EQ     0057  [35m+12 [m
+0059    [35mu64[m FLOAD  [33m1ULL[m  cdata.int64
+0060    [35mu64[m ADD    0059  0056
+0061 >  [33mcdt[m CNEWI  [35m+12 [m  0060
+0062 >  [31mtab[m SLOAD  #2    T
+0063    [35mint[m FLOAD  0062  tab.hmask
+0064 >  [35mint[m EQ     0063  [35m+31 [m
+0065    p64 FLOAD  0062  tab.node
+0066 >  p64 HREFK  0065  [32m"cast"[m @23
+0067 >  [1mfun[m HLOAD  0066
+0068 >  [33mcdt[m SLOAD  #4    T
+0069    [35mu16[m FLOAD  0061  cdata.ctypeid
+0070 >  [35mint[m EQ     0069  [35m+12 [m
+0071    [35mu64[m FLOAD  0061  cdata.int64
+0072    [35mu16[m FLOAD  [33m4ULL[m  cdata.ctypeid
+0073 >  [35mint[m EQ     0072  [35m+12 [m
+0074    [35mu64[m FLOAD  [33m4ULL[m  cdata.int64
+0075    [35mu64[m DIV    0071  0074
+0076 >  [33mcdt[m CNEWI  [35m+12 [m  0075
+0077 >  [33mcdt[m SLOAD  #5    T
+0078    [35mu16[m FLOAD  0076  cdata.ctypeid
+0079 >  [35mint[m EQ     0078  [35m+12 [m
+0080    [35mu64[m FLOAD  0076  cdata.int64
+0081    [35mu16[m FLOAD  0077  cdata.ctypeid
+0082 >  [35mint[m EQ     0081  [35m+12 [m
+0083    [35mu64[m FLOAD  0077  cdata.int64
+0084    [35mu64[m MOD    0080  0083
+0085 >  [33mcdt[m CNEWI  [35m+12 [m  0084
+0086    [35mu16[m FLOAD  0077  cdata.ctypeid
+0087 >  [35mint[m EQ     0086  [35m+12 [m
+0088    [35mu64[m FLOAD  0077  cdata.int64
+0089    [35mu16[m FLOAD  0085  cdata.ctypeid
+0090 >  [35mint[m EQ     0089  [35m+12 [m
+0091    [35mu64[m FLOAD  0085  cdata.int64
+0092    [35mu64[m ADD    0091  0088
+0093 >  [33mcdt[m CNEWI  [35m+12 [m  0092
+0094 >  [1mfun[m EQ     0067  [1mffi.cast[m
+0095    [35mu16[m FLOAD  0068  cdata.ctypeid
+0096 >  [35mint[m EQ     0095  [35m+24 [m
+0097    [35mint[m FLOAD  0068  cdata.int
+0098 >  [35mint[m EQ     0097  [35m+11 [m
+0099    [35mu16[m FLOAD  0093  cdata.ctypeid
+0100 >  [35mint[m EQ     0099  [35m+12 [m
+0101    [35mu64[m FLOAD  0093  cdata.int64
+0102 >  [33mcdt[m CNEWI  [35m+11 [m  0101
+0103    [35mu16[m FLOAD  0061  cdata.ctypeid
+0104 >  [35mint[m EQ     0103  [35m+12 [m
+0105    [35mu64[m FLOAD  0061  cdata.int64
+0106    [35mu16[m FLOAD  [33m6364136223846793005ULL[m  cdata.ctypeid
+0107 >  [35mint[m EQ     0106  [35m+12 [m
+0108    [35mu64[m FLOAD  [33m6364136223846793005ULL[m  cdata.int64
+0109    [35mu64[m MUL    0108  0105
+0110 >  [33mcdt[m CNEWI  [35m+12 [m  0109
+0111    [35mu16[m FLOAD  0110  cdata.ctypeid
+0112 >  [35mint[m EQ     0111  [35m+12 [m
+0113    [35mu64[m FLOAD  0110  cdata.int64
+0114    [35mu16[m FLOAD  [33m1ULL[m  cdata.ctypeid
+0115 >  [35mint[m EQ     0114  [35m+12 [m
+0116    [35mu64[m FLOAD  [33m1ULL[m  cdata.int64
+0117    [35mu64[m ADD    0116  0113
+0118 >  [33mcdt[m CNEWI  [35m+12 [m  0117
+0119    [35mint[m FLOAD  0062  tab.hmask
+0120 >  [35mint[m EQ     0119  [35m+31 [m
+0121    p64 FLOAD  0062  tab.node
+0122 >  p64 HREFK  0121  [32m"cast"[m @23
+0123 >  [1mfun[m HLOAD  0122
+0124    [35mu16[m FLOAD  0118  cdata.ctypeid
+0125 >  [35mint[m EQ     0124  [35m+12 [m
+0126    [35mu64[m FLOAD  0118  cdata.int64
+0127    [35mu16[m FLOAD  [33m4ULL[m  cdata.ctypeid
+0128 >  [35mint[m EQ     0127  [35m+12 [m
+0129    [35mu64[m FLOAD  [33m4ULL[m  cdata.int64
+0130    [35mu64[m DIV    0126  0129
+0131 >  [33mcdt[m CNEWI  [35m+12 [m  0130
+0132    [35mu16[m FLOAD  0131  cdata.ctypeid
+0133 >  [35mint[m EQ     0132  [35m+12 [m
+0134    [35mu64[m FLOAD  0131  cdata.int64
+0135    [35mu16[m FLOAD  0077  cdata.ctypeid
+0136 >  [35mint[m EQ     0135  [35m+12 [m
+0137    [35mu64[m FLOAD  0077  cdata.int64
+0138    [35mu64[m MOD    0134  0137
+0139 >  [33mcdt[m CNEWI  [35m+12 [m  0138
+0140    [35mu16[m FLOAD  0077  cdata.ctypeid
+0141 >  [35mint[m EQ     0140  [35m+12 [m
+0142    [35mu64[m FLOAD  0077  cdata.int64
+0143    [35mu16[m FLOAD  0139  cdata.ctypeid
+0144 >  [35mint[m EQ     0143  [35m+12 [m
+0145    [35mu64[m FLOAD  0139  cdata.int64
+0146    [35mu64[m ADD    0145  0142
+0147 >  [33mcdt[m CNEWI  [35m+12 [m  0146
+0148 >  [1mfun[m EQ     0123  [1mffi.cast[m
+0149    [35mu16[m FLOAD  0068  cdata.ctypeid
+0150 >  [35mint[m EQ     0149  [35m+24 [m
+0151    [35mint[m FLOAD  0068  cdata.int
+0152 >  [35mint[m EQ     0151  [35m+11 [m
+0153    [35mu16[m FLOAD  0147  cdata.ctypeid
+0154 >  [35mint[m EQ     0153  [35m+12 [m
+0155    [35mu64[m FLOAD  0147  cdata.int64
+0156 >  [33mcdt[m CNEWI  [35m+11 [m  0155
+0157    [34mnum[m MUL    0043  [34m+0.5[m
+0158    [34mnum[m FPMATH 0157  floor
+0159    [34mnum[m ADD    0158  0158
+0160    [34mnum[m SUB    0043  0159
+0161 >  [34mnum[m EQ     0160  [34m+0  [m
+0162    [35mu16[m FLOAD  0102  cdata.ctypeid
+0163 >  [35mint[m EQ     0162  [35m+11 [m
+0164    [35mi64[m FLOAD  0102  cdata.int64
+0165    [35mu16[m FLOAD  0102  cdata.ctypeid
+0166 >  [35mint[m EQ     0165  [35m+11 [m
+0167    [35mi64[m FLOAD  0102  cdata.int64
+0168    [35mi64[m NEG    0164  0167
+0169 >  [33mcdt[m CNEWI  [35m+11 [m  0168
+0170    [34mnum[m DIV    0043  [34m+3  [m
+0171    [34mnum[m FPMATH 0170  floor
+0172    [34mnum[m MUL    0171  [34m+3  [m
+0173    [34mnum[m SUB    0043  0172
+0174 >  [34mnum[m NE     0173  [34m+0  [m
+0175 >  [1mfun[m SLOAD  #6    T
+0176 >  [1mfun[m EQ     0175  [1mluajit-div-miscompilation.lua:34[m
+0177    [35mu16[m FLOAD  0169  cdata.ctypeid
+0178 >  [35mint[m EQ     0177  [35m+11 [m
+0179    [35mi64[m FLOAD  0169  cdata.int64
+0180 >  [35mi64[m LT     0179  [35m+0  [m
+0181    [35mu16[m FLOAD  0156  cdata.ctypeid
+0182 >  [35mint[m EQ     0181  [35m+11 [m
+0183    [35mi64[m FLOAD  0156  cdata.int64
+0184 >  [35mi64[m GE     0183  [35m+0  [m
+0185    p64 UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0186 >  p64 EQ     0185  0000
+0187    [35mint[m FLOAD  0062  tab.hmask
+0188 >  [35mint[m EQ     0187  [35m+31 [m
+0189    p64 FLOAD  0062  tab.node
+0190 >  p64 HREFK  0189  [32m"cast"[m @23
+0191 >  [1mfun[m HLOAD  0190
+0192 >  [1mfun[m EQ     0191  [1mffi.cast[m
+0193    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0194 >  [35mint[m EQ     0193  [35m+24 [m
+0195    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0196 >  [35mint[m EQ     0195  [35m+12 [m
+0197    [35mu16[m FLOAD  0169  cdata.ctypeid
+0198 >  [35mint[m EQ     0197  [35m+11 [m
+0199    [35mi64[m FLOAD  0169  cdata.int64
+0200 >  [33mcdt[m CNEWI  [35m+12 [m  0199
+0201    [35mu16[m FLOAD  0169  cdata.ctypeid
+0202 >  [35mint[m EQ     0201  [35m+11 [m
+0203    [35mi64[m FLOAD  0169  cdata.int64
+0204 >  [35mi64[m LT     0203  [35m+0  [m
+0205    p64 UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0206 >  p64 EQ     0205  0000
+0207    [35mint[m FLOAD  0062  tab.hmask
+0208 >  [35mint[m EQ     0207  [35m+31 [m
+0209    p64 FLOAD  0062  tab.node
+0210 >  p64 HREFK  0209  [32m"cast"[m @23
+0211 >  [1mfun[m HLOAD  0210
+0212 >  [1mfun[m EQ     0211  [1mffi.cast[m
+0213    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0214 >  [35mint[m EQ     0213  [35m+24 [m
+0215    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0216 >  [35mint[m EQ     0215  [35m+12 [m
+0217 >  [33mcdt[m CNEWI  [35m+12 [m  [35m+0  [m
+0218    [35mu16[m FLOAD  0217  cdata.ctypeid
+0219 >  [35mint[m EQ     0218  [35m+12 [m
+0220    [35mu64[m FLOAD  0217  cdata.int64
+0221    [35mu16[m FLOAD  0200  cdata.ctypeid
+0222 >  [35mint[m EQ     0221  [35m+12 [m
+0223    [35mu64[m FLOAD  0200  cdata.int64
+0224    [35mu64[m SUB    0220  0223
+0225 >  [33mcdt[m CNEWI  [35m+12 [m  0224
+0226    p64 UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0227 >  p64 EQ     0226  0000
+0228    [35mint[m FLOAD  0062  tab.hmask
+0229 >  [35mint[m EQ     0228  [35m+31 [m
+0230    p64 FLOAD  0062  tab.node
+0231 >  p64 HREFK  0230  [32m"cast"[m @23
+0232 >  [1mfun[m HLOAD  0231
+0233 >  [1mfun[m EQ     0232  [1mffi.cast[m
+0234    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0235 >  [35mint[m EQ     0234  [35m+24 [m
+0236    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0237 >  [35mint[m EQ     0236  [35m+12 [m
+0238    [35mu16[m FLOAD  0156  cdata.ctypeid
+0239 >  [35mint[m EQ     0238  [35m+11 [m
+0240    [35mi64[m FLOAD  0156  cdata.int64
+0241 >  [33mcdt[m CNEWI  [35m+12 [m  0240
+0242    [35mu16[m FLOAD  0156  cdata.ctypeid
+0243 >  [35mint[m EQ     0242  [35m+11 [m
+0244    [35mi64[m FLOAD  0156  cdata.int64
+0245 >  [35mi64[m GE     0244  [35m+0  [m
+0246    [35mu16[m FLOAD  0225  cdata.ctypeid
+0247 >  [35mint[m EQ     0246  [35m+12 [m
+0248    [35mu64[m FLOAD  0225  cdata.int64
+0249    [35mu16[m FLOAD  0241  cdata.ctypeid
+0250 >  [35mint[m EQ     0249  [35m+12 [m
+0251    [35mu64[m FLOAD  0241  cdata.int64
+0252    [35mu64[m DIV    0248  0251
+0253 >  [33mcdt[m CNEWI  [35m+12 [m  0252
+0254    [35mu16[m FLOAD  0225  cdata.ctypeid
+0255 >  [35mint[m EQ     0254  [35m+12 [m
+0256    [35mu64[m FLOAD  0225  cdata.int64
+0257    [35mu16[m FLOAD  0241  cdata.ctypeid
+0258 >  [35mint[m EQ     0257  [35m+12 [m
+0259    [35mu64[m FLOAD  0241  cdata.int64
+0260    [35mu64[m MOD    0256  0259
+0261 >  [33mcdt[m CNEWI  [35m+12 [m  0260
+---- TRACE 6 stop -> 1
+
+---- TRACE 7 start 1/5 luajit-div-miscompilation.lua:48
+---- TRACE 7 IR
+0001    [33mcdt[m SLOAD  #8    PI
+0002    [33mcdt[m SLOAD  #9    PI
+0003    [1mfun[m SLOAD  #0    R
+0004 >  [35mi64[m UREFO  0003  #0  
+0005    p64 SUB    0004  0000
+0006 >  p64 UGT    0005  [35m+80 [m
+0007 >  [31mtab[m ULOAD  0004
+0008    [35mint[m FLOAD  0007  tab.hmask
+0009 >  [35mint[m EQ     0008  [35m+31 [m
+0010    p64 FLOAD  0007  tab.node
+0011 >  p64 HREFK  0010  [32m"cast"[m @23
+0012 >  [1mfun[m HLOAD  0011
+0013 >  [1mfun[m EQ     0003  [1mluajit-div-miscompilation.lua:34[m
+0014 >  [33mcdt[m SLOAD  #7    T
+0015    [35mu16[m FLOAD  0014  cdata.ctypeid
+0016 >  [35mint[m EQ     0015  [35m+12 [m
+0017    [35mu64[m FLOAD  0014  cdata.int64
+0018    [35mu16[m FLOAD  [33m4611686018427387904ULL[m  cdata.ctypeid
+0019 >  [35mint[m EQ     0018  [35m+12 [m
+0020    [35mu64[m FLOAD  [33m4611686018427387904ULL[m  cdata.int64
+0021    [35mu64[m MUL    0020  0017
+0022 >  [33mcdt[m CNEWI  [35m+12 [m  0021
+0023    [35mu16[m FLOAD  0022  cdata.ctypeid
+0024 >  [35mint[m EQ     0023  [35m+12 [m
+0025    [35mu64[m FLOAD  0022  cdata.int64
+0026    [35mu16[m FLOAD  0002  cdata.ctypeid
+0027 >  [35mint[m EQ     0026  [35m+12 [m
+0028    [35mu64[m FLOAD  0002  cdata.int64
+0029    [35mu64[m ADD    0028  0025
+0030 >  [33mcdt[m CNEWI  [35m+12 [m  0029
+0031 >  [1mfun[m EQ     0012  [1mffi.cast[m
+0032    [35mu16[m FLOAD  [33mctype<int64_t>[m  cdata.ctypeid
+0033 >  [35mint[m EQ     0032  [35m+24 [m
+0034    [35mint[m FLOAD  [33mctype<int64_t>[m  cdata.int
+0035 >  [35mint[m EQ     0034  [35m+11 [m
+0036    [35mu16[m FLOAD  0030  cdata.ctypeid
+0037 >  [35mint[m EQ     0036  [35m+12 [m
+0038    [35mu64[m FLOAD  0030  cdata.int64
+0039 >  [33mcdt[m CNEWI  [35m+11 [m  0038
+0040 >  tru SLOAD  #4    T
+0041    [35mu16[m FLOAD  0039  cdata.ctypeid
+0042 >  [35mint[m EQ     0041  [35m+11 [m
+0043    [35mi64[m FLOAD  0039  cdata.int64
+0044    [35mu16[m FLOAD  0039  cdata.ctypeid
+0045 >  [35mint[m EQ     0044  [35m+11 [m
+0046    [35mi64[m FLOAD  0039  cdata.int64
+0047    [35mi64[m NEG    0043  0046
+0048 >  [33mcdt[m CNEWI  [35m+11 [m  0047
+0049 >  p64 RETF   proto: 0x7bd8df0fcfb8  [0x7bd8df0fd108]
+0050    [34mnum[m SLOAD  #12   I
+0051    [34mnum[m ADD    0050  [34m+1  [m
+0052 >  [34mnum[m LE     0051  [34m+3000[m
+0053 >  [33mcdt[m SLOAD  #11   T
+0054    [35mu16[m FLOAD  0053  cdata.ctypeid
+0055 >  [35mint[m EQ     0054  [35m+12 [m
+0056    [35mu64[m FLOAD  0053  cdata.int64
+0057    [35mu16[m FLOAD  [33m6364136223846793005ULL[m  cdata.ctypeid
+0058 >  [35mint[m EQ     0057  [35m+12 [m
+0059    [35mu64[m FLOAD  [33m6364136223846793005ULL[m  cdata.int64
+0060    [35mu64[m MUL    0059  0056
+0061 >  [33mcdt[m CNEWI  [35m+12 [m  0060
+0062    [35mu16[m FLOAD  0061  cdata.ctypeid
+0063 >  [35mint[m EQ     0062  [35m+12 [m
+0064    [35mu64[m FLOAD  0061  cdata.int64
+0065    [35mu16[m FLOAD  [33m1ULL[m  cdata.ctypeid
+0066 >  [35mint[m EQ     0065  [35m+12 [m
+0067    [35mu64[m FLOAD  [33m1ULL[m  cdata.int64
+0068    [35mu64[m ADD    0067  0064
+0069 >  [33mcdt[m CNEWI  [35m+12 [m  0068
+0070 >  [31mtab[m SLOAD  #2    T
+0071    [35mint[m FLOAD  0070  tab.hmask
+0072 >  [35mint[m EQ     0071  [35m+31 [m
+0073    p64 FLOAD  0070  tab.node
+0074 >  p64 HREFK  0073  [32m"cast"[m @23
+0075 >  [1mfun[m HLOAD  0074
+0076 >  [33mcdt[m SLOAD  #4    T
+0077    [35mu16[m FLOAD  0069  cdata.ctypeid
+0078 >  [35mint[m EQ     0077  [35m+12 [m
+0079    [35mu64[m FLOAD  0069  cdata.int64
+0080    [35mu16[m FLOAD  [33m4ULL[m  cdata.ctypeid
+0081 >  [35mint[m EQ     0080  [35m+12 [m
+0082    [35mu64[m FLOAD  [33m4ULL[m  cdata.int64
+0083    [35mu64[m DIV    0079  0082
+0084 >  [33mcdt[m CNEWI  [35m+12 [m  0083
+0085 >  [33mcdt[m SLOAD  #5    T
+0086    [35mu16[m FLOAD  0084  cdata.ctypeid
+0087 >  [35mint[m EQ     0086  [35m+12 [m
+0088    [35mu64[m FLOAD  0084  cdata.int64
+0089    [35mu16[m FLOAD  0085  cdata.ctypeid
+0090 >  [35mint[m EQ     0089  [35m+12 [m
+0091    [35mu64[m FLOAD  0085  cdata.int64
+0092    [35mu64[m MOD    0088  0091
+0093 >  [33mcdt[m CNEWI  [35m+12 [m  0092
+0094    [35mu16[m FLOAD  0085  cdata.ctypeid
+0095 >  [35mint[m EQ     0094  [35m+12 [m
+0096    [35mu64[m FLOAD  0085  cdata.int64
+0097    [35mu16[m FLOAD  0093  cdata.ctypeid
+0098 >  [35mint[m EQ     0097  [35m+12 [m
+0099    [35mu64[m FLOAD  0093  cdata.int64
+0100    [35mu64[m ADD    0099  0096
+0101 >  [33mcdt[m CNEWI  [35m+12 [m  0100
+0102 >  [1mfun[m EQ     0075  [1mffi.cast[m
+0103    [35mu16[m FLOAD  0076  cdata.ctypeid
+0104 >  [35mint[m EQ     0103  [35m+24 [m
+0105    [35mint[m FLOAD  0076  cdata.int
+0106 >  [35mint[m EQ     0105  [35m+11 [m
+0107    [35mu16[m FLOAD  0101  cdata.ctypeid
+0108 >  [35mint[m EQ     0107  [35m+12 [m
+0109    [35mu64[m FLOAD  0101  cdata.int64
+0110 >  [33mcdt[m CNEWI  [35m+11 [m  0109
+0111    [35mu16[m FLOAD  0069  cdata.ctypeid
+0112 >  [35mint[m EQ     0111  [35m+12 [m
+0113    [35mu64[m FLOAD  0069  cdata.int64
+0114    [35mu16[m FLOAD  [33m6364136223846793005ULL[m  cdata.ctypeid
+0115 >  [35mint[m EQ     0114  [35m+12 [m
+0116    [35mu64[m FLOAD  [33m6364136223846793005ULL[m  cdata.int64
+0117    [35mu64[m MUL    0116  0113
+0118 >  [33mcdt[m CNEWI  [35m+12 [m  0117
+0119    [35mu16[m FLOAD  0118  cdata.ctypeid
+0120 >  [35mint[m EQ     0119  [35m+12 [m
+0121    [35mu64[m FLOAD  0118  cdata.int64
+0122    [35mu16[m FLOAD  [33m1ULL[m  cdata.ctypeid
+0123 >  [35mint[m EQ     0122  [35m+12 [m
+0124    [35mu64[m FLOAD  [33m1ULL[m  cdata.int64
+0125    [35mu64[m ADD    0124  0121
+0126 >  [33mcdt[m CNEWI  [35m+12 [m  0125
+0127    [35mint[m FLOAD  0070  tab.hmask
+0128 >  [35mint[m EQ     0127  [35m+31 [m
+0129    p64 FLOAD  0070  tab.node
+0130 >  p64 HREFK  0129  [32m"cast"[m @23
+0131 >  [1mfun[m HLOAD  0130
+0132    [35mu16[m FLOAD  0126  cdata.ctypeid
+0133 >  [35mint[m EQ     0132  [35m+12 [m
+0134    [35mu64[m FLOAD  0126  cdata.int64
+0135    [35mu16[m FLOAD  [33m4ULL[m  cdata.ctypeid
+0136 >  [35mint[m EQ     0135  [35m+12 [m
+0137    [35mu64[m FLOAD  [33m4ULL[m  cdata.int64
+0138    [35mu64[m DIV    0134  0137
+0139 >  [33mcdt[m CNEWI  [35m+12 [m  0138
+0140    [35mu16[m FLOAD  0139  cdata.ctypeid
+0141 >  [35mint[m EQ     0140  [35m+12 [m
+0142    [35mu64[m FLOAD  0139  cdata.int64
+0143    [35mu16[m FLOAD  0085  cdata.ctypeid
+0144 >  [35mint[m EQ     0143  [35m+12 [m
+0145    [35mu64[m FLOAD  0085  cdata.int64
+0146    [35mu64[m MOD    0142  0145
+0147 >  [33mcdt[m CNEWI  [35m+12 [m  0146
+0148    [35mu16[m FLOAD  0085  cdata.ctypeid
+0149 >  [35mint[m EQ     0148  [35m+12 [m
+0150    [35mu64[m FLOAD  0085  cdata.int64
+0151    [35mu16[m FLOAD  0147  cdata.ctypeid
+0152 >  [35mint[m EQ     0151  [35m+12 [m
+0153    [35mu64[m FLOAD  0147  cdata.int64
+0154    [35mu64[m ADD    0153  0150
+0155 >  [33mcdt[m CNEWI  [35m+12 [m  0154
+0156 >  [1mfun[m EQ     0131  [1mffi.cast[m
+0157    [35mu16[m FLOAD  0076  cdata.ctypeid
+0158 >  [35mint[m EQ     0157  [35m+24 [m
+0159    [35mint[m FLOAD  0076  cdata.int
+0160 >  [35mint[m EQ     0159  [35m+11 [m
+0161    [35mu16[m FLOAD  0155  cdata.ctypeid
+0162 >  [35mint[m EQ     0161  [35m+12 [m
+0163    [35mu64[m FLOAD  0155  cdata.int64
+0164 >  [33mcdt[m CNEWI  [35m+11 [m  0163
+0165    [34mnum[m MUL    0051  [34m+0.5[m
+0166    [34mnum[m FPMATH 0165  floor
+0167    [34mnum[m ADD    0166  0166
+0168    [34mnum[m SUB    0051  0167
+0169 >  [34mnum[m EQ     0168  [34m+0  [m
+0170    [35mu16[m FLOAD  0110  cdata.ctypeid
+0171 >  [35mint[m EQ     0170  [35m+11 [m
+0172    [35mi64[m FLOAD  0110  cdata.int64
+0173    [35mu16[m FLOAD  0110  cdata.ctypeid
+0174 >  [35mint[m EQ     0173  [35m+11 [m
+0175    [35mi64[m FLOAD  0110  cdata.int64
+0176    [35mi64[m NEG    0172  0175
+0177 >  [33mcdt[m CNEWI  [35m+11 [m  0176
+0178    [34mnum[m DIV    0051  [34m+3  [m
+0179    [34mnum[m FPMATH 0178  floor
+0180    [34mnum[m MUL    0179  [34m+3  [m
+0181    [34mnum[m SUB    0051  0180
+0182 >  [34mnum[m NE     0181  [34m+0  [m
+0183 >  [1mfun[m SLOAD  #6    T
+0184 >  [1mfun[m EQ     0183  [1mluajit-div-miscompilation.lua:34[m
+0185    [35mu16[m FLOAD  0177  cdata.ctypeid
+0186 >  [35mint[m EQ     0185  [35m+11 [m
+0187    [35mi64[m FLOAD  0177  cdata.int64
+0188 >  [35mi64[m LT     0187  [35m+0  [m
+0189    [35mu16[m FLOAD  0164  cdata.ctypeid
+0190 >  [35mint[m EQ     0189  [35m+11 [m
+0191    [35mi64[m FLOAD  0164  cdata.int64
+0192 >  [35mi64[m GE     0191  [35m+0  [m
+0193    p64 UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0194 >  p64 EQ     0193  0000
+0195    [35mint[m FLOAD  0070  tab.hmask
+0196 >  [35mint[m EQ     0195  [35m+31 [m
+0197    p64 FLOAD  0070  tab.node
+0198 >  p64 HREFK  0197  [32m"cast"[m @23
+0199 >  [1mfun[m HLOAD  0198
+0200 >  [1mfun[m EQ     0199  [1mffi.cast[m
+0201    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0202 >  [35mint[m EQ     0201  [35m+24 [m
+0203    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0204 >  [35mint[m EQ     0203  [35m+12 [m
+0205    [35mu16[m FLOAD  0177  cdata.ctypeid
+0206 >  [35mint[m EQ     0205  [35m+11 [m
+0207    [35mi64[m FLOAD  0177  cdata.int64
+0208 >  [33mcdt[m CNEWI  [35m+12 [m  0207
+0209    [35mu16[m FLOAD  0177  cdata.ctypeid
+0210 >  [35mint[m EQ     0209  [35m+11 [m
+0211    [35mi64[m FLOAD  0177  cdata.int64
+0212 >  [35mi64[m LT     0211  [35m+0  [m
+0213    p64 UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0214 >  p64 EQ     0213  0000
+0215    [35mint[m FLOAD  0070  tab.hmask
+0216 >  [35mint[m EQ     0215  [35m+31 [m
+0217    p64 FLOAD  0070  tab.node
+0218 >  p64 HREFK  0217  [32m"cast"[m @23
+0219 >  [1mfun[m HLOAD  0218
+0220 >  [1mfun[m EQ     0219  [1mffi.cast[m
+0221    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0222 >  [35mint[m EQ     0221  [35m+24 [m
+0223    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0224 >  [35mint[m EQ     0223  [35m+12 [m
+0225 >  [33mcdt[m CNEWI  [35m+12 [m  [35m+0  [m
+0226    [35mu16[m FLOAD  0225  cdata.ctypeid
+0227 >  [35mint[m EQ     0226  [35m+12 [m
+0228    [35mu64[m FLOAD  0225  cdata.int64
+0229    [35mu16[m FLOAD  0208  cdata.ctypeid
+0230 >  [35mint[m EQ     0229  [35m+12 [m
+0231    [35mu64[m FLOAD  0208  cdata.int64
+0232    [35mu64[m SUB    0228  0231
+0233 >  [33mcdt[m CNEWI  [35m+12 [m  0232
+0234    p64 UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0235 >  p64 EQ     0234  0000
+0236    [35mint[m FLOAD  0070  tab.hmask
+0237 >  [35mint[m EQ     0236  [35m+31 [m
+0238    p64 FLOAD  0070  tab.node
+0239 >  p64 HREFK  0238  [32m"cast"[m @23
+0240 >  [1mfun[m HLOAD  0239
+0241 >  [1mfun[m EQ     0240  [1mffi.cast[m
+0242    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0243 >  [35mint[m EQ     0242  [35m+24 [m
+0244    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0245 >  [35mint[m EQ     0244  [35m+12 [m
+0246    [35mu16[m FLOAD  0164  cdata.ctypeid
+0247 >  [35mint[m EQ     0246  [35m+11 [m
+0248    [35mi64[m FLOAD  0164  cdata.int64
+0249 >  [33mcdt[m CNEWI  [35m+12 [m  0248
+0250    [35mu16[m FLOAD  0164  cdata.ctypeid
+0251 >  [35mint[m EQ     0250  [35m+11 [m
+0252    [35mi64[m FLOAD  0164  cdata.int64
+0253 >  [35mi64[m GE     0252  [35m+0  [m
+0254    [35mu16[m FLOAD  0233  cdata.ctypeid
+0255 >  [35mint[m EQ     0254  [35m+12 [m
+0256    [35mu64[m FLOAD  0233  cdata.int64
+0257    [35mu16[m FLOAD  0249  cdata.ctypeid
+0258 >  [35mint[m EQ     0257  [35m+12 [m
+0259    [35mu64[m FLOAD  0249  cdata.int64
+0260    [35mu64[m DIV    0256  0259
+0261 >  [33mcdt[m CNEWI  [35m+12 [m  0260
+0262    [35mu16[m FLOAD  0233  cdata.ctypeid
+0263 >  [35mint[m EQ     0262  [35m+12 [m
+0264    [35mu64[m FLOAD  0233  cdata.int64
+0265    [35mu16[m FLOAD  0249  cdata.ctypeid
+0266 >  [35mint[m EQ     0265  [35m+12 [m
+0267    [35mu64[m FLOAD  0249  cdata.int64
+0268    [35mu64[m MOD    0264  0267
+0269 >  [33mcdt[m CNEWI  [35m+12 [m  0268
+---- TRACE 7 stop -> 1
+
+---- TRACE 8 start luajit-div-miscompilation.lua:60
+---- TRACE 8 IR
+0001    [35mint[m SLOAD  #12   CI
+0002 >  [33mcdt[m SLOAD  #11   T
+0003    [35mu16[m FLOAD  0002  cdata.ctypeid
+0004 >  [35mint[m EQ     0003  [35m+12 [m
+0005    [35mu64[m FLOAD  0002  cdata.int64
+0006    [35mu16[m FLOAD  [33m6364136223846793005ULL[m  cdata.ctypeid
+0007 >  [35mint[m EQ     0006  [35m+12 [m
+0008    [35mu64[m FLOAD  [33m6364136223846793005ULL[m  cdata.int64
+0009    [35mu64[m MUL    0008  0005
+0010 >  [33mcdt[m CNEWI  [35m+12 [m  0009
+0011    [35mu16[m FLOAD  0010  cdata.ctypeid
+0012 >  [35mint[m EQ     0011  [35m+12 [m
+0013    [35mu64[m FLOAD  0010  cdata.int64
+0014    [35mu16[m FLOAD  [33m1ULL[m  cdata.ctypeid
+0015 >  [35mint[m EQ     0014  [35m+12 [m
+0016    [35mu64[m FLOAD  [33m1ULL[m  cdata.int64
+0017    [35mu64[m ADD    0016  0013
+0018 >  [33mcdt[m CNEWI  [35m+12 [m  0017
+0019 >  [31mtab[m SLOAD  #2    T
+0020    [35mint[m FLOAD  0019  tab.hmask
+0021 >  [35mint[m EQ     0020  [35m+31 [m
+0022    p64 FLOAD  0019  tab.node
+0023 >  p64 HREFK  0022  [32m"cast"[m @23
+0024 >  [1mfun[m HLOAD  0023
+0025 >  [33mcdt[m SLOAD  #4    T
+0026    [35mu16[m FLOAD  0018  cdata.ctypeid
+0027 >  [35mint[m EQ     0026  [35m+12 [m
+0028    [35mu64[m FLOAD  0018  cdata.int64
+0029    [35mu16[m FLOAD  [33m4ULL[m  cdata.ctypeid
+0030 >  [35mint[m EQ     0029  [35m+12 [m
+0031    [35mu64[m FLOAD  [33m4ULL[m  cdata.int64
+0032    [35mu64[m DIV    0028  0031
+0033 >  [33mcdt[m CNEWI  [35m+12 [m  0032
+0034 >  [33mcdt[m SLOAD  #5    T
+0035    [35mu16[m FLOAD  0033  cdata.ctypeid
+0036 >  [35mint[m EQ     0035  [35m+12 [m
+0037    [35mu64[m FLOAD  0033  cdata.int64
+0038    [35mu16[m FLOAD  0034  cdata.ctypeid
+0039 >  [35mint[m EQ     0038  [35m+12 [m
+0040    [35mu64[m FLOAD  0034  cdata.int64
+0041    [35mu64[m MOD    0037  0040
+0042 >  [33mcdt[m CNEWI  [35m+12 [m  0041
+0043    [35mu16[m FLOAD  0034  cdata.ctypeid
+0044 >  [35mint[m EQ     0043  [35m+12 [m
+0045    [35mu64[m FLOAD  0034  cdata.int64
+0046    [35mu16[m FLOAD  0042  cdata.ctypeid
+0047 >  [35mint[m EQ     0046  [35m+12 [m
+0048    [35mu64[m FLOAD  0042  cdata.int64
+0049    [35mu64[m ADD    0048  0045
+0050 >  [33mcdt[m CNEWI  [35m+12 [m  0049
+0051 >  [1mfun[m EQ     0024  [1mffi.cast[m
+0052    [35mu16[m FLOAD  0025  cdata.ctypeid
+0053 >  [35mint[m EQ     0052  [35m+24 [m
+0054    [35mint[m FLOAD  0025  cdata.int
+0055 >  [35mint[m EQ     0054  [35m+11 [m
+0056    [35mu16[m FLOAD  0050  cdata.ctypeid
+0057 >  [35mint[m EQ     0056  [35m+12 [m
+0058    [35mu64[m FLOAD  0050  cdata.int64
+0059 >  [33mcdt[m CNEWI  [35m+11 [m  0058
+0060    [35mu16[m FLOAD  0018  cdata.ctypeid
+0061 >  [35mint[m EQ     0060  [35m+12 [m
+0062    [35mu64[m FLOAD  0018  cdata.int64
+0063    [35mu16[m FLOAD  [33m6364136223846793005ULL[m  cdata.ctypeid
+0064 >  [35mint[m EQ     0063  [35m+12 [m
+0065    [35mu64[m FLOAD  [33m6364136223846793005ULL[m  cdata.int64
+0066    [35mu64[m MUL    0065  0062
+0067 >  [33mcdt[m CNEWI  [35m+12 [m  0066
+0068    [35mu16[m FLOAD  0067  cdata.ctypeid
+0069 >  [35mint[m EQ     0068  [35m+12 [m
+0070    [35mu64[m FLOAD  0067  cdata.int64
+0071    [35mu16[m FLOAD  [33m1ULL[m  cdata.ctypeid
+0072 >  [35mint[m EQ     0071  [35m+12 [m
+0073    [35mu64[m FLOAD  [33m1ULL[m  cdata.int64
+0074    [35mu64[m ADD    0073  0070
+0075 >  [33mcdt[m CNEWI  [35m+12 [m  0074
+0076    [35mint[m FLOAD  0019  tab.hmask
+0077 >  [35mint[m EQ     0076  [35m+31 [m
+0078    p64 FLOAD  0019  tab.node
+0079 >  p64 HREFK  0078  [32m"cast"[m @23
+0080 >  [1mfun[m HLOAD  0079
+0081    [35mu16[m FLOAD  0075  cdata.ctypeid
+0082 >  [35mint[m EQ     0081  [35m+12 [m
+0083    [35mu64[m FLOAD  0075  cdata.int64
+0084    [35mu16[m FLOAD  [33m4ULL[m  cdata.ctypeid
+0085 >  [35mint[m EQ     0084  [35m+12 [m
+0086    [35mu64[m FLOAD  [33m4ULL[m  cdata.int64
+0087    [35mu64[m DIV    0083  0086
+0088 >  [33mcdt[m CNEWI  [35m+12 [m  0087
+0089    [35mu16[m FLOAD  0088  cdata.ctypeid
+0090 >  [35mint[m EQ     0089  [35m+12 [m
+0091    [35mu64[m FLOAD  0088  cdata.int64
+0092    [35mu16[m FLOAD  0034  cdata.ctypeid
+0093 >  [35mint[m EQ     0092  [35m+12 [m
+0094    [35mu64[m FLOAD  0034  cdata.int64
+0095    [35mu64[m MOD    0091  0094
+0096 >  [33mcdt[m CNEWI  [35m+12 [m  0095
+0097    [35mu16[m FLOAD  0034  cdata.ctypeid
+0098 >  [35mint[m EQ     0097  [35m+12 [m
+0099    [35mu64[m FLOAD  0034  cdata.int64
+0100    [35mu16[m FLOAD  0096  cdata.ctypeid
+0101 >  [35mint[m EQ     0100  [35m+12 [m
+0102    [35mu64[m FLOAD  0096  cdata.int64
+0103    [35mu64[m ADD    0102  0099
+0104 >  [33mcdt[m CNEWI  [35m+12 [m  0103
+0105 >  [1mfun[m EQ     0080  [1mffi.cast[m
+0106    [35mu16[m FLOAD  0025  cdata.ctypeid
+0107 >  [35mint[m EQ     0106  [35m+24 [m
+0108    [35mint[m FLOAD  0025  cdata.int
+0109 >  [35mint[m EQ     0108  [35m+11 [m
+0110    [35mu16[m FLOAD  0104  cdata.ctypeid
+0111 >  [35mint[m EQ     0110  [35m+12 [m
+0112    [35mu64[m FLOAD  0104  cdata.int64
+0113 >  [33mcdt[m CNEWI  [35m+11 [m  0112
+0114    [35mint[m BAND   0001  [35m+1  [m
+0115 >  [35mint[m NE     0114  [35m+0  [m
+0116    [35mint[m MOD    0001  [35m+3  [m
+0117 >  [35mint[m EQ     0116  [35m+0  [m
+0118    [35mu16[m FLOAD  0113  cdata.ctypeid
+0119 >  [35mint[m EQ     0118  [35m+11 [m
+0120    [35mi64[m FLOAD  0113  cdata.int64
+0121    [35mu16[m FLOAD  0113  cdata.ctypeid
+0122 >  [35mint[m EQ     0121  [35m+11 [m
+0123    [35mi64[m FLOAD  0113  cdata.int64
+0124    [35mi64[m NEG    0120  0123
+0125 >  [33mcdt[m CNEWI  [35m+11 [m  0124
+0126 >  [1mfun[m SLOAD  #6    T
+0127 >  [1mfun[m EQ     0126  [1mluajit-div-miscompilation.lua:34[m
+0128    [35mu16[m FLOAD  0059  cdata.ctypeid
+0129 >  [35mint[m EQ     0128  [35m+11 [m
+0130    [35mi64[m FLOAD  0059  cdata.int64
+0131 >  [35mi64[m GE     0130  [35m+0  [m
+0132    [35mu16[m FLOAD  0125  cdata.ctypeid
+0133 >  [35mint[m EQ     0132  [35m+11 [m
+0134    [35mi64[m FLOAD  0125  cdata.int64
+0135 >  [35mi64[m LT     0134  [35m+0  [m
+0136    p64 UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0137 >  p64 EQ     0136  0000
+0138    [35mint[m FLOAD  0019  tab.hmask
+0139 >  [35mint[m EQ     0138  [35m+31 [m
+0140    p64 FLOAD  0019  tab.node
+0141 >  p64 HREFK  0140  [32m"cast"[m @23
+0142 >  [1mfun[m HLOAD  0141
+0143 >  [1mfun[m EQ     0142  [1mffi.cast[m
+0144    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0145 >  [35mint[m EQ     0144  [35m+24 [m
+0146    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0147 >  [35mint[m EQ     0146  [35m+12 [m
+0148    [35mu16[m FLOAD  0059  cdata.ctypeid
+0149 >  [35mint[m EQ     0148  [35m+11 [m
+0150    [35mi64[m FLOAD  0059  cdata.int64
+0151 >  [33mcdt[m CNEWI  [35m+12 [m  0150
+0152    [35mu16[m FLOAD  0059  cdata.ctypeid
+0153 >  [35mint[m EQ     0152  [35m+11 [m
+0154    [35mi64[m FLOAD  0059  cdata.int64
+0155 >  [35mi64[m GE     0154  [35m+0  [m
+0156    p64 UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0157 >  p64 EQ     0156  0000
+0158    [35mint[m FLOAD  0019  tab.hmask
+0159 >  [35mint[m EQ     0158  [35m+31 [m
+0160    p64 FLOAD  0019  tab.node
+0161 >  p64 HREFK  0160  [32m"cast"[m @23
+0162 >  [1mfun[m HLOAD  0161
+0163 >  [1mfun[m EQ     0162  [1mffi.cast[m
+0164    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0165 >  [35mint[m EQ     0164  [35m+24 [m
+0166    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0167 >  [35mint[m EQ     0166  [35m+12 [m
+0168    [35mu16[m FLOAD  0125  cdata.ctypeid
+0169 >  [35mint[m EQ     0168  [35m+11 [m
+0170    [35mi64[m FLOAD  0125  cdata.int64
+0171 >  [33mcdt[m CNEWI  [35m+12 [m  0170
+0172    [35mu16[m FLOAD  0125  cdata.ctypeid
+0173 >  [35mint[m EQ     0172  [35m+11 [m
+0174    [35mi64[m FLOAD  0125  cdata.int64
+0175 >  [35mi64[m LT     0174  [35m+0  [m
+0176    p64 UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0177 >  p64 EQ     0176  0000
+0178    [35mint[m FLOAD  0019  tab.hmask
+0179 >  [35mint[m EQ     0178  [35m+31 [m
+0180    p64 FLOAD  0019  tab.node
+0181 >  p64 HREFK  0180  [32m"cast"[m @23
+0182 >  [1mfun[m HLOAD  0181
+0183 >  [1mfun[m EQ     0182  [1mffi.cast[m
+0184    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0185 >  [35mint[m EQ     0184  [35m+24 [m
+0186    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0187 >  [35mint[m EQ     0186  [35m+12 [m
+0188 >  [33mcdt[m CNEWI  [35m+12 [m  [35m+0  [m
+0189    [35mu16[m FLOAD  0188  cdata.ctypeid
+0190 >  [35mint[m EQ     0189  [35m+12 [m
+0191    [35mu64[m FLOAD  0188  cdata.int64
+0192    [35mu16[m FLOAD  0171  cdata.ctypeid
+0193 >  [35mint[m EQ     0192  [35m+12 [m
+0194    [35mu64[m FLOAD  0171  cdata.int64
+0195    [35mu64[m SUB    0191  0194
+0196 >  [33mcdt[m CNEWI  [35m+12 [m  0195
+0197    [35mu16[m FLOAD  0151  cdata.ctypeid
+0198 >  [35mint[m EQ     0197  [35m+12 [m
+0199    [35mu64[m FLOAD  0151  cdata.int64
+0200    [35mu16[m FLOAD  0196  cdata.ctypeid
+0201 >  [35mint[m EQ     0200  [35m+12 [m
+0202    [35mu64[m FLOAD  0196  cdata.int64
+0203    [35mu64[m DIV    0199  0202
+0204 >  [33mcdt[m CNEWI  [35m+12 [m  0203
+0205    [35mu16[m FLOAD  0151  cdata.ctypeid
+0206 >  [35mint[m EQ     0205  [35m+12 [m
+0207    [35mu64[m FLOAD  0151  cdata.int64
+0208    [35mu16[m FLOAD  0196  cdata.ctypeid
+0209 >  [35mint[m EQ     0208  [35m+12 [m
+0210    [35mu64[m FLOAD  0196  cdata.int64
+0211    [35mu64[m MOD    0207  0210
+0212 >  [33mcdt[m CNEWI  [35m+12 [m  0211
+0213    [34mnum[m CONV   0001  [34mnum[m.[35mint[m
+---- TRACE 8 stop -> 1
+
+---- TRACE 9 start 4/0 luajit-div-miscompilation.lua:48
+---- TRACE 9 IR
+0001    [33mcdt[m SLOAD  #8    PI
+0002    [33mcdt[m SLOAD  #9    PI
+0003    [1mfun[m SLOAD  #0    R
+0004 >  [35mi64[m UREFO  0003  #0  
+0005    p64 SUB    0004  0000
+0006 >  p64 UGT    0005  [35m+80 [m
+0007 >  [31mtab[m ULOAD  0004
+0008    [35mint[m FLOAD  0007  tab.hmask
+0009 >  [35mint[m EQ     0008  [35m+31 [m
+0010    p64 FLOAD  0007  tab.node
+0011 >  p64 HREFK  0010  [32m"cast"[m @23
+0012 >  [1mfun[m HLOAD  0011
+0013 >  [1mfun[m EQ     0003  [1mluajit-div-miscompilation.lua:34[m
+0014 >  [33mcdt[m SLOAD  #7    T
+0015    [35mu16[m FLOAD  0014  cdata.ctypeid
+0016 >  [35mint[m EQ     0015  [35m+12 [m
+0017    [35mu64[m FLOAD  0014  cdata.int64
+0018    [35mu16[m FLOAD  [33m4611686018427387904ULL[m  cdata.ctypeid
+0019 >  [35mint[m EQ     0018  [35m+12 [m
+0020    [35mu64[m FLOAD  [33m4611686018427387904ULL[m  cdata.int64
+0021    [35mu64[m MUL    0020  0017
+0022 >  [33mcdt[m CNEWI  [35m+12 [m  0021
+0023    [35mu16[m FLOAD  0022  cdata.ctypeid
+0024 >  [35mint[m EQ     0023  [35m+12 [m
+0025    [35mu64[m FLOAD  0022  cdata.int64
+0026    [35mu16[m FLOAD  0002  cdata.ctypeid
+0027 >  [35mint[m EQ     0026  [35m+12 [m
+0028    [35mu64[m FLOAD  0002  cdata.int64
+0029    [35mu64[m ADD    0028  0025
+0030 >  [33mcdt[m CNEWI  [35m+12 [m  0029
+0031 >  [1mfun[m EQ     0012  [1mffi.cast[m
+0032    [35mu16[m FLOAD  [33mctype<int64_t>[m  cdata.ctypeid
+0033 >  [35mint[m EQ     0032  [35m+24 [m
+0034    [35mint[m FLOAD  [33mctype<int64_t>[m  cdata.int
+0035 >  [35mint[m EQ     0034  [35m+11 [m
+0036    [35mu16[m FLOAD  0030  cdata.ctypeid
+0037 >  [35mint[m EQ     0036  [35m+12 [m
+0038    [35mu64[m FLOAD  0030  cdata.int64
+0039 >  [33mcdt[m CNEWI  [35m+11 [m  0038
+0040 >  tru SLOAD  #4    T
+0041    [35mu16[m FLOAD  0039  cdata.ctypeid
+0042 >  [35mint[m EQ     0041  [35m+11 [m
+0043    [35mi64[m FLOAD  0039  cdata.int64
+0044    [35mu16[m FLOAD  0039  cdata.ctypeid
+0045 >  [35mint[m EQ     0044  [35m+11 [m
+0046    [35mi64[m FLOAD  0039  cdata.int64
+0047    [35mi64[m NEG    0043  0046
+0048 >  [33mcdt[m CNEWI  [35m+11 [m  0047
+0049 >  p64 RETF   proto: 0x7bd8df0fcfb8  [0x7bd8df0fd108]
+0050    [34mnum[m SLOAD  #12   I
+0051    [34mnum[m ADD    0050  [34m+1  [m
+0052 >  [34mnum[m LE     0051  [34m+3000[m
+---- TRACE 9 stop -> 8
+
+---- TRACE 10 start 5/0 luajit-div-miscompilation.lua:48
+---- TRACE 10 IR
+0001    [33mcdt[m SLOAD  #8    PI
+0002    [33mcdt[m SLOAD  #9    PI
+0003    [1mfun[m SLOAD  #0    R
+0004 >  [35mi64[m UREFO  0003  #0  
+0005    p64 SUB    0004  0000
+0006 >  p64 UGT    0005  [35m+80 [m
+0007 >  [31mtab[m ULOAD  0004
+0008    [35mint[m FLOAD  0007  tab.hmask
+0009 >  [35mint[m EQ     0008  [35m+31 [m
+0010    p64 FLOAD  0007  tab.node
+0011 >  p64 HREFK  0010  [32m"cast"[m @23
+0012 >  [1mfun[m HLOAD  0011
+0013 >  [1mfun[m EQ     0003  [1mluajit-div-miscompilation.lua:34[m
+0014 >  [33mcdt[m SLOAD  #7    T
+0015    [35mu16[m FLOAD  0014  cdata.ctypeid
+0016 >  [35mint[m EQ     0015  [35m+12 [m
+0017    [35mu64[m FLOAD  0014  cdata.int64
+0018    [35mu16[m FLOAD  [33m4611686018427387904ULL[m  cdata.ctypeid
+0019 >  [35mint[m EQ     0018  [35m+12 [m
+0020    [35mu64[m FLOAD  [33m4611686018427387904ULL[m  cdata.int64
+0021    [35mu64[m MUL    0020  0017
+0022 >  [33mcdt[m CNEWI  [35m+12 [m  0021
+0023    [35mu16[m FLOAD  0022  cdata.ctypeid
+0024 >  [35mint[m EQ     0023  [35m+12 [m
+0025    [35mu64[m FLOAD  0022  cdata.int64
+0026    [35mu16[m FLOAD  0002  cdata.ctypeid
+0027 >  [35mint[m EQ     0026  [35m+12 [m
+0028    [35mu64[m FLOAD  0002  cdata.int64
+0029    [35mu64[m ADD    0028  0025
+0030 >  [33mcdt[m CNEWI  [35m+12 [m  0029
+0031 >  [1mfun[m EQ     0012  [1mffi.cast[m
+0032    [35mu16[m FLOAD  [33mctype<int64_t>[m  cdata.ctypeid
+0033 >  [35mint[m EQ     0032  [35m+24 [m
+0034    [35mint[m FLOAD  [33mctype<int64_t>[m  cdata.int
+0035 >  [35mint[m EQ     0034  [35m+11 [m
+0036    [35mu16[m FLOAD  0030  cdata.ctypeid
+0037 >  [35mint[m EQ     0036  [35m+12 [m
+0038    [35mu64[m FLOAD  0030  cdata.int64
+0039 >  [33mcdt[m CNEWI  [35m+11 [m  0038
+0040 >  fal SLOAD  #4    T
+0041 >  p64 RETF   proto: 0x7bd8df0fcfb8  [0x7bd8df0fd108]
+0042    [34mnum[m SLOAD  #12   I
+0043    [34mnum[m ADD    0042  [34m+1  [m
+0044 >  [34mnum[m LE     0043  [34m+3000[m
+---- TRACE 10 stop -> 8
+
+---- TRACE 11 start 8/1 luajit-div-miscompilation.lua:65
+---- TRACE 11 IR
+0001    [33mcdt[m SLOAD  #11   PI
+0002    [35mint[m SLOAD  #12   PI
+0003    [33mcdt[m SLOAD  #16   PI
+0004    [33mcdt[m SLOAD  #17   PI
+0005    [35mu16[m FLOAD  0003  cdata.ctypeid
+0006 >  [35mint[m EQ     0005  [35m+11 [m
+0007    [35mi64[m FLOAD  0003  cdata.int64
+0008    [35mu16[m FLOAD  0003  cdata.ctypeid
+0009 >  [35mint[m EQ     0008  [35m+11 [m
+0010    [35mi64[m FLOAD  0003  cdata.int64
+0011    [35mi64[m NEG    0007  0010
+0012 >  [33mcdt[m CNEWI  [35m+11 [m  0011
+0013    [35mint[m MOD    0002  [35m+3  [m
+0014 >  [35mint[m EQ     0013  [35m+0  [m
+0015    [35mu16[m FLOAD  0004  cdata.ctypeid
+0016 >  [35mint[m EQ     0015  [35m+11 [m
+0017    [35mi64[m FLOAD  0004  cdata.int64
+0018    [35mu16[m FLOAD  0004  cdata.ctypeid
+0019 >  [35mint[m EQ     0018  [35m+11 [m
+0020    [35mi64[m FLOAD  0004  cdata.int64
+0021    [35mi64[m NEG    0017  0020
+0022 >  [33mcdt[m CNEWI  [35m+11 [m  0021
+0023 >  [1mfun[m SLOAD  #6    T
+0024 >  [1mfun[m EQ     0023  [1mluajit-div-miscompilation.lua:34[m
+0025    [35mu16[m FLOAD  0012  cdata.ctypeid
+0026 >  [35mint[m EQ     0025  [35m+11 [m
+0027    [35mi64[m FLOAD  0012  cdata.int64
+0028 >  [35mi64[m LT     0027  [35m+0  [m
+0029    [35mu16[m FLOAD  0022  cdata.ctypeid
+0030 >  [35mint[m EQ     0029  [35m+11 [m
+0031    [35mi64[m FLOAD  0022  cdata.int64
+0032 >  [35mi64[m LT     0031  [35m+0  [m
+0033    p64 UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0034 >  p64 EQ     0033  0000
+0035 >  [31mtab[m SLOAD  #2    T
+0036    [35mint[m FLOAD  0035  tab.hmask
+0037 >  [35mint[m EQ     0036  [35m+31 [m
+0038    p64 FLOAD  0035  tab.node
+0039 >  p64 HREFK  0038  [32m"cast"[m @23
+0040 >  [1mfun[m HLOAD  0039
+0041 >  [1mfun[m EQ     0040  [1mffi.cast[m
+0042    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0043 >  [35mint[m EQ     0042  [35m+24 [m
+0044    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0045 >  [35mint[m EQ     0044  [35m+12 [m
+0046    [35mu16[m FLOAD  0012  cdata.ctypeid
+0047 >  [35mint[m EQ     0046  [35m+11 [m
+0048    [35mi64[m FLOAD  0012  cdata.int64
+0049 >  [33mcdt[m CNEWI  [35m+12 [m  0048
+0050    [35mu16[m FLOAD  0012  cdata.ctypeid
+0051 >  [35mint[m EQ     0050  [35m+11 [m
+0052    [35mi64[m FLOAD  0012  cdata.int64
+0053 >  [35mi64[m LT     0052  [35m+0  [m
+0054    p64 UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0055 >  p64 EQ     0054  0000
+0056    [35mint[m FLOAD  0035  tab.hmask
+0057 >  [35mint[m EQ     0056  [35m+31 [m
+0058    p64 FLOAD  0035  tab.node
+0059 >  p64 HREFK  0058  [32m"cast"[m @23
+0060 >  [1mfun[m HLOAD  0059
+0061 >  [1mfun[m EQ     0060  [1mffi.cast[m
+0062    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0063 >  [35mint[m EQ     0062  [35m+24 [m
+0064    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0065 >  [35mint[m EQ     0064  [35m+12 [m
+0066 >  [33mcdt[m CNEWI  [35m+12 [m  [35m+0  [m
+0067    [35mu16[m FLOAD  0066  cdata.ctypeid
+0068 >  [35mint[m EQ     0067  [35m+12 [m
+0069    [35mu64[m FLOAD  0066  cdata.int64
+0070    [35mu16[m FLOAD  0049  cdata.ctypeid
+0071 >  [35mint[m EQ     0070  [35m+12 [m
+0072    [35mu64[m FLOAD  0049  cdata.int64
+0073    [35mu64[m SUB    0069  0072
+0074 >  [33mcdt[m CNEWI  [35m+12 [m  0073
+0075    p64 UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0076 >  p64 EQ     0075  0000
+0077    [35mint[m FLOAD  0035  tab.hmask
+0078 >  [35mint[m EQ     0077  [35m+31 [m
+0079    p64 FLOAD  0035  tab.node
+0080 >  p64 HREFK  0079  [32m"cast"[m @23
+0081 >  [1mfun[m HLOAD  0080
+0082 >  [1mfun[m EQ     0081  [1mffi.cast[m
+0083    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0084 >  [35mint[m EQ     0083  [35m+24 [m
+0085    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0086 >  [35mint[m EQ     0085  [35m+12 [m
+0087    [35mu16[m FLOAD  0022  cdata.ctypeid
+0088 >  [35mint[m EQ     0087  [35m+11 [m
+0089    [35mi64[m FLOAD  0022  cdata.int64
+0090 >  [33mcdt[m CNEWI  [35m+12 [m  0089
+0091    [35mu16[m FLOAD  0022  cdata.ctypeid
+0092 >  [35mint[m EQ     0091  [35m+11 [m
+0093    [35mi64[m FLOAD  0022  cdata.int64
+0094 >  [35mi64[m LT     0093  [35m+0  [m
+0095    p64 UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0096 >  p64 EQ     0095  0000
+0097    [35mint[m FLOAD  0035  tab.hmask
+0098 >  [35mint[m EQ     0097  [35m+31 [m
+0099    p64 FLOAD  0035  tab.node
+0100 >  p64 HREFK  0099  [32m"cast"[m @23
+0101 >  [1mfun[m HLOAD  0100
+0102 >  [1mfun[m EQ     0101  [1mffi.cast[m
+0103    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0104 >  [35mint[m EQ     0103  [35m+24 [m
+0105    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0106 >  [35mint[m EQ     0105  [35m+12 [m
+0107    [35mu16[m FLOAD  0066  cdata.ctypeid
+0108 >  [35mint[m EQ     0107  [35m+12 [m
+0109    [35mu64[m FLOAD  0066  cdata.int64
+0110    [35mu16[m FLOAD  0090  cdata.ctypeid
+0111 >  [35mint[m EQ     0110  [35m+12 [m
+0112    [35mu64[m FLOAD  0090  cdata.int64
+0113    [35mu64[m SUB    0109  0112
+0114 >  [33mcdt[m CNEWI  [35m+12 [m  0113
+0115    [35mu16[m FLOAD  0074  cdata.ctypeid
+0116 >  [35mint[m EQ     0115  [35m+12 [m
+0117    [35mu64[m FLOAD  0074  cdata.int64
+0118    [35mu16[m FLOAD  0114  cdata.ctypeid
+0119 >  [35mint[m EQ     0118  [35m+12 [m
+0120    [35mu64[m FLOAD  0114  cdata.int64
+0121    [35mu64[m DIV    0117  0120
+0122 >  [33mcdt[m CNEWI  [35m+12 [m  0121
+0123    [35mu16[m FLOAD  0074  cdata.ctypeid
+0124 >  [35mint[m EQ     0123  [35m+12 [m
+0125    [35mu64[m FLOAD  0074  cdata.int64
+0126    [35mu16[m FLOAD  0114  cdata.ctypeid
+0127 >  [35mint[m EQ     0126  [35m+12 [m
+0128    [35mu64[m FLOAD  0114  cdata.int64
+0129    [35mu64[m MOD    0125  0128
+0130 >  [33mcdt[m CNEWI  [35m+12 [m  0129
+0131    [34mnum[m CONV   0002  [34mnum[m.[35mint[m
+---- TRACE 11 stop -> 1
+
+---- TRACE 12 start 8/2 luajit-div-miscompilation.lua:67
+---- TRACE 12 IR
+0001    [33mcdt[m SLOAD  #11   PI
+0002    [35mint[m SLOAD  #12   PI
+0003    [33mcdt[m SLOAD  #16   PI
+0004    [33mcdt[m SLOAD  #17   PI
+0005 >  [1mfun[m SLOAD  #6    T
+0006 >  [1mfun[m EQ     0005  [1mluajit-div-miscompilation.lua:34[m
+0007    [35mu16[m FLOAD  0003  cdata.ctypeid
+0008 >  [35mint[m EQ     0007  [35m+11 [m
+0009    [35mi64[m FLOAD  0003  cdata.int64
+0010 >  [35mi64[m GE     0009  [35m+0  [m
+0011    [35mu16[m FLOAD  0004  cdata.ctypeid
+0012 >  [35mint[m EQ     0011  [35m+11 [m
+0013    [35mi64[m FLOAD  0004  cdata.int64
+0014 >  [35mi64[m GE     0013  [35m+0  [m
+0015    p64 UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0016 >  p64 EQ     0015  0000
+0017 >  [31mtab[m SLOAD  #2    T
+0018    [35mint[m FLOAD  0017  tab.hmask
+0019 >  [35mint[m EQ     0018  [35m+31 [m
+0020    p64 FLOAD  0017  tab.node
+0021 >  p64 HREFK  0020  [32m"cast"[m @23
+0022 >  [1mfun[m HLOAD  0021
+0023 >  [1mfun[m EQ     0022  [1mffi.cast[m
+0024    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0025 >  [35mint[m EQ     0024  [35m+24 [m
+0026    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0027 >  [35mint[m EQ     0026  [35m+12 [m
+0028    [35mu16[m FLOAD  0003  cdata.ctypeid
+0029 >  [35mint[m EQ     0028  [35m+11 [m
+0030    [35mi64[m FLOAD  0003  cdata.int64
+0031 >  [33mcdt[m CNEWI  [35m+12 [m  0030
+0032    [35mu16[m FLOAD  0003  cdata.ctypeid
+0033 >  [35mint[m EQ     0032  [35m+11 [m
+0034    [35mi64[m FLOAD  0003  cdata.int64
+0035 >  [35mi64[m GE     0034  [35m+0  [m
+0036    p64 UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0037 >  p64 EQ     0036  0000
+0038    [35mint[m FLOAD  0017  tab.hmask
+0039 >  [35mint[m EQ     0038  [35m+31 [m
+0040    p64 FLOAD  0017  tab.node
+0041 >  p64 HREFK  0040  [32m"cast"[m @23
+0042 >  [1mfun[m HLOAD  0041
+0043 >  [1mfun[m EQ     0042  [1mffi.cast[m
+0044    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0045 >  [35mint[m EQ     0044  [35m+24 [m
+0046    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0047 >  [35mint[m EQ     0046  [35m+12 [m
+0048    [35mu16[m FLOAD  0004  cdata.ctypeid
+0049 >  [35mint[m EQ     0048  [35m+11 [m
+0050    [35mi64[m FLOAD  0004  cdata.int64
+0051 >  [33mcdt[m CNEWI  [35m+12 [m  0050
+0052    [35mu16[m FLOAD  0004  cdata.ctypeid
+0053 >  [35mint[m EQ     0052  [35m+11 [m
+0054    [35mi64[m FLOAD  0004  cdata.int64
+0055 >  [35mi64[m GE     0054  [35m+0  [m
+0056    [35mu16[m FLOAD  0031  cdata.ctypeid
+0057 >  [35mint[m EQ     0056  [35m+12 [m
+0058    [35mu64[m FLOAD  0031  cdata.int64
+0059    [35mu16[m FLOAD  0051  cdata.ctypeid
+0060 >  [35mint[m EQ     0059  [35m+12 [m
+0061    [35mu64[m FLOAD  0051  cdata.int64
+0062    [35mu64[m DIV    0058  0061
+0063 >  [33mcdt[m CNEWI  [35m+12 [m  0062
+0064    [35mu16[m FLOAD  0031  cdata.ctypeid
+0065 >  [35mint[m EQ     0064  [35m+12 [m
+0066    [35mu64[m FLOAD  0031  cdata.int64
+0067    [35mu16[m FLOAD  0051  cdata.ctypeid
+0068 >  [35mint[m EQ     0067  [35m+12 [m
+0069    [35mu64[m FLOAD  0051  cdata.int64
+0070    [35mu64[m MOD    0066  0069
+0071 >  [33mcdt[m CNEWI  [35m+12 [m  0070
+0072    [34mnum[m CONV   0002  [34mnum[m.[35mint[m
+---- TRACE 12 stop -> 1
+
+---- TRACE 13 start 7/0 luajit-div-miscompilation.lua:48
+---- TRACE 13 IR
+0001    [33mcdt[m SLOAD  #8    PI
+0002    [33mcdt[m SLOAD  #9    PI
+0003    [1mfun[m SLOAD  #0    R
+0004 >  [35mi64[m UREFO  0003  #0  
+0005    p64 SUB    0004  0000
+0006 >  p64 UGT    0005  [35m+80 [m
+0007 >  [31mtab[m ULOAD  0004
+0008    [35mint[m FLOAD  0007  tab.hmask
+0009 >  [35mint[m EQ     0008  [35m+31 [m
+0010    p64 FLOAD  0007  tab.node
+0011 >  p64 HREFK  0010  [32m"cast"[m @23
+0012 >  [1mfun[m HLOAD  0011
+0013 >  [1mfun[m EQ     0003  [1mluajit-div-miscompilation.lua:34[m
+0014 >  [33mcdt[m SLOAD  #7    T
+0015    [35mu16[m FLOAD  0014  cdata.ctypeid
+0016 >  [35mint[m EQ     0015  [35m+12 [m
+0017    [35mu64[m FLOAD  0014  cdata.int64
+0018    [35mu16[m FLOAD  [33m4611686018427387904ULL[m  cdata.ctypeid
+0019 >  [35mint[m EQ     0018  [35m+12 [m
+0020    [35mu64[m FLOAD  [33m4611686018427387904ULL[m  cdata.int64
+0021    [35mu64[m MUL    0020  0017
+0022 >  [33mcdt[m CNEWI  [35m+12 [m  0021
+0023    [35mu16[m FLOAD  0022  cdata.ctypeid
+0024 >  [35mint[m EQ     0023  [35m+12 [m
+0025    [35mu64[m FLOAD  0022  cdata.int64
+0026    [35mu16[m FLOAD  0002  cdata.ctypeid
+0027 >  [35mint[m EQ     0026  [35m+12 [m
+0028    [35mu64[m FLOAD  0002  cdata.int64
+0029    [35mu64[m ADD    0028  0025
+0030 >  [33mcdt[m CNEWI  [35m+12 [m  0029
+0031 >  [1mfun[m EQ     0012  [1mffi.cast[m
+0032    [35mu16[m FLOAD  [33mctype<int64_t>[m  cdata.ctypeid
+0033 >  [35mint[m EQ     0032  [35m+24 [m
+0034    [35mint[m FLOAD  [33mctype<int64_t>[m  cdata.int
+0035 >  [35mint[m EQ     0034  [35m+11 [m
+0036    [35mu16[m FLOAD  0030  cdata.ctypeid
+0037 >  [35mint[m EQ     0036  [35m+12 [m
+0038    [35mu64[m FLOAD  0030  cdata.int64
+0039 >  [33mcdt[m CNEWI  [35m+11 [m  0038
+0040 >  fal SLOAD  #4    T
+0041 >  p64 RETF   proto: 0x7bd8df0fcfb8  [0x7bd8df0fd108]
+0042    [34mnum[m SLOAD  #12   I
+0043    [34mnum[m ADD    0042  [34m+1  [m
+0044 >  [34mnum[m LE     0043  [34m+3000[m
+---- TRACE 13 stop -> 8
+
+---- TRACE 14 start 6/0 luajit-div-miscompilation.lua:48
+---- TRACE 14 IR
+0001    [33mcdt[m SLOAD  #8    PI
+0002    [33mcdt[m SLOAD  #9    PI
+0003    [1mfun[m SLOAD  #0    R
+0004 >  [35mi64[m UREFO  0003  #0  
+0005    p64 SUB    0004  0000
+0006 >  p64 UGT    0005  [35m+80 [m
+0007 >  [31mtab[m ULOAD  0004
+0008    [35mint[m FLOAD  0007  tab.hmask
+0009 >  [35mint[m EQ     0008  [35m+31 [m
+0010    p64 FLOAD  0007  tab.node
+0011 >  p64 HREFK  0010  [32m"cast"[m @23
+0012 >  [1mfun[m HLOAD  0011
+0013 >  [1mfun[m EQ     0003  [1mluajit-div-miscompilation.lua:34[m
+0014 >  [33mcdt[m SLOAD  #7    T
+0015    [35mu16[m FLOAD  0014  cdata.ctypeid
+0016 >  [35mint[m EQ     0015  [35m+12 [m
+0017    [35mu64[m FLOAD  0014  cdata.int64
+0018    [35mu16[m FLOAD  [33m4611686018427387904ULL[m  cdata.ctypeid
+0019 >  [35mint[m EQ     0018  [35m+12 [m
+0020    [35mu64[m FLOAD  [33m4611686018427387904ULL[m  cdata.int64
+0021    [35mu64[m MUL    0020  0017
+0022 >  [33mcdt[m CNEWI  [35m+12 [m  0021
+0023    [35mu16[m FLOAD  0022  cdata.ctypeid
+0024 >  [35mint[m EQ     0023  [35m+12 [m
+0025    [35mu64[m FLOAD  0022  cdata.int64
+0026    [35mu16[m FLOAD  0002  cdata.ctypeid
+0027 >  [35mint[m EQ     0026  [35m+12 [m
+0028    [35mu64[m FLOAD  0002  cdata.int64
+0029    [35mu64[m ADD    0028  0025
+0030 >  [33mcdt[m CNEWI  [35m+12 [m  0029
+0031 >  [1mfun[m EQ     0012  [1mffi.cast[m
+0032    [35mu16[m FLOAD  [33mctype<int64_t>[m  cdata.ctypeid
+0033 >  [35mint[m EQ     0032  [35m+24 [m
+0034    [35mint[m FLOAD  [33mctype<int64_t>[m  cdata.int
+0035 >  [35mint[m EQ     0034  [35m+11 [m
+0036    [35mu16[m FLOAD  0030  cdata.ctypeid
+0037 >  [35mint[m EQ     0036  [35m+12 [m
+0038    [35mu64[m FLOAD  0030  cdata.int64
+0039 >  [33mcdt[m CNEWI  [35m+11 [m  0038
+0040 >  tru SLOAD  #4    T
+0041    [35mu16[m FLOAD  0039  cdata.ctypeid
+0042 >  [35mint[m EQ     0041  [35m+11 [m
+0043    [35mi64[m FLOAD  0039  cdata.int64
+0044    [35mu16[m FLOAD  0039  cdata.ctypeid
+0045 >  [35mint[m EQ     0044  [35m+11 [m
+0046    [35mi64[m FLOAD  0039  cdata.int64
+0047    [35mi64[m NEG    0043  0046
+0048 >  [33mcdt[m CNEWI  [35m+11 [m  0047
+0049 >  p64 RETF   proto: 0x7bd8df0fcfb8  [0x7bd8df0fd108]
+0050    [34mnum[m SLOAD  #12   I
+0051    [34mnum[m ADD    0050  [34m+1  [m
+0052 >  [34mnum[m LE     0051  [34m+3000[m
+---- TRACE 14 stop -> 8
+
+---- TRACE 15 start luajit-div-miscompilation.lua:34
+---- TRACE 15 IR
+0001 >  [33mcdt[m SLOAD  #2    T
+0002    [35mu16[m FLOAD  0001  cdata.ctypeid
+0003 >  [35mint[m EQ     0002  [35m+11 [m
+0004    [35mi64[m FLOAD  0001  cdata.int64
+0005 >  [35mi64[m LT     0004  [35m+0  [m
+0006 >  [33mcdt[m SLOAD  #3    T
+0007    [35mu16[m FLOAD  0006  cdata.ctypeid
+0008 >  [35mint[m EQ     0007  [35m+11 [m
+0009    [35mi64[m FLOAD  0006  cdata.int64
+0010 >  [35mi64[m LT     0009  [35m+0  [m
+0011    [1mfun[m SLOAD  #0    R
+0012 >  [35mi64[m UREFO  0011  #0  
+0013    p64 SUB    0012  0000
+0014 >  p64 UGT    0013  [35m+40 [m
+0015 >  [31mtab[m ULOAD  0012
+0016    [35mint[m FLOAD  0015  tab.hmask
+0017 >  [35mint[m EQ     0016  [35m+31 [m
+0018    p64 FLOAD  0015  tab.node
+0019 >  p64 HREFK  0018  [32m"cast"[m @23
+0020 >  [1mfun[m HLOAD  0019
+0021 >  [1mfun[m EQ     0011  [1mluajit-div-miscompilation.lua:34[m
+0022 >  [1mfun[m EQ     0020  [1mffi.cast[m
+0023    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0024 >  [35mint[m EQ     0023  [35m+24 [m
+0025    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0026 >  [35mint[m EQ     0025  [35m+12 [m
+0027    [35mu16[m FLOAD  0001  cdata.ctypeid
+0028 >  [35mint[m EQ     0027  [35m+11 [m
+0029    [35mi64[m FLOAD  0001  cdata.int64
+0030 >  [33mcdt[m CNEWI  [35m+12 [m  0029
+0031    [35mu16[m FLOAD  0001  cdata.ctypeid
+0032 >  [35mint[m EQ     0031  [35m+11 [m
+0033    [35mi64[m FLOAD  0001  cdata.int64
+0034 >  [35mi64[m LT     0033  [35m+0  [m
+0035 >  [35mi64[m UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0036    p64 SUB    0035  0000
+0037 >  p64 UGT    0036  [35m+120[m
+0038 >  [31mtab[m ULOAD  0035
+0039    [35mint[m FLOAD  0038  tab.hmask
+0040 >  [35mint[m EQ     0039  [35m+31 [m
+0041    p64 FLOAD  0038  tab.node
+0042 >  p64 HREFK  0041  [32m"cast"[m @23
+0043 >  [1mfun[m HLOAD  0042
+0044 >  [1mfun[m EQ     0043  [1mffi.cast[m
+0045    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0046 >  [35mint[m EQ     0045  [35m+24 [m
+0047    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0048 >  [35mint[m EQ     0047  [35m+12 [m
+0049 >  [33mcdt[m CNEWI  [35m+12 [m  [35m+0  [m
+0050    [35mu16[m FLOAD  0049  cdata.ctypeid
+0051 >  [35mint[m EQ     0050  [35m+12 [m
+0052    [35mu64[m FLOAD  0049  cdata.int64
+0053    [35mu16[m FLOAD  0030  cdata.ctypeid
+0054 >  [35mint[m EQ     0053  [35m+12 [m
+0055    [35mu64[m FLOAD  0030  cdata.int64
+0056    [35mu64[m SUB    0052  0055
+0057 >  [33mcdt[m CNEWI  [35m+12 [m  0056
+0058 >  [35mi64[m UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0059    p64 SUB    0058  0000
+0060 >  p64 UGT    0059  [35m+120[m
+0061 >  [31mtab[m ULOAD  0058
+0062    [35mint[m FLOAD  0061  tab.hmask
+0063 >  [35mint[m EQ     0062  [35m+31 [m
+0064    p64 FLOAD  0061  tab.node
+0065 >  p64 HREFK  0064  [32m"cast"[m @23
+0066 >  [1mfun[m HLOAD  0065
+0067 >  [1mfun[m EQ     0066  [1mffi.cast[m
+0068    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0069 >  [35mint[m EQ     0068  [35m+24 [m
+0070    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0071 >  [35mint[m EQ     0070  [35m+12 [m
+0072    [35mu16[m FLOAD  0006  cdata.ctypeid
+0073 >  [35mint[m EQ     0072  [35m+11 [m
+0074    [35mi64[m FLOAD  0006  cdata.int64
+0075 >  [33mcdt[m CNEWI  [35m+12 [m  0074
+0076    [35mu16[m FLOAD  0006  cdata.ctypeid
+0077 >  [35mint[m EQ     0076  [35m+11 [m
+0078    [35mi64[m FLOAD  0006  cdata.int64
+0079 >  [35mi64[m LT     0078  [35m+0  [m
+0080 >  [35mi64[m UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0081    p64 SUB    0080  0000
+0082 >  p64 UGT    0081  [35m+120[m
+0083 >  [31mtab[m ULOAD  0080
+0084    [35mint[m FLOAD  0083  tab.hmask
+0085 >  [35mint[m EQ     0084  [35m+31 [m
+0086    p64 FLOAD  0083  tab.node
+0087 >  p64 HREFK  0086  [32m"cast"[m @23
+0088 >  [1mfun[m HLOAD  0087
+0089 >  [1mfun[m EQ     0088  [1mffi.cast[m
+0090    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0091 >  [35mint[m EQ     0090  [35m+24 [m
+0092    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0093 >  [35mint[m EQ     0092  [35m+12 [m
+0094    [35mu16[m FLOAD  0049  cdata.ctypeid
+0095 >  [35mint[m EQ     0094  [35m+12 [m
+0096    [35mu64[m FLOAD  0049  cdata.int64
+0097    [35mu16[m FLOAD  0075  cdata.ctypeid
+0098 >  [35mint[m EQ     0097  [35m+12 [m
+0099    [35mu64[m FLOAD  0075  cdata.int64
+0100    [35mu64[m SUB    0096  0099
+0101 >  [33mcdt[m CNEWI  [35m+12 [m  0100
+0102    [35mu16[m FLOAD  0057  cdata.ctypeid
+0103 >  [35mint[m EQ     0102  [35m+12 [m
+0104    [35mu64[m FLOAD  0057  cdata.int64
+0105    [35mu16[m FLOAD  0101  cdata.ctypeid
+0106 >  [35mint[m EQ     0105  [35m+12 [m
+0107    [35mu64[m FLOAD  0101  cdata.int64
+0108    [35mu64[m DIV    0104  0107
+0109 >  [33mcdt[m CNEWI  [35m+12 [m  0108
+0110    [35mu16[m FLOAD  0057  cdata.ctypeid
+0111 >  [35mint[m EQ     0110  [35m+12 [m
+0112    [35mu64[m FLOAD  0057  cdata.int64
+0113    [35mu16[m FLOAD  0101  cdata.ctypeid
+0114 >  [35mint[m EQ     0113  [35m+12 [m
+0115    [35mu64[m FLOAD  0101  cdata.int64
+0116    [35mu64[m MOD    0112  0115
+0117 >  [33mcdt[m CNEWI  [35m+12 [m  0116
+---- TRACE 15 stop -> 1
+
+---- TRACE 16 start 7/4 luajit-div-miscompilation.lua:66
+---- TRACE 16 IR
+0001    [33mcdt[m SLOAD  #11   PI
+0002    [34mnum[m SLOAD  #12   PI
+0003    [33mcdt[m SLOAD  #16   PI
+0004    [33mcdt[m SLOAD  #17   PI
+0005    [34mnum[m DIV    0002  [34m+3  [m
+0006    [34mnum[m FPMATH 0005  floor
+0007    [34mnum[m MUL    0006  [34m+3  [m
+0008    [34mnum[m SUB    0002  0007
+0009 >  [34mnum[m EQ     0008  [34m+0  [m
+0010    [35mu16[m FLOAD  0004  cdata.ctypeid
+0011 >  [35mint[m EQ     0010  [35m+11 [m
+0012    [35mi64[m FLOAD  0004  cdata.int64
+0013    [35mu16[m FLOAD  0004  cdata.ctypeid
+0014 >  [35mint[m EQ     0013  [35m+11 [m
+0015    [35mi64[m FLOAD  0004  cdata.int64
+0016    [35mi64[m NEG    0012  0015
+0017 >  [33mcdt[m CNEWI  [35m+11 [m  0016
+0018 >  [1mfun[m SLOAD  #6    T
+0019 >  [1mfun[m EQ     0018  [1mluajit-div-miscompilation.lua:34[m
+---- TRACE 16 stop -> 15
+
+---- TRACE 17 start 5/4 luajit-div-miscompilation.lua:66
+---- TRACE 17 IR
+0001    [33mcdt[m SLOAD  #11   PI
+0002    [34mnum[m SLOAD  #12   PI
+0003    [33mcdt[m SLOAD  #16   PI
+0004    [33mcdt[m SLOAD  #17   PI
+0005    [34mnum[m DIV    0002  [34m+3  [m
+0006    [34mnum[m FPMATH 0005  floor
+0007    [34mnum[m MUL    0006  [34m+3  [m
+0008    [34mnum[m SUB    0002  0007
+0009 >  [34mnum[m NE     0008  [34m+0  [m
+0010 >  [1mfun[m SLOAD  #6    T
+0011 >  [1mfun[m EQ     0010  [1mluajit-div-miscompilation.lua:34[m
+---- TRACE 17 stop -> 15
+
+---- TRACE 18 start 15/1 luajit-div-miscompilation.lua:35
+---- TRACE 18 IR
+0001 >  [33mcdt[m SLOAD  #2    T
+0002    [35mu16[m FLOAD  0001  cdata.ctypeid
+0003 >  [35mint[m EQ     0002  [35m+11 [m
+0004    [35mi64[m FLOAD  0001  cdata.int64
+0005 >  [35mi64[m GE     0004  [35m+0  [m
+0006 >  [33mcdt[m SLOAD  #3    T
+0007    [35mu16[m FLOAD  0006  cdata.ctypeid
+0008 >  [35mint[m EQ     0007  [35m+11 [m
+0009    [35mi64[m FLOAD  0006  cdata.int64
+0010 >  [35mi64[m GE     0009  [35m+0  [m
+0011    [1mfun[m SLOAD  #0    R
+0012 >  [35mi64[m UREFO  0011  #0  
+0013    p64 SUB    0012  0000
+0014 >  p64 UGT    0013  [35m+40 [m
+0015 >  [31mtab[m ULOAD  0012
+0016    [35mint[m FLOAD  0015  tab.hmask
+0017 >  [35mint[m EQ     0016  [35m+31 [m
+0018    p64 FLOAD  0015  tab.node
+0019 >  p64 HREFK  0018  [32m"cast"[m @23
+0020 >  [1mfun[m HLOAD  0019
+0021 >  [1mfun[m EQ     0011  [1mluajit-div-miscompilation.lua:34[m
+0022 >  [1mfun[m EQ     0020  [1mffi.cast[m
+0023    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0024 >  [35mint[m EQ     0023  [35m+24 [m
+0025    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0026 >  [35mint[m EQ     0025  [35m+12 [m
+0027    [35mu16[m FLOAD  0001  cdata.ctypeid
+0028 >  [35mint[m EQ     0027  [35m+11 [m
+0029    [35mi64[m FLOAD  0001  cdata.int64
+0030 >  [33mcdt[m CNEWI  [35m+12 [m  0029
+0031    [35mu16[m FLOAD  0001  cdata.ctypeid
+0032 >  [35mint[m EQ     0031  [35m+11 [m
+0033    [35mi64[m FLOAD  0001  cdata.int64
+0034 >  [35mi64[m GE     0033  [35m+0  [m
+0035 >  [35mi64[m UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0036    p64 SUB    0035  0000
+0037 >  p64 UGT    0036  [35m+120[m
+0038 >  [31mtab[m ULOAD  0035
+0039    [35mint[m FLOAD  0038  tab.hmask
+0040 >  [35mint[m EQ     0039  [35m+31 [m
+0041    p64 FLOAD  0038  tab.node
+0042 >  p64 HREFK  0041  [32m"cast"[m @23
+0043 >  [1mfun[m HLOAD  0042
+0044 >  [1mfun[m EQ     0043  [1mffi.cast[m
+0045    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0046 >  [35mint[m EQ     0045  [35m+24 [m
+0047    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0048 >  [35mint[m EQ     0047  [35m+12 [m
+0049    [35mu16[m FLOAD  0006  cdata.ctypeid
+0050 >  [35mint[m EQ     0049  [35m+11 [m
+0051    [35mi64[m FLOAD  0006  cdata.int64
+0052 >  [33mcdt[m CNEWI  [35m+12 [m  0051
+0053    [35mu16[m FLOAD  0006  cdata.ctypeid
+0054 >  [35mint[m EQ     0053  [35m+11 [m
+0055    [35mi64[m FLOAD  0006  cdata.int64
+0056 >  [35mi64[m GE     0055  [35m+0  [m
+0057    [35mu16[m FLOAD  0030  cdata.ctypeid
+0058 >  [35mint[m EQ     0057  [35m+12 [m
+0059    [35mu64[m FLOAD  0030  cdata.int64
+0060    [35mu16[m FLOAD  0052  cdata.ctypeid
+0061 >  [35mint[m EQ     0060  [35m+12 [m
+0062    [35mu64[m FLOAD  0052  cdata.int64
+0063    [35mu64[m DIV    0059  0062
+0064 >  [33mcdt[m CNEWI  [35m+12 [m  0063
+0065    [35mu16[m FLOAD  0030  cdata.ctypeid
+0066 >  [35mint[m EQ     0065  [35m+12 [m
+0067    [35mu64[m FLOAD  0030  cdata.int64
+0068    [35mu16[m FLOAD  0052  cdata.ctypeid
+0069 >  [35mint[m EQ     0068  [35m+12 [m
+0070    [35mu64[m FLOAD  0052  cdata.int64
+0071    [35mu64[m MOD    0067  0070
+0072 >  [33mcdt[m CNEWI  [35m+12 [m  0071
+---- TRACE 18 stop -> 1
+
+---- TRACE 19 start 11/1 luajit-div-miscompilation.lua:67
+---- TRACE 19 IR
+0001    [33mcdt[m SLOAD  #11   PI
+0002    [35mint[m SLOAD  #12   PI
+0003    [33mcdt[m SLOAD  #16   PI
+0004    [33mcdt[m SLOAD  #17   PI
+0005 >  [1mfun[m SLOAD  #6    T
+0006 >  [1mfun[m EQ     0005  [1mluajit-div-miscompilation.lua:34[m
+0007    [34mnum[m CONV   0002  [34mnum[m.[35mint[m
+---- TRACE 19 stop -> 15
+
+---- TRACE 20 start 15/2 luajit-div-miscompilation.lua:35
+---- TRACE 20 IR
+0001 >  [33mcdt[m SLOAD  #3    T
+0002    [35mu16[m FLOAD  0001  cdata.ctypeid
+0003 >  [35mint[m EQ     0002  [35m+11 [m
+0004    [35mi64[m FLOAD  0001  cdata.int64
+0005 >  [35mi64[m GE     0004  [35m+0  [m
+0006    [1mfun[m SLOAD  #0    R
+0007 >  [35mi64[m UREFO  0006  #0  
+0008    p64 SUB    0007  0000
+0009 >  p64 UGT    0008  [35m+48 [m
+0010 >  [31mtab[m ULOAD  0007
+0011    [35mint[m FLOAD  0010  tab.hmask
+0012 >  [35mint[m EQ     0011  [35m+31 [m
+0013    p64 FLOAD  0010  tab.node
+0014 >  p64 HREFK  0013  [32m"cast"[m @23
+0015 >  [1mfun[m HLOAD  0014
+0016 >  [1mfun[m EQ     0006  [1mluajit-div-miscompilation.lua:34[m
+0017 >  [33mcdt[m SLOAD  #2    T
+0018 >  [1mfun[m EQ     0015  [1mffi.cast[m
+0019    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0020 >  [35mint[m EQ     0019  [35m+24 [m
+0021    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0022 >  [35mint[m EQ     0021  [35m+12 [m
+0023    [35mu16[m FLOAD  0017  cdata.ctypeid
+0024 >  [35mint[m EQ     0023  [35m+11 [m
+0025    [35mi64[m FLOAD  0017  cdata.int64
+0026 >  [33mcdt[m CNEWI  [35m+12 [m  0025
+0027    [35mu16[m FLOAD  0017  cdata.ctypeid
+0028 >  [35mint[m EQ     0027  [35m+11 [m
+0029    [35mi64[m FLOAD  0017  cdata.int64
+0030 >  [35mi64[m LT     0029  [35m+0  [m
+0031 >  [35mi64[m UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0032    p64 SUB    0031  0000
+0033 >  p64 UGT    0032  [35m+120[m
+0034 >  [31mtab[m ULOAD  0031
+0035    [35mint[m FLOAD  0034  tab.hmask
+0036 >  [35mint[m EQ     0035  [35m+31 [m
+0037    p64 FLOAD  0034  tab.node
+0038 >  p64 HREFK  0037  [32m"cast"[m @23
+0039 >  [1mfun[m HLOAD  0038
+0040 >  [1mfun[m EQ     0039  [1mffi.cast[m
+0041    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0042 >  [35mint[m EQ     0041  [35m+24 [m
+0043    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0044 >  [35mint[m EQ     0043  [35m+12 [m
+0045 >  [33mcdt[m CNEWI  [35m+12 [m  [35m+0  [m
+0046    [35mu16[m FLOAD  0045  cdata.ctypeid
+0047 >  [35mint[m EQ     0046  [35m+12 [m
+0048    [35mu64[m FLOAD  0045  cdata.int64
+0049    [35mu16[m FLOAD  0026  cdata.ctypeid
+0050 >  [35mint[m EQ     0049  [35m+12 [m
+0051    [35mu64[m FLOAD  0026  cdata.int64
+0052    [35mu64[m SUB    0048  0051
+0053 >  [33mcdt[m CNEWI  [35m+12 [m  0052
+0054 >  [35mi64[m UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0055    p64 SUB    0054  0000
+0056 >  p64 UGT    0055  [35m+120[m
+0057 >  [31mtab[m ULOAD  0054
+0058    [35mint[m FLOAD  0057  tab.hmask
+0059 >  [35mint[m EQ     0058  [35m+31 [m
+0060    p64 FLOAD  0057  tab.node
+0061 >  p64 HREFK  0060  [32m"cast"[m @23
+0062 >  [1mfun[m HLOAD  0061
+0063 >  [1mfun[m EQ     0062  [1mffi.cast[m
+0064    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0065 >  [35mint[m EQ     0064  [35m+24 [m
+0066    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0067 >  [35mint[m EQ     0066  [35m+12 [m
+0068    [35mu16[m FLOAD  0001  cdata.ctypeid
+0069 >  [35mint[m EQ     0068  [35m+11 [m
+0070    [35mi64[m FLOAD  0001  cdata.int64
+0071 >  [33mcdt[m CNEWI  [35m+12 [m  0070
+0072    [35mu16[m FLOAD  0001  cdata.ctypeid
+0073 >  [35mint[m EQ     0072  [35m+11 [m
+0074    [35mi64[m FLOAD  0001  cdata.int64
+0075 >  [35mi64[m GE     0074  [35m+0  [m
+0076    [35mu16[m FLOAD  0053  cdata.ctypeid
+0077 >  [35mint[m EQ     0076  [35m+12 [m
+0078    [35mu64[m FLOAD  0053  cdata.int64
+0079    [35mu16[m FLOAD  0071  cdata.ctypeid
+0080 >  [35mint[m EQ     0079  [35m+12 [m
+0081    [35mu64[m FLOAD  0071  cdata.int64
+0082    [35mu64[m DIV    0078  0081
+0083 >  [33mcdt[m CNEWI  [35m+12 [m  0082
+0084    [35mu16[m FLOAD  0053  cdata.ctypeid
+0085 >  [35mint[m EQ     0084  [35m+12 [m
+0086    [35mu64[m FLOAD  0053  cdata.int64
+0087    [35mu16[m FLOAD  0071  cdata.ctypeid
+0088 >  [35mint[m EQ     0087  [35m+12 [m
+0089    [35mu64[m FLOAD  0071  cdata.int64
+0090    [35mu64[m MOD    0086  0089
+0091 >  [33mcdt[m CNEWI  [35m+12 [m  0090
+---- TRACE 20 stop -> 1
+
+---- TRACE 21 start 4/6 luajit-div-miscompilation.lua:66
+---- TRACE 21 IR
+0001    [33mcdt[m SLOAD  #11   PI
+0002    [34mnum[m SLOAD  #12   PI
+0003    [33mcdt[m SLOAD  #16   PI
+0004    [33mcdt[m SLOAD  #17   PI
+0005    [35mu16[m FLOAD  0004  cdata.ctypeid
+0006 >  [35mint[m EQ     0005  [35m+11 [m
+0007    [35mi64[m FLOAD  0004  cdata.int64
+0008    [35mu16[m FLOAD  0004  cdata.ctypeid
+0009 >  [35mint[m EQ     0008  [35m+11 [m
+0010    [35mi64[m FLOAD  0004  cdata.int64
+0011    [35mi64[m NEG    0007  0010
+0012 >  [33mcdt[m CNEWI  [35m+11 [m  0011
+0013 >  [1mfun[m SLOAD  #6    T
+0014 >  [1mfun[m EQ     0013  [1mluajit-div-miscompilation.lua:34[m
+---- TRACE 21 stop -> 15
+
+---- TRACE 22 start 6/4 luajit-div-miscompilation.lua:66
+---- TRACE 22 IR
+0001    [33mcdt[m SLOAD  #11   PI
+0002    [34mnum[m SLOAD  #12   PI
+0003    [33mcdt[m SLOAD  #16   PI
+0004    [33mcdt[m SLOAD  #17   PI
+0005    [34mnum[m DIV    0002  [34m+3  [m
+0006    [34mnum[m FPMATH 0005  floor
+0007    [34mnum[m MUL    0006  [34m+3  [m
+0008    [34mnum[m SUB    0002  0007
+0009 >  [34mnum[m NE     0008  [34m+0  [m
+0010 >  [1mfun[m SLOAD  #6    T
+0011 >  [1mfun[m EQ     0010  [1mluajit-div-miscompilation.lua:34[m
+---- TRACE 22 stop -> 15
+
+---- TRACE 23 start 6/6 luajit-div-miscompilation.lua:66
+---- TRACE 23 IR
+0001    [33mcdt[m SLOAD  #11   PI
+0002    [34mnum[m SLOAD  #12   PI
+0003    [33mcdt[m SLOAD  #16   PI
+0004    [33mcdt[m SLOAD  #17   PI
+0005    [35mu16[m FLOAD  0004  cdata.ctypeid
+0006 >  [35mint[m EQ     0005  [35m+11 [m
+0007    [35mi64[m FLOAD  0004  cdata.int64
+0008    [35mu16[m FLOAD  0004  cdata.ctypeid
+0009 >  [35mint[m EQ     0008  [35m+11 [m
+0010    [35mi64[m FLOAD  0004  cdata.int64
+0011    [35mi64[m NEG    0007  0010
+0012 >  [33mcdt[m CNEWI  [35m+11 [m  0011
+0013 >  [1mfun[m SLOAD  #6    T
+0014 >  [1mfun[m EQ     0013  [1mluajit-div-miscompilation.lua:34[m
+---- TRACE 23 stop -> 15
+
+---- TRACE 24 start 4/4 luajit-div-miscompilation.lua:66
+---- TRACE 24 IR
+0001    [33mcdt[m SLOAD  #11   PI
+0002    [34mnum[m SLOAD  #12   PI
+0003    [33mcdt[m SLOAD  #16   PI
+0004    [33mcdt[m SLOAD  #17   PI
+0005    [34mnum[m DIV    0002  [34m+3  [m
+0006    [34mnum[m FPMATH 0005  floor
+0007    [34mnum[m MUL    0006  [34m+3  [m
+0008    [34mnum[m SUB    0002  0007
+0009 >  [34mnum[m NE     0008  [34m+0  [m
+0010 >  [1mfun[m SLOAD  #6    T
+0011 >  [1mfun[m EQ     0010  [1mluajit-div-miscompilation.lua:34[m
+---- TRACE 24 stop -> 15
+
+---- TRACE 25 start 18/2 luajit-div-miscompilation.lua:35
+---- TRACE 25 IR
+0001 >  [33mcdt[m SLOAD  #3    T
+0002    [35mu16[m FLOAD  0001  cdata.ctypeid
+0003 >  [35mint[m EQ     0002  [35m+11 [m
+0004    [35mi64[m FLOAD  0001  cdata.int64
+0005 >  [35mi64[m LT     0004  [35m+0  [m
+0006    [1mfun[m SLOAD  #0    R
+0007 >  [35mi64[m UREFO  0006  #0  
+0008    p64 SUB    0007  0000
+0009 >  p64 UGT    0008  [35m+120[m
+0010 >  [31mtab[m ULOAD  0007
+0011    [35mint[m FLOAD  0010  tab.hmask
+0012 >  [35mint[m EQ     0011  [35m+31 [m
+0013    p64 FLOAD  0010  tab.node
+0014 >  p64 HREFK  0013  [32m"cast"[m @23
+0015 >  [1mfun[m HLOAD  0014
+0016 >  [1mfun[m EQ     0006  [1mluajit-div-miscompilation.lua:34[m
+0017 >  [33mcdt[m SLOAD  #2    T
+0018 >  [1mfun[m EQ     0015  [1mffi.cast[m
+0019    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0020 >  [35mint[m EQ     0019  [35m+24 [m
+0021    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0022 >  [35mint[m EQ     0021  [35m+12 [m
+0023    [35mu16[m FLOAD  0017  cdata.ctypeid
+0024 >  [35mint[m EQ     0023  [35m+11 [m
+0025    [35mi64[m FLOAD  0017  cdata.int64
+0026 >  [33mcdt[m CNEWI  [35m+12 [m  0025
+0027    [35mu16[m FLOAD  0017  cdata.ctypeid
+0028 >  [35mint[m EQ     0027  [35m+11 [m
+0029    [35mi64[m FLOAD  0017  cdata.int64
+0030 >  [35mi64[m GE     0029  [35m+0  [m
+0031 >  [35mi64[m UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0032    p64 SUB    0031  0000
+0033 >  p64 UGT    0032  [35m+120[m
+0034 >  [31mtab[m ULOAD  0031
+0035    [35mint[m FLOAD  0034  tab.hmask
+0036 >  [35mint[m EQ     0035  [35m+31 [m
+0037    p64 FLOAD  0034  tab.node
+0038 >  p64 HREFK  0037  [32m"cast"[m @23
+0039 >  [1mfun[m HLOAD  0038
+0040 >  [1mfun[m EQ     0039  [1mffi.cast[m
+0041    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0042 >  [35mint[m EQ     0041  [35m+24 [m
+0043    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0044 >  [35mint[m EQ     0043  [35m+12 [m
+0045    [35mu16[m FLOAD  0001  cdata.ctypeid
+0046 >  [35mint[m EQ     0045  [35m+11 [m
+0047    [35mi64[m FLOAD  0001  cdata.int64
+0048 >  [33mcdt[m CNEWI  [35m+12 [m  0047
+0049    [35mu16[m FLOAD  0001  cdata.ctypeid
+0050 >  [35mint[m EQ     0049  [35m+11 [m
+0051    [35mi64[m FLOAD  0001  cdata.int64
+0052 >  [35mi64[m LT     0051  [35m+0  [m
+0053 >  [35mi64[m UREFO  [1mluajit-div-miscompilation.lua:34[m  #0  
+0054    p64 SUB    0053  0000
+0055 >  p64 UGT    0054  [35m+120[m
+0056 >  [31mtab[m ULOAD  0053
+0057    [35mint[m FLOAD  0056  tab.hmask
+0058 >  [35mint[m EQ     0057  [35m+31 [m
+0059    p64 FLOAD  0056  tab.node
+0060 >  p64 HREFK  0059  [32m"cast"[m @23
+0061 >  [1mfun[m HLOAD  0060
+0062 >  [1mfun[m EQ     0061  [1mffi.cast[m
+0063    [35mu16[m FLOAD  [33mctype<uint64_t>[m  cdata.ctypeid
+0064 >  [35mint[m EQ     0063  [35m+24 [m
+0065    [35mint[m FLOAD  [33mctype<uint64_t>[m  cdata.int
+0066 >  [35mint[m EQ     0065  [35m+12 [m
+0067 >  [33mcdt[m CNEWI  [35m+12 [m  [35m+0  [m
+0068    [35mu16[m FLOAD  0067  cdata.ctypeid
+0069 >  [35mint[m EQ     0068  [35m+12 [m
+0070    [35mu64[m FLOAD  0067  cdata.int64
+0071    [35mu16[m FLOAD  0048  cdata.ctypeid
+0072 >  [35mint[m EQ     0071  [35m+12 [m
+0073    [35mu64[m FLOAD  0048  cdata.int64
+0074    [35mu64[m SUB    0070  0073
+0075 >  [33mcdt[m CNEWI  [35m+12 [m  0074
+0076    [35mu16[m FLOAD  0026  cdata.ctypeid
+0077 >  [35mint[m EQ     0076  [35m+12 [m
+0078    [35mu64[m FLOAD  0026  cdata.int64
+0079    [35mu16[m FLOAD  0075  cdata.ctypeid
+0080 >  [35mint[m EQ     0079  [35m+12 [m
+0081    [35mu64[m FLOAD  0075  cdata.int64
+0082    [35mu64[m DIV    0078  0081
+0083 >  [33mcdt[m CNEWI  [35m+12 [m  0082
+0084    [35mu16[m FLOAD  0026  cdata.ctypeid
+0085 >  [35mint[m EQ     0084  [35m+12 [m
+0086    [35mu64[m FLOAD  0026  cdata.int64
+0087    [35mu16[m FLOAD  0075  cdata.ctypeid
+0088 >  [35mint[m EQ     0087  [35m+12 [m
+0089    [35mu64[m FLOAD  0075  cdata.int64
+0090    [35mu64[m MOD    0086  0089
+0091 >  [33mcdt[m CNEWI  [35m+12 [m  0090
+---- TRACE 25 stop -> 1
+
+---- TRACE 26 start 16/1 luajit-div-miscompilation.lua:67
+---- TRACE 26 IR
+0001    [33mcdt[m SLOAD  #11   PI
+0002    [34mnum[m SLOAD  #12   PI
+0003    [33mcdt[m SLOAD  #16   PI
+0004    [33mcdt[m SLOAD  #17   PI
+0005 >  [1mfun[m SLOAD  #6    T
+0006 >  [1mfun[m EQ     0005  [1mluajit-div-miscompilation.lua:34[m
+---- TRACE 26 stop -> 15
+
+---- TRACE 27 start 17/1 luajit-div-miscompilation.lua:66
+---- TRACE 27 IR
+0001    [33mcdt[m SLOAD  #11   PI
+0002    [34mnum[m SLOAD  #12   PI
+0003    [33mcdt[m SLOAD  #16   PI
+0004    [33mcdt[m SLOAD  #17   PI
+0005    [35mu16[m FLOAD  0004  cdata.ctypeid
+0006 >  [35mint[m EQ     0005  [35m+11 [m
+0007    [35mi64[m FLOAD  0004  cdata.int64
+0008    [35mu16[m FLOAD  0004  cdata.ctypeid
+0009 >  [35mint[m EQ     0008  [35m+11 [m
+0010    [35mi64[m FLOAD  0004  cdata.int64
+0011    [35mi64[m NEG    0007  0010
+0012 >  [33mcdt[m CNEWI  [35m+11 [m  0011
+0013 >  [1mfun[m SLOAD  #6    T
+0014 >  [1mfun[m EQ     0013  [1mluajit-div-miscompilation.lua:34[m
+---- TRACE 27 stop -> 15
+
+cold     = 3125074314110934032LL
+warm     = 3125074314110934032LL
+expected = 3125074314110934032LL
+MISCOMPILED = false
