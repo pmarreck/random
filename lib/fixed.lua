@@ -97,12 +97,45 @@ end
 
 --- Renormalize an arbitrary (m, e) back to 2^62 <= |m| < 2^63.
 --- Shifts are truncating, matching the global rounding rule.
+---
+--- EXPONENT CONTRACT: docs/specs/2026-07-31-deterministic-fixed-point-rng-
+--- design.md:121 fixes the representation as `{ m : u64, e : i32, sign }`.
+--- Lua has no i32, so nothing enforced that bound here -- which let
+--- exponents reach magnitudes where `e` (a Lua double) has an ULP that
+--- exceeds 1, so a +/-1 renormalization step can silently no-op. Verified
+--- directly: normalizing a mantissa needing exactly 7 doublings at
+--- e = 2^53+10 (9007199254741002, itself exactly representable) needs
+--- seven individual `e = e - 1` steps; the loop DOES run all seven
+--- iterations (the mantissa shift itself, done in exact u64 arithmetic,
+--- is never at risk) but the accumulated exponent lands on
+--- 9007199254741000, not the -7 (9007199254740995) a correct per-step
+--- decrement would give -- a discrepancy the coordinator's own
+--- independent reproduction landed on this identical number for and
+--- reasonably called "completely unchanged" (moved by 2 out of
+--- 9+trillion, imperceptible at that scale, and nowhere near a real -7).
+--- The identical shift at a normal-range e (e.g. 1000, decreasing to 993)
+--- is exact every time -- the loop's own iteration count is always
+--- right; only the per-step EXPONENT bookkeeping breaks down, and only
+--- once e's own magnitude passes ~2^53. Asserting
+--- the i32 bound here makes that unreachable rather than merely
+--- undocumented, and makes the Lua reference and the eventual Zig port
+--- (where `e` is a real `i32` and this range is unrepresentable by
+--- construction) agree on exponent range BY CONSTRUCTION rather than by
+--- Lua happening not to exercise the gap -- the actual reason this
+--- matters: a reference implementation must never be MORE permissive
+--- than the port it exists to validate.
+---
+--- 2147483647 (2^31-1) is comfortably above any legitimate exponent this
+--- program produces -- the largest observed is exp(500)'s result
+--- exponent, 721 -- six orders of magnitude of headroom, not a bound
+--- picked to just barely fit current usage.
 function M.norm(m, e)
 	if m == 0 then return 0LL, 0 end
 	local neg = m < 0
 	local u = ffi.cast(u64, neg and -m or m)
 	while u < TWO62 do u = u * 2ULL; e = e - 1 end
 	while u >= 0x8000000000000000ULL do u = u / 2ULL; e = e + 1 end
+	assert(e >= -2147483648 and e <= 2147483647, "fixed.norm: exponent outside i32")
 	local r = ffi.cast(i64, u)
 	if neg then r = -r end
 	return r, e
@@ -696,27 +729,41 @@ M._correction_guard_for_tests = correction_guard
 --- the reason this soft-float representation exists at all -- see the
 --- file's top-of-file REPRESENTATION note).
 ---
---- DOMAIN: NOT total. Raises via correction_guard (see above) if range
---- reduction cannot converge within EXP_MAX_CORRECTIONS steps.
+--- DOMAIN: NOT total. The limit is now the i32 EXPONENT CONTRACT (see
+--- M.norm's own doc comment) -- docs/specs/2026-07-31-deterministic-
+--- fixed-point-rng-design.md:121 fixes `e` as i32, and this function's
+--- own return statement is routed through M.norm specifically so that
+--- contract is enforced at its point of creation, not left to whatever
+--- the caller happens to do with the result next. Since the returned
+--- exponent is approximately k = x/ln2, this fires around |x| >~
+--- 2^31 * ln2 ~= 1.5e9 (e ~= 31) -- an argument this function was NEVER
+--- meant to accept in the first place, per the spec.
 ---
---- This is a GRADIENT, not a sharp cutoff at some single |x| value --
---- measured directly (500-2000 trials per exponent, see
---- task-7-report.md): failure rate is 0 for |x| < 2^52ish, then rises
---- roughly monotonically (~8% at e=52, ~24% at e=53, ~49% at e=54, ~72%
---- at e=55, still ~7.5% SUCCEEDING even at e=57) before reaching
---- certainty once |x/ln2| >= 2^62 (~3.2e18, to_int_trunc's own explicit
---- clamp threshold, where it is unconditional). The underlying cause is
---- the same across the whole gradient: `k` is a plain Lua double, and once
---- its magnitude crosses ~2^53 the double's ULP exceeds 1, so `k +/- 1`
---- can stop moving `k` at all (see correction_guard's comment above for
---- the full derivation and the two distinct ways this was confirmed by
---- execution, not just reasoned about). WHICH specific inputs near a
---- given exponent succeed or fail depends on their exact mantissa, not
---- just their exponent -- hence a gradient rather than a threshold. The
---- guard bounds the loop by ITERATION COUNT, not by checking any
---- magnitude threshold directly, which is exactly why it stays correct
---- regardless of where this gradient sits or how it might shift (e.g. if
---- LN2_M's own representation ever changed).
+--- correction_guard (see above) still independently raises if range
+--- reduction cannot converge within EXP_MAX_CORRECTIONS steps -- kept
+--- as its own defense, not superseded, since it guards the LOOP itself
+--- (which runs before the i32 check ever gets a chance to see a result),
+--- and remains reachable in principle for any |x| the i32 check has not
+--- yet rejected.
+---
+--- HISTORICAL CONTEXT for why correction_guard exists at all (no longer
+--- this function's PRIMARY domain limit, since the i32 check above now
+--- fires first for any |x| large enough to matter here): before the i32
+--- contract was enforced, |x| beyond roughly 2^52 sat in a measured
+--- GRADIENT, not a sharp cutoff (500-2000 trials per exponent, see
+--- task-7-report.md): failure rate 0 for |x| < 2^52ish, rising roughly
+--- monotonically (~8% at e=52, ~72% at e=55, still ~7.5% SUCCEEDING even
+--- at e=57) before reaching certainty at |x/ln2| >= 2^62. The cause: `k`
+--- is a plain Lua double, and once its magnitude crosses ~2^53 the
+--- double's ULP exceeds 1, so `k +/- 1` can stop moving `k` at all (see
+--- correction_guard's comment above for the full derivation). That
+--- entire gradient region is now UNREACHABLE through this function's
+--- public path -- the i32 check rejects everything from e ~= 31 onward,
+--- a factor of ~2^21 (about six decimal orders of magnitude) below where
+--- the gradient even begins -- but correction_guard is kept regardless,
+--- both as defense in depth and because it protects the loop's OWN
+--- termination independent of what the final exponent check does with
+--- whatever the loop produces.
 ---
 --- M.exp has no live callers in this program as of this writing (see
 --- correction_guard's comment above) -- raising loudly rather than
@@ -772,7 +819,27 @@ function M.exp(m, e)
 		acc_m, acc_e = M.add(acc_m, acc_e, cm, ce)
 	end
 	-- multiply by 2^k purely in the exponent -- see the doc comment above.
-	return acc_m, acc_e + k
+	--
+	-- Routed through M.norm rather than returned directly (acc_m, acc_e+k):
+	-- acc_m is already normalized here (every M.add call above renormalizes
+	-- its own result), so this is a NO-OP for any in-contract result -- the
+	-- while loops in M.norm see u already in range and never iterate -- but
+	-- it is also this function's ONLY point of contact with M.norm's new
+	-- i32-exponent assert (see that function's own doc comment). Without
+	-- this, a huge |x| whose range reduction happens to CONVERGE (k itself
+	-- can be astronomically large, e.g. ~5.2e16 for x=2^55, yet still
+	-- satisfy the correction loop's own bound) would return a mantissa/
+	-- exponent pair with no check ever applied to it -- M.exp's own return
+	-- statement bypasses M.norm exactly like M.mul's does (both construct
+	-- their exponent via direct arithmetic, e1+e2 there and acc_e+k here,
+	-- as a deliberate optimization avoiding an unnecessary shift search),
+	-- so "M.norm asserts the i32 bound" alone does not, by itself, reject
+	-- this at its actual point of creation. This one-line change closes
+	-- that gap for M.exp specifically, matching the exponent contract this
+	-- was added to enforce (docs/specs/2026-07-31-deterministic-fixed-
+	-- point-rng-design.md:121) rather than leaving it to whatever the
+	-- caller happens to do with the result next.
+	return M.norm(acc_m, acc_e + k)
 end
 
 -- pi/2, generated by:  echo 'scale=50; 4*a(1)/2' | bc -l  ->

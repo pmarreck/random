@@ -64,6 +64,31 @@ for _, v in ipairs({1, 2, 3, 7, 100, -1, -2, -12345, 4294967296}) do
 end
 ok(inv_ok, "from_int keeps 2^62 <= |m| < 2^63 for all sampled inputs")
 
+-- M.norm's i32 exponent contract (docs/specs/2026-07-31-deterministic-
+-- fixed-point-rng-design.md:121 fixes `e` as i32; see M.norm's own doc
+-- comment for the full derivation and the reproduced ULP-loss hazard
+-- this closes). pcall + exact-message match, same established style as
+-- M.ln/M.sqrt/M.pow's own domain asserts elsewhere in this file, plus
+-- boundary pinning (exactly at the i32 edges must NOT raise) so a
+-- >= vs > or a wrong-sign mutant on the bound is actually caught, not
+-- just "does it ever raise at all".
+local function rejects_norm(m, e, want_msg)
+	local okc, err = pcall(fx.norm, m, e)
+	if okc then return false, "accepted" end
+	if not tostring(err):find(want_msg, 1, true) then
+		return false, "wrong assert fired: " .. tostring(err)
+	end
+	return true
+end
+local norm_r1, norm_why1 = rejects_norm(0x4000000000000000LL, 2147483648, "fixed.norm: exponent outside i32")
+ok(norm_r1, "norm: exponent one past the i32 max (2147483648) asserts", norm_why1)
+local norm_r2, norm_why2 = rejects_norm(0x4000000000000000LL, -2147483649, "fixed.norm: exponent outside i32")
+ok(norm_r2, "norm: exponent one past the i32 min (-2147483649) asserts", norm_why2)
+local norm_ok3 = pcall(fx.norm, 0x4000000000000000LL, 2147483647)
+ok(norm_ok3, "norm: exponent AT the i32 max (2147483647) does not raise (boundary, not off-by-one)")
+local norm_ok4 = pcall(fx.norm, 0x4000000000000000LL, -2147483648)
+ok(norm_ok4, "norm: exponent AT the i32 min (-2147483648) does not raise (boundary, not off-by-one)")
+
 -- zero is canonical
 local zm, ze = fx.from_int(0)
 ok(zm == 0LL and ze == 0, "zero is canonical (m=0, e=0)")
@@ -738,132 +763,69 @@ ok(tostring(pow62_err):find("#4", 1, true) ~= nil,
 -- A SECOND, lower-magnitude case: 2^62 is where to_int_trunc's own clamp
 -- branch guarantees non-convergence (verified deterministic above, and
 -- re-confirmed over 30 fresh-process runs before this comment was
--- written: 30/30 raised with the correction-guard's own message). But
--- x = 2^55 does NOT hit that clamp branch at all (|x/ln2| ~= 5.2e16,
--- well under the ~4.6e18 threshold e >= 62 implies) -- it sits in a
--- GRADIENT region instead, where whether the correction loop converges
--- within EXP_MAX_CORRECTIONS depends on JIT trace formation, not on the
--- mathematics. Task 8's review measured this directly: ~8% raise at
--- e=52, ~49% at e=54, ~72% at e=55, still ~7.5% SUCCEEDING even at e=57.
--- The coordinator independently measured `./test fixed` at 8 of 30 runs
--- (27%) failing THIS specific assertion. Asserting "it raises" is
--- therefore asserting a coin flip -- the same shape as Task 6's
--- div_signed regression check, which caught its target only 5 of 15
--- runs before being replaced with a deterministic jit.attach check (see
--- that section's own comment for the precedent).
+-- written: 30/30 raised with the correction-guard's own message).
 --
--- What must hold UNCONDITIONALLY, regardless of which way the coin
--- lands: exp(2^55) never returns a WRONG value. Either it raises (with
--- the correction guard's own message, not some unrelated failure), or it
--- returns a value that agrees with an INDEPENDENT oracle.
+-- x = 2^55 is a DIFFERENT boundary, and its history is worth recording
+-- precisely because it changed twice in this same task:
 --
--- The oracle is computed entirely in bc's exact, arbitrary-precision
--- arithmetic -- the SAME range-reduction decomposition M.exp itself
--- uses (x = k*ln2 + r, |r| <= ln2/2), but with bc's exact rational k
--- (never a Lua double, so it carries none of the ULP ambiguity M.exp's
--- own `k` variable has once its magnitude passes 2^53) driving an
--- entirely independent computation of r and exp(r). NOTE: computing
--- exp(2^55) DIRECTLY in bc is not feasible -- the true value has on the
--- order of 1.6e16 DECIMAL DIGITS -- so the oracle is built from the
--- SMALL, well-conditioned remainder instead, exactly mirroring how
--- kernel_bc_sweep.lua's own r-domain exp sweep isolates the Taylor
--- series from range reduction:
---
---   echo 'scale=90
---   x = 36028797018963968
---   l2 = l(2)
---   k = 51978566788454385
---   r = x - k*l2
---   er = e(r)
---   scale=0
---   m = er * 9223372036854775808 / 1
---   print m, "\n"' | bc -l
---
--- gives k = 51978566788454385 and m = 7667043248704797363 at LOCAL
--- exponent -1 (i.e. before folding k in) -- so the full expected
--- exponent is k + (-1) = 51978566788454384, pinned as a constant below,
--- consistent with how LN2_M/LN2_E and PI_2_M/PI_2_E are documented in
--- lib/fixed.lua.
---
--- COMPARISON METHOD -- deliberately NOT this file's usual
--- true_fixed_relerr (M.sub then M.div, entirely in the kernel's own
--- arithmetic): that pattern is UNSAFE here and was caught failing before
--- being replaced. M.sub's M.norm renormalization decrements/increments
--- its exponent via PLAIN LUA DOUBLE ARITHMETIC (`e = e - 1` per shift,
--- lib/fixed.lua) -- the EXACT SAME "beyond ~2^53, +/-1 can be a silent
--- no-op" hazard this whole section is about, just hit a second time,
--- inside the TEST's own verification instead of inside M.exp. Confirmed
--- directly: M.sub(actual, oracle) with both exponents at ~5.2e16
--- returned a residual mantissa that needed renormalizing by 2^7, but its
--- returned exponent came back UNCHANGED (still exactly the input
--- exponent) -- seven silent no-op decrements -- corrupting the "small
--- residual" this file's whole comparison idiom depends on and producing
--- a computed relative error of 0.657 against a true, independently
--- confirmed value of 0.005135296600034... (right below). Fixed by
--- comparing the two ALREADY-NORMALIZED mantissas directly with plain
--- int64 subtraction whenever the two exponents are EXACTLY equal (safe:
--- both mantissas are always < 2^63 in magnitude, nowhere near a huge
--- exponent), and treating ANY exponent mismatch as an automatic fail
--- with no further arithmetic needed -- a single unit of exponent
--- difference is already a full doubling (>=100% relative error), so no
--- tolerance this test would ever use could accept one anyway.
---
--- TOLERANCE, not tight: lib/fixed.lua's reduce_r calls
--- `M.from_int(k)`, and M.from_int's own doc comment documents its
--- "|v| < 2^53 for safety" precondition -- violated here by ~5.8x (k is
--- a Lua double at this magnitude, so it is ALREADY only accurate to
--- within its own ULP, 8, before it ever reaches M.from_int). Computing
--- x - k*ln2 then subtracts two ~3.6e16-magnitude quantities to get a
--- ~0.18-0.35 remainder -- classic catastrophic cancellation amplifying
--- k's own ULP-8 imprecision, not a bug in the Taylor series or in
--- M.sub's exact opposite-sign path. Measured directly: 200 consecutive
--- in-process calls (a single isolated Lua process -- distinct from the
--- embedded-in-the-full-suite scenario the coin-flip above describes)
--- all returned the IDENTICAL (rm, re) -- the SAME exponent as this
--- oracle (IEEE double rounding is deterministic: two computations
--- reaching the same true k collapse onto the same double even though
--- neither can represent it exactly) -- with a measured relative error of
--- 5.135296600e-03 (~0.51%) against the oracle above. EXP55_RTOL = 0.05
--- gives ~10x margin above that single measured instance -- loose enough
--- to accept this magnitude's inherent cancellation noise (plausibly
--- variable across different JIT-compiled paths, not just between
--- raising and succeeding, though only one such value has actually been
--- observed), tight enough that a genuinely wrong answer (a missed
--- correction, ~a whole factor of e^ln2 = 2, i.e. ~100% error; or
--- garbage) fails by 20x or more.
+-- 1. ORIGINALLY (this file's very first version of this check): asserted
+--    "it raises" via correction_guard, unconditionally. That is a coin
+--    flip in this magnitude's GRADIENT region -- whether the correction
+--    loop exceeds EXP_MAX_CORRECTIONS there depends on JIT trace
+--    formation, not the mathematics (task 8: ~8% raise at e=52 up to
+--    ~72% at e=55). Measured flaking 8 of 30 `./test fixed` runs (27%)
+--    once this task's own code growth shifted JIT timing enough to
+--    change the odds.
+-- 2. REPLACED WITH an invariant check ("never returns a WRONG value:
+--    either raises correctly, or agrees with an independent oracle"),
+--    since that is the property that actually has to hold regardless of
+--    which way the JIT-timing coin lands. The oracle was built entirely
+--    in bc's exact arithmetic (the same k*ln2 + r decomposition M.exp
+--    itself uses; computing exp(2^55) directly in bc is infeasible, the
+--    true value has ~1.6e16 decimal digits, so the oracle uses the
+--    small, well-conditioned remainder instead). Finding this oracle
+--    ALSO surfaced a second, unrelated hazard: M.sub's own M.norm
+--    renormalization silently corrupts its exponent once that exponent
+--    itself exceeds ~2^53 -- the SAME disease this whole test is about,
+--    hit a second time inside the verification itself. That finding is
+--    now what M.norm's own doc comment documents and asserts against.
+-- 3. Enforcing the i32 exponent contract (docs/specs/2026-07-31-
+--    deterministic-fixed-point-rng-design.md:121, via M.norm's new
+--    assert and M.exp's return now routing through it) makes the
+--    "succeeds" branch of step 2's check STRUCTURALLY UNREACHABLE for
+--    this input: the correction loop's own convergence behavior is
+--    UNCHANGED by this (still whatever JIT-timing-dependent thing it
+--    always was), but k ~= 5.2e16 for x = 2^55 regardless of how the
+--    loop gets there, and the RETURNED exponent is approximately k --
+--    six orders of magnitude past the i32 ceiling (2147483647) no matter
+--    what. So this input NOW ALWAYS raises, via ONE of two independent
+--    checks depending on which the JIT-timing coin flip reaches first:
+--    correction_guard mid-loop (if convergence needs more corrections
+--    than the bound allows -- unusual, but not impossible for this
+--    input) or M.norm's i32 assert at the return (if the loop converges
+--    fine, which task 10's own 200-run isolated probe found to be the
+--    common case). Confirmed directly, embedded in the real suite where
+--    the JIT-timing sensitivity actually lives (not just in isolation):
+--    both messages were observed across repeated `luajit
+--    tests/fixed_test.lua` runs. The oracle-comparison machinery from
+--    step 2 is no longer reachable through this specific input and was
+--    removed rather than left as dead code; the derivation is preserved
+--    here in prose since it is what caught the M.norm hazard.
 local EXP55_M, EXP55_E = 0x4000000000000000LL, 55
-local EXP55_ORACLE_M, EXP55_ORACLE_LOCAL_E = 7667043248704797363LL, -1
-local EXP55_ORACLE_K = 51978566788454385
-local EXP55_ORACLE_E = EXP55_ORACLE_LOCAL_E + EXP55_ORACLE_K
-local EXP55_RTOL = 0.05
-local exp55_okc, exp55_a, exp55_b = pcall(fx.exp, EXP55_M, EXP55_E)
+local exp55_okc, exp55_err = pcall(fx.exp, EXP55_M, EXP55_E)
 local exp55_ok, exp55_why
 if exp55_okc then
-	if exp55_b ~= EXP55_ORACLE_E then
-		exp55_ok, exp55_why = false,
-			("succeeded with the WRONG exponent: got %.0f want %.0f"):format(exp55_b, EXP55_ORACLE_E)
-	else
-		local diff = exp55_a - EXP55_ORACLE_M
-		if diff < 0 then diff = -diff end
-		local relerr = tonumber(diff) / tonumber(EXP55_ORACLE_M)
-		if relerr <= EXP55_RTOL then
-			exp55_ok = true
-		else
-			exp55_ok, exp55_why = false,
-				("succeeded but WRONG: relerr=%.6e exceeds %.3f"):format(relerr, EXP55_RTOL)
-		end
-	end
+	exp55_ok, exp55_why = false, "succeeded -- should be unreachable under the i32 contract"
 else
-	-- Raised: must be the correction guard's own message, not some
-	-- unrelated failure (an assert elsewhere, a Lua runtime error, etc).
-	if tostring(exp55_a):find("exceeded the bound", 1, true) then
+	local msg = tostring(exp55_err)
+	if msg:find("exceeded the bound", 1, true) or msg:find("exponent outside i32", 1, true) then
 		exp55_ok = true
 	else
-		exp55_ok, exp55_why = false, "raised the WRONG error: " .. tostring(exp55_a)
+		exp55_ok, exp55_why = false, "raised the WRONG error: " .. msg
 	end
 end
-ok(exp55_ok, "exp(2^55) never returns a wrong value: it either agrees with the independent bc " ..
-   "oracle or raises the correction-guard's own error", exp55_why)
+ok(exp55_ok, "exp(2^55) always raises, via correction_guard or the i32 exponent contract " ..
+   "(never silently returns a wrong value)", exp55_why)
 
 -- EXP_MAX_CORRECTIONS' exact boundary, pinned DIRECTLY against
 -- correction_guard itself (TEST-ONLY hook, matching
@@ -884,17 +846,43 @@ local guard_ok4 = pcall(fx._correction_guard_for_tests, 4, 0)
 ok(not guard_ok4, "correction_guard(4, _) raises -- 4 corrections exceeds EXP_MAX_CORRECTIONS " ..
    "(this pair is what actually kills a > -> >= off-by-one mutant; see task-7-report.md)")
 
--- A REAL M.exp input needing exactly 2 corrections, found by search (not
+-- HISTORICAL NOTE, no longer a live "succeeds" check (see below for why):
+-- (6978193117490312577LL, 50) -- x ~= 1.7e15 -- was found by search (not
 -- analytically constructed -- the idealized "at most 1" proof in M.exp's
--- own doc comment does not by itself predict this; M.div's own tiny
--- compounding rounding error at this magnitude is what pushes it to 2,
--- confirmed empirically). Documents, with a concrete regression pin, that
--- the correction loop genuinely exercises more than the single-iteration
--- case every other check in this file happens to hit, and that
--- EXP_MAX_CORRECTIONS = 3 has real (not just nominal) headroom above it.
+-- own doc comment does not by itself predict this) as a REAL M.exp input
+-- needing exactly 2 corrections, M.div's own tiny compounding rounding
+-- error at this magnitude being what pushes it to 2. That demonstrated
+-- EXP_MAX_CORRECTIONS = 3 has real (not just nominal) headroom above the
+-- naturally-occurring maximum.
+--
+-- Superseded by M.norm's i32-exponent assert (added at the coordinator's
+-- direction once the reference/spec mismatch was found): this input's
+-- correction loop still converges in exactly 2 steps, same as always,
+-- but its RESULT exponent is k ~= 2.46e15 -- x/ln2 for x ~= 1.7e15 --
+-- five orders of magnitude past the i32 ceiling (2147483647), so it is
+-- now correctly REJECTED at the return, not accepted.
+--
+-- This is not a coincidence of this one input -- it is STRUCTURAL, and
+-- was checked directly before writing this comment: 25,500 sampled
+-- cases spanning e in [1, 51] (comfortably covering the entire i32-safe
+-- output range, e up to ~31, plus a wide margin past it) never needed
+-- more than 1 correction; every naturally-occurring 2-correction input
+-- found in the original 600,000+-trial search (task-7-report.md) sits in
+-- e in [45, 58] specifically BECAUSE that is where k's own double
+-- precision degrades (k > ~2^53) -- and any x large enough for that is,
+-- by the exact same magnitude relationship, large enough that k (the
+-- returned exponent) is already ~2^22 past i32's own ~2^31 ceiling. The
+-- "needs 2 corrections" case and "result fits in i32" case cannot
+-- co-occur: enforcing the exponent contract makes EXP_MAX_CORRECTIONS'
+-- 2-corrections headroom permanently unreachable through any in-contract
+-- M.exp call, not merely untested. correction_guard's own `>` vs `>=`
+-- boundary remains pinned directly above (guard_ok3/guard_ok4), which
+-- covers the property that actually still matters going forward.
 local corr2_m, corr2_e = 6978193117490312577LL, 50
 local corr2_okc, corr2_err = pcall(fx.exp, corr2_m, corr2_e)
-ok(corr2_okc, "a real M.exp input known to need exactly 2 corrections still succeeds",
+local corr2_ok = (not corr2_okc) and tostring(corr2_err):find("fixed.norm: exponent outside i32", 1, true) ~= nil
+ok(corr2_ok, "the former 2-corrections input is now rejected via the i32 exponent contract, " ..
+   "not silently accepted with an out-of-contract exponent",
    tostring(corr2_err))
 
 end
