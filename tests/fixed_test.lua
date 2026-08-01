@@ -13,6 +13,18 @@ local function ok(cond, label, detail)
 	end
 end
 
+-- relative difference between two soft-floats, as a Lua number.
+-- Test-only convenience; uses floats deliberately, and only to score error.
+function math_abs_rel(m1, e1, m2, e2)
+	local function tofloat(m, e)
+		if m == 0 then return 0.0 end
+		return tonumber(m) * 2 ^ (e - 62)
+	end
+	local a, b = tofloat(m1, e1), tofloat(m2, e2)
+	if b == 0 then return math.abs(a) end
+	return math.abs((a - b) / b)
+end
+
 print("Testing integer-only numeric kernel...")
 print("============================================")
 print("")
@@ -247,6 +259,205 @@ ok(rt1 == five1 and rt2 == five2, "neg(neg(5)) == 5 (double negation round-trips
 
 local zsum1, zsum2 = fx.add(five1, five2, negfive1, negfive2)
 ok(zsum1 == 0LL and zsum2 == 0, "x + neg(x) == canonical zero")
+
+print("")
+print("--- Section 3: divide ---")
+
+-- division by zero must assert, not silently produce garbage
+local function rejects_div(m1, e1, m2, e2, want_msg)
+	local okc, err = pcall(fx.div, m1, e1, m2, e2)
+	if okc then return false, "accepted" end
+	if not tostring(err):find(want_msg, 1, true) then
+		return false, "wrong assert fired: " .. tostring(err)
+	end
+	return true
+end
+-- NOTE: rejects_div(fx.from_int(1), 0LL, 0, "...") would be the same
+-- non-last-argument multi-return truncation bug flagged below near
+-- ln1o3_m -- from_int(1) is not the final argument here, so it would
+-- silently collapse to just its mantissa and shift every later argument
+-- over by one. Capture the return values into locals first.
+local ONEm, ONEe = fx.from_int(1)
+local dr1, dwhy1 = rejects_div(ONEm, ONEe, 0LL, 0, "fixed.div: division by zero")
+ok(dr1, "div by zero asserts", dwhy1)
+
+-- div carries the same normalization precondition as mul, checked on both
+-- operands and distinguishably (see mul's identical mutation-testing note
+-- above -- a copy-pasted assert on the wrong operand must not survive).
+local dr2, dwhy2 = rejects_div(1LL, 0, ONEm, ONEe, "operand 1 not normalized")
+ok(dr2, "div rejects an unnormalized operand 1", dwhy2)
+local dr3, dwhy3 = rejects_div(ONEm, ONEe, 1LL, 0, "operand 2 not normalized")
+ok(dr3, "div rejects an unnormalized operand 2", dwhy3)
+
+-- 0 / x == canonical zero
+local zd1, zd2 = fx.div(0LL, 0, ONEm, ONEe)
+ok(zd1 == 0LL and zd2 == 0, "0 / x == canonical zero")
+
+-- x / x == 1 exactly (no tolerance needed: a == b means q0=1, remainder 0,
+-- so the fractional loop contributes nothing and the result is exactly the
+-- soft-float form of 1 -- a genuine exactness guarantee, not an artifact of
+-- a generous tolerance).
+local selfdiv_ok = true
+for _, v in ipairs({1, 2, 3, 7, -5, 1000000, -99999}) do
+	local vm, ve = fx.from_int(v)
+	local qm, qe = fx.div(vm, ve, vm, ve)
+	if not (qm == ONEm and qe == ONEe) then selfdiv_ok = false end
+end
+ok(selfdiv_ok, "x / x == 1 exactly for a sampled set")
+
+-- x / 1 == x exactly
+local divone_ok = true
+for _, v in ipairs({1, 2, 3, 7, -5, 1000000, -99999}) do
+	local vm, ve = fx.from_int(v)
+	local qm, qe = fx.div(vm, ve, ONEm, ONEe)
+	if not (qm == vm and qe == ve) then divone_ok = false end
+end
+ok(divone_ok, "x / 1 == x exactly for a sampled set")
+
+-- Regression pin for the overflow bug described in M.div's doc comment: the
+-- brief's original two-31-bit-jump refinement computed r0 * 2^31 where r0
+-- (a mod b) can be up to just under 2^63 whenever the dividend's mantissa is
+-- smaller than the divisor's -- true for roughly half of all normalized
+-- pairs, not a contrived edge case. That silently wrapped mod 2^64 and
+-- returned canonical zero for a division whose true value is ~0.5.
+-- Verified independently against `bc -l`: (2^62+1)/(2^63-1) truncates to
+-- exactly 0.5 at 62-bit precision (the true value's excess over 0.5, about
+-- 1.626e-19, sits below the 2^-62 ~= 2.168e-19 ulp at this scale) -- see
+-- tests/kernel_bc_sweep for the general sweep this pins one case of.
+local ov_m, ov_e = fx.div(0x4000000000000001LL, 0, 0x7FFFFFFFFFFFFFFFLL, 0)
+ok(not (ov_m == 0LL and ov_e == 0), "div does not collapse (2^62+1)/(2^63-1) to zero",
+   ("got m=%s e=%d"):format(tostring(ov_m), ov_e))
+local half_m, half_e = fx.norm(0x4000000000000000LL, -1)
+ok(ov_m == half_m and ov_e == half_e, "(2^62+1)/(2^63-1) truncates to exactly 0.5",
+   ("got m=%s e=%d want m=%s e=%d"):format(tostring(ov_m), ov_e, tostring(half_m), half_e))
+
+-- sign handling across all four quadrants
+local div_sign_ok = true
+for _, c in ipairs({{6,3,2},{-6,3,-2},{6,-3,-2},{-6,-3,2}}) do
+	local x1,x2 = fx.from_int(c[1]); local y1,y2 = fx.from_int(c[2])
+	local q1,q2 = fx.div(x1,x2,y1,y2)
+	local w1,w2 = fx.from_int(c[3])
+	if not (q1 == w1 and q2 == w2) then div_sign_ok = false end
+end
+ok(div_sign_ok, "divide handles all four sign combinations")
+
+print("")
+print("--- Section 4: natural log (ln) ---")
+
+-- ln(1) == 0 exactly
+local l1, l2 = fx.ln(fx.from_int(1))
+ok(l1 == 0LL and l2 == 0, "ln(1) == 0 exactly")
+
+-- ln(2) matches the stored constant exactly (same code path, same value)
+local t1, t2 = fx.ln(fx.from_int(2))
+ok(fx.cmp(t1, t2, fx.LN2_M, fx.LN2_E) == 0 or
+   math_abs_rel(t1, t2, fx.LN2_M, fx.LN2_E) < 1e-17, "ln(2) == the ln2 constant")
+
+-- ln is exact enough on powers of two: ln(2^k) == k * ln2
+local pow_ok = true
+for k = 1, 20 do
+	local xm, xe = fx.norm(0x4000000000000000LL, k)   -- 2^k
+	local rm, re = fx.ln(xm, xe)
+	local wm, we = fx.mul(fx.LN2_M, fx.LN2_E, fx.from_int(k))
+	if math_abs_rel(rm, re, wm, we) > 1e-16 then pow_ok = false end
+end
+ok(pow_ok, "ln(2^k) == k*ln2 for k in 1..20 (rel err < 1e-16)")
+
+-- and negative powers of two, exercising k < 0 (from_int(k) with k negative)
+local negpow_ok = true
+for k = -1, -20, -1 do
+	local xm, xe = fx.norm(0x4000000000000000LL, k)   -- 2^k
+	local rm, re = fx.ln(xm, xe)
+	local wm, we = fx.mul(fx.LN2_M, fx.LN2_E, fx.from_int(k))
+	if math_abs_rel(rm, re, wm, we) > 1e-16 then negpow_ok = false end
+end
+ok(negpow_ok, "ln(2^k) == k*ln2 for k in -1..-20 (rel err < 1e-16)")
+
+-- ln(0.5) == -ln2 exactly (power of two with negative k=-1; distinct from
+-- the k=1 identity-multiply path exercised by ln(2) above)
+local halfm, halfe = fx.norm(0x4000000000000000LL, -1)
+local lh1, lh2 = fx.ln(halfm, halfe)
+local negln2m, negln2e = fx.neg(fx.LN2_M, fx.LN2_E)
+ok(lh1 == negln2m and lh2 == negln2e, "ln(0.5) == -ln2 exactly")
+
+-- CRITICAL: every check above has f == 1 exactly (mantissa exactly 2^62),
+-- because every input is a pure power of two. That means t = (f-1)/(f+1) is
+-- exactly 0 in every single case above, so the atanh series loop -- the
+-- actual transcendental computation -- multiplies and adds zeros the entire
+-- time and is never really exercised. A broken ODD_RECIP index, a dropped
+-- term, or a flipped sign in the series would pass every test above
+-- unchanged. (Confirmed by mutation testing -- see task-6-report.md.)
+--
+-- These checks use genuinely non-power-of-two mantissas, verified with
+-- ORACLE-FREE metamorphic properties (ln(a) + ln(1/a) == 0,
+-- ln(a*b) == ln(a) + ln(b)) rather than an external bc call, so this file
+-- stays fast and dependency-free; independent verification against `bc -l`
+-- lives in tests/kernel_bc_sweep, the right layer for a process dependency.
+-- Metamorphic alone would not catch every bug class (a series scaled by a
+-- constant factor could cancel out of ln(a)+ln(1/a)), which is exactly why
+-- the bc sweep exists too -- these two checks are complementary, not
+-- redundant.
+local ln3_m, ln3_e = fx.ln(fx.from_int(3))          -- f = 1.5, t = 0.2
+-- NOTE: fx.div(fx.from_int(1), fx.from_int(3)) would be a classic Lua
+-- multi-return bug -- only the LAST argument in a call fully expands, so
+-- from_int(1) would silently truncate to just its mantissa, leaving div's
+-- e1 argument nil. Locals sidestep it; confirmed the truncation is real
+-- with a standalone probe before relying on this pattern anywhere here.
+local one_m, one_e = fx.from_int(1)
+local three_m, three_e = fx.from_int(3)
+local oneo3_m, oneo3_e = fx.div(one_m, one_e, three_m, three_e)
+local ln1o3_m, ln1o3_e = fx.ln(oneo3_m, oneo3_e)     -- f = 4/3, t = 1/7
+local lnsum_m, lnsum_e = fx.add(ln3_m, ln3_e, ln1o3_m, ln1o3_e)
+ok(math_abs_rel(lnsum_m, lnsum_e, 0LL, 0) < 1e-16 or lnsum_m == 0,
+   "ln(3) + ln(1/3) == 0 (exercises the atanh series with a non-trivial t)",
+   ("got m=%s e=%d"):format(tostring(lnsum_m), lnsum_e))
+ok(ln3_m ~= 0 and ln1o3_m ~= 0,
+   "ln(3) and ln(1/3) are each individually nonzero (rules out the vacuous 0+0==0 mutant)")
+
+local ln5_m, ln5_e = fx.ln(fx.from_int(5))          -- f = 1.25, t = 1/9
+local ln15_m, ln15_e = fx.ln(fx.from_int(15))       -- f = 1.875, t = 7/23
+local lnprod_m, lnprod_e = fx.add(ln3_m, ln3_e, ln5_m, ln5_e)
+ok(math_abs_rel(lnprod_m, lnprod_e, ln15_m, ln15_e) < 1e-16,
+   "ln(3) + ln(5) == ln(15) (independent series evaluations agree via the log identity)",
+   ("got sum m=%s e=%d, ln(15) m=%s e=%d"):format(
+      tostring(lnprod_m), lnprod_e, tostring(ln15_m), ln15_e))
+
+-- domain: ln(0) and ln(negative) must assert, never silently return garbage
+-- or -inf. m == 0 is the canonical-zero encoding; m < 0 encodes any negative
+-- value; both are excluded by the same `m > 0` guard.
+local function rejects_ln(m, e, want_msg)
+	local okc, err = pcall(fx.ln, m, e)
+	if okc then return false, "accepted" end
+	if not tostring(err):find(want_msg, 1, true) then
+		return false, "wrong assert fired: " .. tostring(err)
+	end
+	return true
+end
+local lr1, lwhy1 = rejects_ln(0LL, 0, "fixed.ln: argument must be positive")
+ok(lr1, "ln(0) asserts rather than returning -inf or garbage", lwhy1)
+local negonem, negonee = fx.from_int(-1)
+local lr2, lwhy2 = rejects_ln(negonem, negonee, "fixed.ln: argument must be positive")
+ok(lr2, "ln(negative) asserts", lwhy2)
+
+-- domain: values just below 1.0 (not to be confused with f just below 1,
+-- which the normalization invariant makes impossible -- f is always in
+-- [1, 2). A value just below 1.0 as a whole normalizes to f just below 2,
+-- the OTHER end of the series' domain, at t just below its max of 1/3 --
+-- the slowest-converging case the 12-term truncation has to cover. Checked
+-- metamorphically: ln(1023/1024) + ln(1024/1023) == 0, and the result must
+-- be negative (1023/1024 < 1).
+local n1023m, n1023e = fx.from_int(1023)
+local n1024m, n1024e = fx.from_int(1024)
+local below1_m, below1_e = fx.div(n1023m, n1023e, n1024m, n1024e)
+local above1_m, above1_e = fx.div(n1024m, n1024e, n1023m, n1023e)
+local lnbelow_m, lnbelow_e = fx.ln(below1_m, below1_e)
+local lnabove_m, lnabove_e = fx.ln(above1_m, above1_e)
+local belowsum_m, belowsum_e = fx.add(lnbelow_m, lnbelow_e, lnabove_m, lnabove_e)
+ok(lnbelow_m < 0, "ln(1023/1024) is negative (value just below 1.0)",
+   ("got m=%s e=%d"):format(tostring(lnbelow_m), lnbelow_e))
+ok(math_abs_rel(belowsum_m, belowsum_e, 0LL, 0) < 1e-16 or belowsum_m == 0,
+   "ln(1023/1024) + ln(1024/1023) == 0",
+   ("got m=%s e=%d"):format(tostring(belowsum_m), belowsum_e))
 
 print("")
 print("============================================")

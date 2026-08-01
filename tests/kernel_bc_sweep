@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Sweeps the integer-only numeric kernel's div and ln against `bc -l`
+# (arbitrary precision) as an independent oracle -- see kernel_bc_sweep.lua
+# for why a Lua-double comparison cannot validate this kernel's precision
+# claim at all.
+# NOTE: no `set -e` -- see ./test.
+set -u
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if ! command -v bc >/dev/null 2>&1; then
+	echo "kernel_bc_sweep: SKIPPED (bc not found on PATH)" >&2
+	exit 0
+fi
+
+exec luajit "$here/kernel_bc_sweep.lua"
