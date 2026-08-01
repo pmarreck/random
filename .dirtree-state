@@ -18,4 +18,6 @@ annotate=[
 	tests/fixed_test.lua = fast pure-Lua unit tests for lib/fixed.lua: exactness pins, precondition/assert coverage, oracle-free metamorphic ln checks, decimal parse/format round-trip
 	tests/kernel_bc_sweep = bash entrypoint: sweeps fixed.lua div/ln against bc -l as an independent arbitrary-precision oracle
 	tests/kernel_bc_sweep.lua = generates the bc program + parses results for the div/ln/exp/cos/sqrt/pow/tostring sweep; a Lua-double comparison cannot validate this kernel's ~2^-62 precision claim
+	tests/kernel_jit_diff = bash entrypoint: diffs the whole kernel's output under luajit vs luajit -joff, a differential control for LuaJIT/LuaJIT#1499-class trace-compiler miscompilations
+	tests/kernel_jit_diff.lua = deterministic whole-kernel digest (mul/div/add/sub/norm/ln/exp/cos_turns/sqrt/pow, mixed-sign) run twice by kernel_jit_diff and compared byte-for-byte
 ]

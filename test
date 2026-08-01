@@ -26,7 +26,7 @@ ran=0
 # failing with a message. `timeout` converts that into a fast, loud,
 # non-zero-exit failure every time, not just for exp -- any future hang in
 # any suite gets the same treatment.
-for suite in "$here"/tests/*_test "$here"/tests/kernel_bc_sweep; do
+for suite in "$here"/tests/*_test "$here"/tests/kernel_bc_sweep "$here"/tests/kernel_jit_diff; do
 	[ -x "$suite" ] || continue
 	name="$(basename "$suite")"
 	if [ -n "$filter" ] && [[ "$name" != *"$filter"* ]]; then continue; fi

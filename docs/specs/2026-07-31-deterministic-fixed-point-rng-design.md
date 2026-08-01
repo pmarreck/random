@@ -201,21 +201,43 @@ they are auditable and regenerable rather than magic numbers.
 
 ### 4.6 Measured accuracy
 
-Against `bc -l` at scale=40, 400 vectors over the real `k/2^32` domain:
+Measured by `tests/kernel_bc_sweep` against `bc -l` at `scale=90` (~90
+decimal digits): GNU bc 1.08.2 links only libc and carries its own
+arbitrary-precision decimal arithmetic, sharing no lineage with
+`lib/fixed.lua`, making it an independent oracle rather than a
+self-referential check. The sweep strides deterministically over the real
+`k/2^32` uniform-draw domain (for `cos`) plus an LCG-seeded mantissa/exponent
+spread covering the full normalized range (for `ln`/`exp`/`sqrt`/`pow`/
+`tostring`). Figures below are from the full (non-`FAST`) run; `./test`'s
+default `FAST` mode covers a smaller sample of the same generators for
+speed, not a different domain.
 
-| function | max abs error |
-|---|---|
-| `ln`  | 3.3×10⁻⁹ |
-| `exp` | 2.5×10⁻⁹ |
-| `cos` | 6.1×10⁻¹⁰ |
+| function | worst measured error | sample count |
+|---|---|---|
+| `ln`       | 2.13×10⁻¹⁷ absolute (see note) | 315 cases |
+| `exp`      | 1.51×10⁻¹⁵ relative, full pipeline (\|x\| up to 5000); 3.06×10⁻¹⁸ relative, series only | 236 cases |
+| `cos`      | 1.08×10⁻¹⁸ absolute, all cases; 1.54×10⁻¹⁰ relative, near-zero cancellation probes only (see note) | 236 cases |
+| `sqrt`     | 2.26×10⁻¹⁹ relative | 1995 cases |
+| `pow`      | 5.25×10⁻¹⁷ relative | 241 cases |
+| `tostring` | exact string match against bc's own truncated decimal, 0 mismatches | 650 cases |
 
-**These were measured on the Q32.32 prototype and are a lower bound on the
-final design**, since the normalized mantissa carries roughly 30 more bits.
-Re-measurement against the soft-float kernel is the first task of the
-implementation plan, not an assumption of this spec.
+**Why `ln` and `cos` are reported as absolute error, not relative:** both
+compute a difference of two close values for some inputs — `ln` via
+`k·ln2 + ln(mantissa)` when the argument is near 1.0; `cos` near its own
+zero crossings — so relative error is ill-conditioned there. On exactly such
+inputs the sweep's worst-case *relative* error reads as 12.0 (1200%) for
+`ln` and as 1.0 (100%, a `bc`-scale-90-rounds-to-exactly-zero artifact at an
+exact boundary) for `cos`; neither is a kernel defect. (See
+`tests/kernel_bc_sweep.lua`'s own tolerance-derivation comments, including
+the mutation test confirming a universal absolute-error escape hatch would
+hide real regressions — the rescue is restricted to the labels that are
+structurally ill-conditioned, not applied blanket.)
 
-The statistical assertions in `tests/random_test` have tolerances around ±0.5,
-so even the lower bound carries about eight orders of magnitude of margin.
+These are the real, current soft-float-kernel numbers, superseding the
+Q32.32-prototype figures this section previously carried as a stated lower
+bound pending re-measurement. The worst of them (`exp`'s 1.51×10⁻¹⁵
+full-pipeline relative error) is still about fourteen orders of magnitude
+below the ±0.5-scale statistical tolerances in `tests/random_test`.
 
 ## 5. Float-free end to end
 

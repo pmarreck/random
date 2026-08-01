@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# JIT-vs-interpreter differential control: see kernel_jit_diff.lua's
+# top-of-file comment for the full rationale (LuaJIT/LuaJIT#1499) and what
+# this actually checks. Runs the same deterministic whole-kernel digest
+# twice -- once under luajit's trace compiler, once under `luajit -joff`
+# (JIT fully disabled) -- and fails if the two stdout digests differ.
+# Verified directly (see task-11-report.md): with lib/fixed.lua's
+# jit.off(div_signed) temporarily removed, this control fires 10/10 (FAST
+# mode) and 5/5 (deep mode) trials; with it restored, both modes agree
+# 5/5. This is a complementary, symptom-level, whole-kernel control -- the
+# deterministic, function-scoped one (div_signed is never trace-compiled)
+# lives in tests/fixed_test.lua via jit.attach and is not replaced by this.
+# NOTE: no `set -e` -- see ./test.
+set -u
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if ! command -v luajit >/dev/null 2>&1; then
+	echo "kernel_jit_diff: SKIPPED (luajit not found on PATH)" >&2
+	exit 0
+fi
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+echo "Diffing JIT-on vs JIT-off output over the whole kernel (LuaJIT/LuaJIT#1499 differential)..."
+echo "============================================"
+
+luajit "$here/kernel_jit_diff.lua" >"$tmp/jit_on.txt" 2>"$tmp/jit_on.err"
+jit_on_rc=$?
+luajit -joff "$here/kernel_jit_diff.lua" >"$tmp/jit_off.txt" 2>"$tmp/jit_off.err"
+jit_off_rc=$?
+
+fails=0
+
+if [ "$jit_on_rc" -ne 0 ]; then
+	echo "✗ luajit (JIT on) run failed (exit $jit_on_rc)" >&2
+	cat "$tmp/jit_on.err" >&2
+	fails=$((fails + 1))
+fi
+if [ "$jit_off_rc" -ne 0 ]; then
+	echo "✗ luajit -joff run failed (exit $jit_off_rc)" >&2
+	cat "$tmp/jit_off.err" >&2
+	fails=$((fails + 1))
+fi
+
+if [ "$fails" -eq 0 ]; then
+	if cmp -s "$tmp/jit_on.txt" "$tmp/jit_off.txt"; then
+		echo "✓ JIT-on and JIT-off digests match ($(tr -d '\n' <"$tmp/jit_on.err"))"
+	else
+		echo "✗ JIT-on and JIT-off digests DIVERGE -- a JIT miscompilation has crept" >&2
+		echo "  into integer-only kernel code (see kernel_jit_diff.lua's top-of-file" >&2
+		echo "  comment, and lib/fixed.lua's jit.off(div_signed) note)" >&2
+		echo "  JIT on:  $(cat "$tmp/jit_on.txt")" >&2
+		echo "  JIT off: $(cat "$tmp/jit_off.txt")" >&2
+		fails=$((fails + 1))
+	fi
+fi
+
+echo "============================================"
+if [ "$fails" -gt 0 ]; then
+	echo "kernel_jit_diff FAILED: $fails control(s) fired" >&2
+	exit "$fails"
+fi
+echo "kernel_jit_diff PASSED"
+exit 0
