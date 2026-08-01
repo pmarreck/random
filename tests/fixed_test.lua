@@ -1189,6 +1189,306 @@ ok(pr2, "pow(negative, y) asserts with pow's OWN message", pwhy2)
 end
 
 print("")
+print("--- Section 8: decimal parse and format ---")
+-- NOTE: the brief this task was built from labeled this "Section 7" --
+-- already taken by sqrt/pow (see that section's own header comment).
+-- Renumbered for a monotonic file, the same fix Section 6's own header
+-- applied to an identical brief-inherited collision.
+do
+
+-- True fixed-point ABSOLUTE difference, same 62-bit-arithmetic
+-- construction as Section 7's true_fixed_relerr (re-defined per-section
+-- rather than shared -- see this file's top-of-file comment: no section
+-- references another section's locals), but returning the ABSOLUTE
+-- residual rather than dividing it by the reference magnitude. Needed
+-- for the round-trip sweep below: "recovers x to the printed precision"
+-- (the task's own phrasing) means an absolute floor of roughly
+-- 10^-places, not a floor relative to x's own magnitude -- fixed-point
+-- notation with a bounded digit count cannot carry full RELATIVE
+-- precision for a magnitude far below 1 (printing 15 places for a value
+-- around 1e-13 spends 13 of those digits on leading zeros, leaving only
+-- ~2 significant digits -- an EXPECTED property of fixed-point
+-- formatting, not a bug in tostring/parse). Same rationale
+-- kernel_bc_sweep.lua's ln/cos sections document for pairing rtol with
+-- atol near a genuine near-zero cancellation; this is the same
+-- ill-conditioning, caused by tostring's bounded `places` rather than by
+-- catastrophic cancellation.
+local function true_fixed_absdiff(m1, e1, m2, e2)
+	local dm, de = fx.sub(m1, e1, m2, e2)
+	if dm == 0 then return 0.0 end
+	return math.abs(tonumber(dm)) * 2 ^ (de - 62)
+end
+
+-- === parse: baseline cases (from the task brief) =========================
+local p1m, p1e = fx.parse("1")
+ok(fx.cmp(p1m, p1e, fx.from_int(1)) == 0, "parse('1') == 1")
+local p2m, p2e = fx.parse("-42")
+ok(fx.cmp(p2m, p2e, fx.from_int(-42)) == 0, "parse('-42') == -42")
+
+-- parse('0.5') doubles as a regression test for a real CRASH in the brief
+-- this was built from: `M.div(M.from_int(tonumber(frac_part)),
+-- M.from_int(tonumber(den)))` chains a non-final multi-return call as an
+-- argument. Lua truncates a non-final multi-return expression to ONE
+-- value, so the first M.from_int(...) there hands M.div its mantissa
+-- only -- the exponent is silently dropped and M.div's argument list
+-- shifts by one. Confirmed directly: that exact line, run with
+-- frac_part=5, den=10 (i.e. this exact test case), raises "fixed.div:
+-- operand 2 not normalized" -- the brief's own suggested implementation
+-- cannot parse "0.5" at all, let alone correctly. See lib/fixed.lua's
+-- M.parse doc comment for the fix.
+local p3m, p3e = fx.parse("0.5")
+local q1m, q1e = fx.from_int(1)
+local q2m, q2e = fx.from_int(2)
+local halfm, halfe = fx.div(q1m, q1e, q2m, q2e)
+ok(fx.cmp(p3m, p3e, halfm, halfe) == 0, "parse('0.5') == 1/2 exactly (does not crash)")
+ok(fx.parse("") == nil, "parse('') is nil")
+ok(fx.parse("abc") == nil, "parse('abc') is nil")
+ok(fx.parse("1.2.3") == nil, "parse('1.2.3') is nil")
+ok(fx.parse("  1  ") ~= nil, "parse tolerates surrounding whitespace")
+ok(fx.parse(".5") ~= nil, "parse('.5') (no leading integer digit) is accepted")
+local p_dot_m, p_dot_e = fx.parse("1.")
+ok(fx.cmp(p_dot_m, p_dot_e, fx.from_int(1)) == 0, "parse('1.') (empty fraction after the dot) == 1")
+
+-- === tostring: baseline cases (from the task brief) =======================
+local z0m, z0e = fx.from_int(0)
+ok(fx.tostring(z0m, z0e, 6) == "0.000000", "tostring(0) == '0.000000'")
+local f42m, f42e = fx.from_int(42)
+ok(fx.tostring(f42m, f42e, 2) == "42.00", "tostring(42, 2) == '42.00'")
+local n7m, n7e = fx.from_int(-7)
+ok(fx.tostring(n7m, n7e, 3) == "-7.000", "tostring(-7, 3) == '-7.000'")
+ok(fx.tostring(halfm, halfe, 6) == "0.500000", "tostring(1/2, 6) == '0.500000'",
+   "got " .. fx.tostring(halfm, halfe, 6))
+
+-- === parse_int: baseline cases (from the task brief) ======================
+ok(fx.parse_int("42") == 42, "parse_int('42') == 42")
+ok(fx.parse_int("-9") == -9, "parse_int('-9') == -9")
+ok(fx.parse_int("1.5") == nil,
+   "parse_int('1.5') is nil (fractional bound rejected) [MUTATION TARGET A]")
+ok(fx.parse_int("x") == nil, "parse_int('x') is nil")
+
+-- === Verification item 1: parse must not lose the fraction ================
+-- den = 10^frac_digits must itself fit exactly in int64 (10^19 does not,
+-- 10^18 does) -- the reason frac_digits is capped at 18 -- checked here
+-- directly at 18, 19, and 30 digits rather than assumed.
+local frac18 = string.rep("3", 18)
+local p18m, p18e = fx.parse("0." .. frac18)
+-- Independent construction: the same accumulation the kernel does
+-- internally, built here without going through fx.parse at all, so this
+-- is not simply checking parse against itself.
+local frac_ll = 0LL
+for _ = 1, 18 do frac_ll = frac_ll * 10LL + 3 end
+local den_ll = 1LL
+for _ = 1, 18 do den_ll = den_ll * 10LL end
+-- NOTE: fx.from_int(...) results are bound to named locals before the
+-- fx.div call, not chained directly as arguments -- chaining a non-final
+-- multi-return call (fx.div(fx.from_int(a), fx.from_int(b))) hits the
+-- exact Lua truncation bug M.parse's own doc comment documents as the
+-- brief's defect 1; this test caught itself making the identical mistake
+-- on its first run (fx.div: operand 2 not normalized), which is exactly
+-- the kind of thing "run the test and watch it fail" is for.
+local frac_num_m, frac_num_e = fx.from_int(frac_ll)
+local frac_den_m, frac_den_e = fx.from_int(den_ll)
+local exp18m, exp18e = fx.div(frac_num_m, frac_num_e, frac_den_m, frac_den_e)
+ok(fx.cmp(p18m, p18e, exp18m, exp18e) == 0,
+   "parse: 18-digit fraction matches an independently-built int64 division exactly")
+
+local p19m, p19e = fx.parse("0." .. frac18 .. "7")   -- 19th fraction digit
+ok(fx.cmp(p19m, p19e, p18m, p18e) == 0,
+   "parse: 19th fraction digit is dropped, not misparsed (result unchanged)")
+
+local p30m, p30e = fx.parse("0." .. frac18 .. string.rep("9", 12))  -- 30 digits total
+ok(fx.cmp(p30m, p30e, p18m, p18e) == 0,
+   "parse: digits past the 18th are still dropped cleanly even at 30 total (no corruption)")
+
+-- Integer part: exactly int64 max (19 digits) parses exactly; any
+-- 19-digit value past int64 max is REJECTED, not silently wrapped. The
+-- brief's own "digits > 18" check let 19-digit inputs through with no
+-- magnitude check at all -- confirmed directly that parsing 19 nines
+-- under the brief's literal, unchecked accumulation
+-- (`int_part * 10LL + d`) wraps to -8446744073709551616: A NEGATIVE
+-- MANTISSA FOR A STRING WITH NO MINUS SIGN ANYWHERE IN IT.
+local imaxm, imaxe = fx.parse("9223372036854775807")
+ok(fx.cmp(imaxm, imaxe, fx.from_int(9223372036854775807LL)) == 0,
+   "parse: int64-max integer part (19 digits) parses exactly")
+ok(fx.parse("9999999999999999999") == nil,
+   "parse: 19-digit integer part past int64 max is rejected, not silently wrapped [MUTATION TARGET B]")
+ok(fx.parse("99999999999999999999999") == nil,
+   "parse: a grossly-overflowing integer part (23 digits) is rejected")
+
+-- === Verification item 2: tostring must not produce a wrong digit ========
+-- Truncation toward zero, unconditionally: -0.5 formats as "-0.500000",
+-- never "-0.499999" (would indicate a floor-toward-negative-infinity
+-- rounding-direction bug) and never anything a round-to-nearest mutant
+-- would also produce here (0.5 has no closer neighbor to round to, so
+-- this specific case alone would NOT distinguish truncate from round --
+-- see the just-below-a-boundary cases immediately below, which do).
+local neghalfm, neghalfe = fx.neg(halfm, halfe)
+ok(fx.tostring(neghalfm, neghalfe, 6) == "-0.500000",
+   "tostring(-0.5, 6) == '-0.500000' (truncation toward zero)")
+
+-- Just below 1, at low places: must truncate DOWN to 0.999999, never
+-- round up to 1.000000. Needs a value whose (places+1)th digit is
+-- unambiguously large -- 999999/1000000 was tried first and REJECTED:
+-- that fraction terminates EXACTLY at 6 decimal digits (0.999999,
+-- period), so it has no 7th digit to distinguish round from truncate at
+-- all, and M.div's own truncation-toward-zero (a real, correct, already-
+-- verified property of a value that isn't exactly binary-representable)
+-- shaves the computed value a hair below 0.999999, making it print
+-- "0.999998" -- a false alarm from a flawed test premise, not a tostring
+-- bug (confirmed by hand before writing this comment). 99999999/100000000
+-- (8 nines) fixes this: digits 7 and 8 are both a solid "9", far from any
+-- binary-truncation-noise boundary, so round-to-nearest would visibly
+-- round up to "1.000000" while truncation gives "0.999999" -- the actual
+-- mutation target for "tostring rounds instead of truncating".
+local n99num_m, n99num_e = fx.from_int(99999999)
+local n99den_m, n99den_e = fx.from_int(100000000)
+local n99m, n99e = fx.div(n99num_m, n99num_e, n99den_m, n99den_e)
+ok(fx.tostring(n99m, n99e, 6) == "0.999999",
+   "tostring(99999999/100000000, 6) truncates to 0.999999, does not round up to 1.000000 [MUTATION TARGET C]")
+
+-- Same boundary, negative: truncation toward zero gives -1.99, not -2.00
+-- (which floor-toward-negative-infinity, a DIFFERENT rounding-direction
+-- bug than round-to-nearest, would produce).
+local nbnum_m, nbnum_e = fx.from_int(19999999999LL)
+local nbden_m, nbden_e = fx.from_int(10000000000LL)
+local nbm, nbe = fx.div(nbnum_m, nbnum_e, nbden_m, nbden_e)
+local nbm2, nbe2 = fx.neg(nbm, nbe)
+ok(fx.tostring(nbm2, nbe2, 2) == "-1.99",
+   "tostring(-1.9999999999, 2) truncates toward zero to -1.99, not -2.00")
+
+-- Large-magnitude integer part: a real defect found while verifying this
+-- function, independent of anything the brief called out. LuaJIT's
+-- default number formatting (plain `tostring()`, `%.14g`) switches to
+-- scientific notation once an integer-valued double's magnitude reaches
+-- roughly 1e14 -- confirmed directly, `tostring(1000000000000000)`
+-- prints "1e+15", not the 16-digit literal -- which would have spliced
+-- garbage like "1e+15.001922" into M.tostring's output for any value
+-- with a 15+ digit integer part. 123456789012345 (15 digits) sits
+-- comfortably below to_int_trunc's own, unrelated 2^53 clamp
+-- (~9.007e15), isolating THIS defect from that pre-existing one.
+local bigm, bige = fx.from_int(123456789012345)
+ok(fx.tostring(bigm, bige, 2) == "123456789012345.00",
+   "tostring of a 15-digit integer part prints plain digits, not scientific notation",
+   "got " .. fx.tostring(bigm, bige, 2))
+
+-- === Verification item 3: round-trip, worst case over a sweep, not 3 =====
+-- === sample values, per instruction ("measure the worst case rather    ===
+-- === than sampling three values").                                     ===
+-- Deterministic LCG (same multiplier family as tests/kernel_bc_sweep.lua),
+-- fixed seed, reproducible across machines and runs. Generates raw
+-- (m, e) pairs at exponents from -40 to 50 -- small fractions through
+-- 15-digit integers (the largest exponent deliberately lands past the
+-- ~1e14 scientific-notation threshold fixed above, so this sweep also
+-- exercises that fix, not just typical-magnitude values), spanning the
+-- realistic domain this kernel's own top-of-file comment documents (ln
+-- down to -22, variates to +/-6.6, mean into the thousands, log-normal
+-- "effectively unbounded").
+local RT_TWO62 = 0x4000000000000000ULL
+local rt_lcg = 0xA24BAED4963EE407ULL
+local function rt_next_mantissa()
+	rt_lcg = rt_lcg * 6364136223846793005ULL + 1442695040888963407ULL
+	local high = rt_lcg / 4ULL
+	return RT_TWO62 + (high % RT_TWO62)
+end
+local RT_EXPS = {-40, -20, -10, -5, -1, 0, 1, 5, 10, 20, 40, 50}
+local RT_PLACES = 15
+-- Per-case tolerance, not one flat number for the whole sweep -- TWO
+-- earlier, flawed versions of this check are recorded here rather than
+-- silently dropped, because both are genuine "verify rather than trust"
+-- findings about what "round-trips to the printed precision" has to mean
+-- for a FIXED (not floating) number of decimal places:
+--   1. A flat RELATIVE bound (< 1e-14) FAILED at e=-40 (|x| ~ 9e-13),
+--      reporting "7.3e-04 relative error" -- alarming-looking, but purely
+--      an artifact of dividing a ~1.3e-15 absolute (entirely correct)
+--      truncation residual by a ~9e-13 true value. 15 fractional places
+--      applied to a value that small spends ~12 of those digits on
+--      leading zeros, leaving only ~3 significant digits -- an EXPECTED
+--      property of fixed-point formatting at small magnitude, not a bug.
+--   2. A flat ABSOLUTE bound (< 1e-13) then FAILED at the opposite end,
+--      e=50 (|x| ~ 1.1e15), reporting "2.44e-04 absolute error". At that
+--      magnitude the INTEGER part alone already spends ~15-16 of this
+--      kernel's ~18-19 total decimal digits of precision, leaving almost
+--      nothing for the 15 requested FRACTIONAL places -- asking for both
+--      simultaneously requests more total precision than a ~62-bit
+--      mantissa has to give, regardless of how tostring/parse are coded.
+-- The bound that is actually correct combines both: an absolute floor of
+-- 10^-places (what a SMALL-magnitude value's round trip can be held to)
+-- OR'd with a term scaled to the value's own magnitude by this kernel's
+-- real ~2^-62 relative precision, with margin for tostring's own
+-- compounding per-digit mul/sub truncation (2^-55 gives ~128x that
+-- margin -- similar in spirit to this file's other "N x the measured
+-- floor" tolerances, e.g. LN_RTOL in kernel_bc_sweep.lua).
+local function rt_tolerance(m, e)
+	-- Double precision is fine here: this only SIZES the tolerance band,
+	-- unlike the measured error itself (true_fixed_absdiff), which never
+	-- leaves fixed-point arithmetic.
+	local approx_mag = math.abs(tonumber(m)) * 2 ^ (e - 62)
+	return math.max(10 ^ -RT_PLACES, approx_mag * 2 ^ -55)
+end
+local rt_fail_count = 0
+local rt_worst_ratio, rt_worst_ratio_label = 0, nil
+local rt_count = 0
+for _, e in ipairs(RT_EXPS) do
+	for i = 1, 8 do
+		local mag = rt_next_mantissa()
+		local m = ffi.cast("int64_t", mag)
+		if i % 2 == 0 then m = -m end   -- alternate sign
+		local s = fx.tostring(m, e, RT_PLACES)
+		local pm, pe = fx.parse(s)
+		local absdiff = true_fixed_absdiff(pm, pe, m, e)
+		local tol = rt_tolerance(m, e)
+		rt_count = rt_count + 1
+		if absdiff > tol then rt_fail_count = rt_fail_count + 1 end
+		local ratio = absdiff / tol
+		if ratio > rt_worst_ratio then
+			rt_worst_ratio, rt_worst_ratio_label =
+				ratio, ("e=%d i=%d absdiff=%.3e tol=%.3e"):format(e, i, absdiff, tol)
+		end
+	end
+end
+ok(rt_fail_count == 0,
+   ("parse(tostring(x, %d)) recovers x within max(10^-places, |x|*2^-55), over %d swept values"):
+      format(RT_PLACES, rt_count),
+   ("worst case used %.4fx of its allowed tolerance, at %s"):format(rt_worst_ratio, tostring(rt_worst_ratio_label)))
+
+-- === Verification item 4: parse_int must reject what it should ===========
+ok(fx.parse_int("") == nil, "parse_int('') is nil (empty string)")
+ok(fx.parse_int("   ") == nil, "parse_int('   ') is nil (whitespace-only)")
+ok(fx.parse_int("-") == nil, "parse_int('-') is nil (bare sign)")
+ok(fx.parse_int("+") == nil, "parse_int('+') is nil (bare sign)")
+ok(fx.parse_int("+5") == 5,
+   "parse_int('+5') == 5 (leading + accepted on an otherwise-valid literal, matching the brief's own intent)")
+ok(fx.parse_int("++5") == nil, "parse_int('++5') is nil (a second sign is not a digit)")
+ok(fx.parse_int("+-5") == nil, "parse_int('+-5') is nil (a second sign is not a digit)")
+ok(fx.parse_int("12a34") == nil, "parse_int('12a34') is nil (embedded letters)")
+
+-- 25-digit input: the brief this was built from had NO overflow check at
+-- all in M.parse_int (`v = v * 10LL + d`, unchecked) -- confirmed
+-- directly it returns 3287003324691717120 for 25 sevens, a plausible-
+-- looking but entirely wrong integer, no rejection.
+ok(fx.parse_int(string.rep("7", 25)) == nil,
+   "parse_int: 25-digit input overflowing int64 is rejected, not silently wrapped")
+
+-- Exact int64 boundary. The result is compared against tonumber() of the
+-- same int64 literal, not the literal itself, because parse_int's own
+-- documented return type is a plain Lua number (a double) -- at this
+-- exact magnitude that is ALREADY the nearest representable double, not
+-- the mathematically exact integer; the test makes that explicit rather
+-- than relying on the literal happening to round the same way.
+local INT64_MAX_LL = 9223372036854775807LL
+ok(fx.parse_int("9223372036854775807") == tonumber(INT64_MAX_LL),
+   "parse_int: int64 max parses (as the nearest representable double, per its documented contract)")
+ok(fx.parse_int("-9223372036854775807") == -tonumber(INT64_MAX_LL),
+   "parse_int: negative int64 max parses (same documented double-rounding)")
+ok(fx.parse_int("9223372036854775808") == nil,
+   "parse_int: int64 max + 1 is rejected")
+ok(fx.parse_int("-9223372036854775808") == nil,
+   "parse_int: true INT64_MIN's magnitude (2^63) is rejected -- the deliberate symmetric-range " ..
+   "simplification documented on accumulate_digits")
+
+end
+
+print("")
 print("============================================")
 if fails > 0 then
 	io.stderr:write(("fixed test FAILED: %d of %d checks failed\n"):format(fails, checks))

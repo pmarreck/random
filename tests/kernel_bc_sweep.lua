@@ -500,10 +500,90 @@ local frac_ym, frac_ye = fx.div(frac_y_num_m, frac_y_num_e, fx.from_int(frac_y_d
 add_pow_case(powset[1], -1, frac_ym, frac_ye, "pow_frac_y_10_3")
 pow_case_count = pow_case_count + 1
 
+-- === tostring: exact truncated-decimal-string sweep against bc's own    ===
+-- === arbitrary-precision division-at-scale=0 truncation -- confirmed    ===
+-- === DIRECTLY, via a standalone probe before relying on it here, to     ===
+-- === truncate TOWARD ZERO for negative operands exactly like this       ===
+-- === kernel's global rounding rule (`scale=20; a=-3.7; scale=0; b=a/1`  ===
+-- === gives b=-3, not -4, matching C's truncating integer division, not  ===
+-- === floor). This is a genuinely INDEPENDENT oracle: bc never sees      ===
+-- === fx.tostring's own multiply-by-ten digit-extraction loop, only the  ===
+-- === raw (m, e) value and the target `places` -- and the expected       ===
+-- === STRING is reconstructed here by plain zero-pad/split/prefix on     ===
+-- === bc's own truncated big-integer digit string, not by re-running any ===
+-- === version of fx.tostring's own algorithm, so a bug shared between    ===
+-- === test and code cannot hide from this sweep the way it could from a  ===
+-- === self-referential check.                                            ===
+local TOSTRING_PLACES = 15
+-- NOT named `tostring`: that would shadow the Lua builtin this entire
+-- file (like every case-adding function above) calls on every m/rm to
+-- avoid the exact tonumber() precision trap i64dec's own doc comment
+-- warns about.
+local tostr_cases = {}
+local function add_tostring_case(m, e, label)
+	local got = fx.tostring(m, e, TOSTRING_PLACES)
+	local ms = i64dec(m)
+	-- tv = |value| * 10^places, computed at the script's ambient scale=90;
+	-- tt = floor(tv), forced by a LOCAL scale=0 division-by-1. bc has no
+	-- block-scoped `scale` -- `sv = scale` / `scale = sv` save and restore
+	-- the ONE global scale around just this truncation, so this case
+	-- cannot perturb the precision any LATER case in this same shared
+	-- script depends on (every add_*_case function above shares one scale).
+	local expr = ("sv = scale; tv = abs(%s * 2^(%d)) * 10^%d; scale = 0; tt = tv / 1; scale = sv; " ..
+		"print \"%s \", tt, \"\\n\""):format(ms, e - 62, TOSTRING_PLACES, label)
+	bc_lines[#bc_lines + 1] = expr
+	labels[#labels + 1] = label
+	tostr_cases[label] = { got = got, neg = (m < 0) }
+end
+
+-- Reconstructs the expected fixed-point string directly from bc's own
+-- truncated big-integer digit string (left-padded so the last
+-- TOSTRING_PLACES digits are always the fraction, even when the
+-- truncated magnitude is all zero or has fewer digits than `places`).
+-- The "-" prefix is applied whenever the ORIGINAL m was negative, even if
+-- every visible digit truncates to zero -- matching fx.tostring's own
+-- documented convention (same as e.g. C's "%.2f" printing -0.001 as
+-- "-0.00", not "0.00").
+local function expected_tostring_str(tt_digits, neg)
+	local s = tt_digits
+	while #s < TOSTRING_PLACES + 1 do s = "0" .. s end
+	local ip = s:sub(1, #s - TOSTRING_PLACES)
+	local frac = TOSTRING_PLACES > 0 and s:sub(#s - TOSTRING_PLACES + 1) or ""
+	local out = (TOSTRING_PLACES > 0) and (ip .. "." .. frac) or ip
+	if neg then out = "-" .. out end
+	return out
+end
+
+-- Mantissa set: mantissa_set()'s own 5 fixed edge values (min/max/
+-- min+1/max-1/midpoint) plus TOSTRING_MANTISSA_COUNT more from the
+-- shared LCG, same pattern as the div sweep above. Sign alternates by
+-- mantissa INDEX, not by exponent -- index-based, not randomized, same
+-- rationale as SIGN_QUADRANTS' own comment: deterministic and still
+-- exercises the negative-truncation path exactly as often as positive.
+local TOSTRING_MANTISSA_COUNT = fast and 15 or 45
+local tostrset = mantissa_set(TOSTRING_MANTISSA_COUNT)
+-- Exponents from ~1e-18 magnitude through ~1e15 -- the low end deep in
+-- "all requested places are leading zeros" territory (a real property of
+-- fixed-point formatting, not a bug -- see fixed_test.lua's round-trip
+-- tolerance comment for the same finding measured a different way), the
+-- high end past the ~1e14 scientific-notation threshold M.tostring's own
+-- fix (string.format("%.0f", ip) instead of plain tostring(ip)) targets.
+local TOSTRING_EXPS = {-60, -40, -20, -10, -5, -1, 0, 1, 5, 10, 20, 40, 50}
+local tostring_case_count = 0
+for i = 1, #tostrset do
+	local sign = ((i - 1) % 2 == 0) and 1 or -1
+	local sm = signed_i64(tostrset[i], sign)
+	for _, e in ipairs(TOSTRING_EXPS) do
+		add_tostring_case(sm, e, ("tostr_%d_%d"):format(i, e))
+		tostring_case_count = tostring_case_count + 1
+	end
+end
+
 io.stderr:write(("kernel_bc_sweep: %d div cases, %d ln cases, %d exp cases " ..
-	"(%d r-domain + %d x-domain), %d cos cases, %d sqrt cases, %d pow cases (FAST=%s)\n"):format(
+	"(%d r-domain + %d x-domain), %d cos cases, %d sqrt cases, %d pow cases, %d tostring cases (FAST=%s)\n"):format(
 	div_pair_count, ln_case_count, expfn_r_count + expfn_x_count,
-	expfn_r_count, expfn_x_count, cos_case_count, sqrt_case_count, pow_case_count, tostring(fast ~= nil)))
+	expfn_r_count, expfn_x_count, cos_case_count, sqrt_case_count, pow_case_count, tostring_case_count,
+	tostring(fast ~= nil)))
 
 local bc_script = table.concat(bc_lines, "\n") .. "\n"
 local tmp = os.tmpname()
@@ -688,11 +768,31 @@ local worst_cos_nearzero_rel, worst_cos_nearzero_rel_label = 0, nil
 local worst_sqrt_rel, worst_sqrt_rel_label = 0, nil
 local worst_pow_rel, worst_pow_rel_label = 0, nil
 local div_bad, ln_bad, expfn_bad, cos_bad, sqrt_bad, pow_bad = 0, 0, 0, 0, 0, 0
+local tostr_bad, tostr_seen = 0, 0
+local tostr_mismatches = {}   -- capped list of "label: got vs want" for the fail report
 local skipped = 0
 local seen = 0
 for line in out:gmatch("[^\n]+") do
 	local label, rest = line:match("^(%S+)%s+(.*)$")
-	if label and rest == "SKIP" then
+	if label and label:match("^tostr_") then
+		-- Single-token line (the truncated big integer `tt`, as an
+		-- arbitrary-precision STRING) rather than the "<relerr> <absdiff>"
+		-- shape every other case below emits -- handled in its OWN branch,
+		-- ahead of the generic two-float parse, so it is never silently
+		-- swallowed by that parse failing to match and falling through
+		-- unnoticed.
+		tostr_seen = tostr_seen + 1
+		local tt = rest:gsub("%s+$", "")
+		local case = tostr_cases[label]
+		local want = expected_tostring_str(tt, case.neg)
+		if want ~= case.got then
+			tostr_bad = tostr_bad + 1
+			if #tostr_mismatches < 5 then
+				tostr_mismatches[#tostr_mismatches + 1] =
+					("%s: got %q want %q (bc tt=%s)"):format(label, case.got, want, tt)
+			end
+		end
+	elseif label and rest == "SKIP" then
 		skipped = skipped + 1
 	elseif label then
 		local relstr, absstr = rest:match("^(%S+)%s+(%S+)$")
@@ -742,6 +842,14 @@ end
 local expected = div_pair_count + ln_case_count + expfn_r_count + expfn_x_count + cos_case_count +
 	sqrt_case_count + pow_case_count
 print(("bc sweep: %d/%d cases measured (%d skipped as ref==0)"):format(seen, expected, skipped))
+-- Separate line, not folded into `seen`/`expected` above: tostring cases
+-- are an exact-string match against bc's own truncated integer, not a
+-- relative/absolute-error tolerance check, and have no SKIP concept (bc's
+-- truncating division at scale=0 always produces SOME integer, including
+-- exactly 0), so mixing the two counts would blur what each is actually
+-- measuring.
+print(("tostring sweep: %d/%d cases measured, %d mismatched"):format(
+	tostr_seen, tostring_case_count, tostr_bad))
 print(("worst div relative error: %.6e (%s)"):format(worst_div_rel, tostring(worst_div_label)))
 print(("worst ln  relative error: %.6e (%s)"):format(worst_ln_rel, tostring(worst_ln_rel_label)))
 print(("worst ln  absolute error: %.6e (%s)"):format(worst_ln_abs, tostring(worst_ln_abs_label)))
@@ -795,6 +903,18 @@ end
 if pow_bad > 0 then
 	io.stderr:write(("kernel_bc_sweep FAILED: %d pow case(s) exceeded rtol %.1e (worst %.6e, %s)\n"):format(
 		pow_bad, POW_RTOL, worst_pow_rel, tostring(worst_pow_rel_label)))
+	fails = fails + 1
+end
+if tostr_seen == 0 then
+	io.stderr:write("kernel_bc_sweep FAILED: no tostring cases were actually measured\n")
+	fails = fails + 1
+end
+if tostr_bad > 0 then
+	io.stderr:write(("kernel_bc_sweep FAILED: %d tostring case(s) did not exactly match bc's own " ..
+		"truncated-decimal oracle\n"):format(tostr_bad))
+	for _, msg in ipairs(tostr_mismatches) do
+		io.stderr:write("  " .. msg .. "\n")
+	end
 	fails = fails + 1
 end
 

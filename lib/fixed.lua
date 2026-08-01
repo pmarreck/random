@@ -1063,4 +1063,201 @@ function M.pow(bm, be, ym, ye)
 	return M.exp(pm, pe)
 end
 
+--- Maximum magnitude an int64-based decimal accumulator can hold. Symmetric
+--- around zero (rejects the single asymmetric two's-complement edge value,
+--- INT64_MIN, magnitude 2^63) rather than tracking sign during
+--- accumulation -- simpler, and no realistic caller of M.parse/M.parse_int
+--- (CLI counts, range bounds) needs that one extra representable value.
+local INT64_MAX_MAG = 0x7FFFFFFFFFFFFFFFLL
+
+--- Accumulate consecutive ASCII decimal digits from byte index i of s into
+--- an unsigned magnitude held in an int64 (v is 0LL, count is 0 if none are
+--- present), stopping at the first non-digit byte or end of string.
+--- Returns (v, count, next_i) on success, or nil if the magnitude would
+--- overflow int64 -- the brief this was built from had NO such check at
+--- all in its M.parse_int (`v = v * 10LL + d`, wrapping silently on
+--- overflow with no error). Confirmed directly: a 25-digit input under
+--- that unchecked accumulation returns 3287003324691717120 -- a plausible-
+--- looking but entirely wrong integer, no rejection. Shared by M.parse's
+--- integer part and M.parse_int so both get the identical protection
+--- rather than duplicating (and risking divergence in) the check.
+local function accumulate_digits(s, i)
+	local v, count = 0LL, 0
+	while i <= #s do
+		local ch = s:byte(i)
+		if ch < 48 or ch > 57 then break end
+		local d = ch - 48
+		if v > (INT64_MAX_MAG - d) / 10LL then return nil end
+		v = v * 10LL + d
+		count = count + 1
+		i = i + 1
+	end
+	return v, count, i
+end
+
+--- Parse a decimal string to soft-float by integer accumulation.
+--- Deliberately NOT tonumber/strtod: those go through a hardware double,
+--- which reintroduces exactly the platform dependence this file exists to
+--- remove. Returns nil on malformed input rather than raising, so callers
+--- can produce their own error message.
+---
+--- Two real defects in the brief this was built from, both confirmed by
+--- direct probe before being fixed here, not assumed from reading the code:
+---
+--- 1. CRASH, not just imprecision: the brief's fractional-division line,
+---    `M.div(M.from_int(tonumber(frac_part)), M.from_int(tonumber(den)))`,
+---    chains a non-final multi-return call as an argument. Lua truncates a
+---    non-final multi-return expression to exactly ONE value, so the FIRST
+---    M.from_int(...) there hands M.div its mantissa only -- the exponent
+---    is silently dropped, and M.div actually receives
+---    (frac_mantissa, den_mantissa, den_exponent, nil), not
+---    (frac_m, frac_e, den_m, den_e). Confirmed directly: running that
+---    exact line with frac_part=5, den=10 -- i.e. M.parse("0.5"), the
+---    FIRST case in the brief's own Step 1 test snippet -- raises
+---    "fixed.div: operand 2 not normalized" every time. The brief's own
+---    suggested implementation cannot parse "0.5" at all. Fixed below by
+---    binding each M.from_int result to its own named (m, e) pair before
+---    the M.div call, never chaining a non-final multi-return into another
+---    call.
+--- 2. `tonumber(int_part)` / `tonumber(frac_part)` / `tonumber(den)` route
+---    an int64 through a Lua double on the way into M.from_int, silently
+---    losing precision past 2^53 -- exactly the platform-dependent
+---    boundary this whole task exists to close, reintroduced by parse
+---    itself, and a direct violation of this file's "no tonumber on any
+---    value that flows into the kernel" rule. Confirmed directly:
+---    parse("123456789012345678") (18 digits) via tonumber() first lands
+---    128 ULP away from the exact from_int(123456789012345678LL) result.
+---    Fixed by never calling tonumber() on a value headed into the kernel:
+---    M.from_int accepts an int64 cdata directly (ffi.cast(i64, v) is an
+---    identity cast on cdata of the same width, unlike on a Lua number, so
+---    there is no precision to lose), and the accumulated LL is passed
+---    straight through.
+function M.parse(s)
+	if type(s) ~= "string" then return nil end
+	s = s:gsub("^%s+", ""):gsub("%s+$", "")
+	if s == "" then return nil end
+	local sign, i = 1, 1
+	local c = s:sub(1, 1)
+	if c == "-" then sign = -1; i = 2 elseif c == "+" then i = 2 end
+	local int_v, int_digits
+	int_v, int_digits, i = accumulate_digits(s, i)
+	if int_v == nil then return nil end   -- integer part overflows int64
+	local frac_v, frac_digits = 0LL, 0
+	if i <= #s and s:byte(i) == 46 then    -- '.'
+		i = i + 1
+		while i <= #s do
+			local ch = s:byte(i)
+			if ch < 48 or ch > 57 then break end
+			if frac_digits < 18 then       -- 10^18 still fits int64 exactly
+				-- as den below; digits past the 18th are DROPPED, not
+				-- misparsed -- verified against an independent int64
+				-- division at 18/19/30 digits in fixed_test.lua, and this
+				-- kernel's own ~62-bit mantissa (~18-19 decimal digits of
+				-- precision) cannot represent more than this anyway, so
+				-- nothing representable is lost.
+				frac_v = frac_v * 10LL + (ch - 48)
+				frac_digits = frac_digits + 1
+			end
+			i = i + 1
+		end
+	end
+	if i <= #s then return nil end          -- trailing garbage, e.g. a 2nd '.'
+	if int_digits == 0 and frac_digits == 0 then return nil end
+	local m, e = M.from_int(int_v)
+	if frac_digits > 0 then
+		local den = 1LL
+		for _ = 1, frac_digits do den = den * 10LL end
+		-- Each M.from_int result bound to its own (m, e) pair BEFORE the
+		-- M.div call -- see this function's doc comment, defect 1, for why
+		-- chaining two M.from_int calls straight into M.div's argument
+		-- list (as the brief did) is a genuine crash, not a style nit.
+		local fnm, fne = M.from_int(frac_v)
+		local dm, de = M.from_int(den)
+		local fm, fe = M.div(fnm, fne, dm, de)
+		m, e = M.add(m, e, fm, fe)
+	end
+	if sign < 0 then m, e = M.neg(m, e) end
+	return m, e
+end
+
+--- Parse a decimal string to a plain integer. Fractional input is rejected
+--- rather than silently floored: a fractional range bound has no meaning.
+--- Shares accumulate_digits' overflow check with M.parse -- the brief this
+--- was built from had NO such check in M.parse_int at all (see
+--- accumulate_digits' doc comment for the measured 25-digit failure).
+---
+--- The returned value is a Lua number (a double), per this function's own
+--- documented interface -- so magnitudes between 2^53 and int64 max parse
+--- EXACTLY internally (accumulate_digits never touches a double) but round
+--- on the way out through the final tonumber(), the same documented
+--- caveat M.from_int itself carries for a plain Lua-number input.
+--- Realistic callers (CLI counts, range bounds) never approach that
+--- boundary; nothing currently in this file needs the full int64 range
+--- out of this function.
+function M.parse_int(s)
+	if type(s) ~= "string" then return nil end
+	s = s:gsub("^%s+", ""):gsub("%s+$", "")
+	if s == "" then return nil end
+	local sign, i = 1, 1
+	local c = s:sub(1, 1)
+	if c == "-" then sign = -1; i = 2 elseif c == "+" then i = 2 end
+	if i > #s then return nil end           -- bare sign, nothing after it
+	local v, count, next_i = accumulate_digits(s, i)
+	if v == nil then return nil end         -- int64 overflow
+	if count == 0 then return nil end       -- no digits after the sign
+	if next_i <= #s then return nil end     -- trailing garbage, e.g. "1.5"
+	return sign * tonumber(v)
+end
+
+--- Render a soft-float as a fixed-point decimal string with `places`
+--- digits. Integer-only: the fraction is advanced by repeated
+--- multiply-by-ten, never by string.format("%f") -- see this file's
+--- top-of-file comment for why that boundary matters as much as the one
+--- M.parse closes on the way in.
+---
+--- A real defect found while verifying this function, independent of
+--- anything the brief called out: the integer part was originally
+--- rendered via plain Lua `tostring(ip)`. LuaJIT's default number
+--- formatting (`%.14g`) switches to scientific notation once an
+--- integer-valued double's magnitude reaches roughly 1e14 -- confirmed
+--- directly, `tostring(1000000000000000)` prints "1e+15", not the 16-digit
+--- literal -- which would have spliced something like "1e+15.001922"
+--- into this function's output for any value with a 15+ digit integer
+--- part, well inside this kernel's realistic range (this program's own
+--- log-normal --mean/--stddev outputs are documented as "effectively
+--- unbounded") and well below to_int_trunc's own unrelated 2^53 clamp.
+--- Fixed by using string.format("%.0f", ip) instead, which always renders
+--- a whole-number double in plain decimal regardless of magnitude.
+function M.tostring(m, e, places)
+	places = places or 6
+	if m == 0 then
+		if places == 0 then return "0" end
+		return "0." .. string.rep("0", places)
+	end
+	local neg = m < 0
+	local am, ae = m, e
+	if neg then am, ae = M.neg(m, e) end
+	local ip = M.to_int_trunc(am, ae)
+	local fm, fe = M.sub(am, ae, M.from_int(ip))
+	local out = {}
+	for _ = 1, places do
+		fm, fe = M.mul(fm, fe, M.from_int(10))
+		local d = M.to_int_trunc(fm, fe)
+		-- Defensive only, not live under the invariant: fm stays in [0, 1)
+		-- after each subtraction below, so to_int_trunc(fm*10, fe) is
+		-- always in [0, 9]. Kept in case an upstream bug ever hands this
+		-- function an out-of-invariant intermediate, matching this file's
+		-- established "keep the guard, document it as unreachable" style
+		-- (see e.g. M.add's shifted == 0 comment).
+		if d < 0 then d = 0 end
+		if d > 9 then d = 9 end
+		out[#out + 1] = tostring(d)
+		fm, fe = M.sub(fm, fe, M.from_int(d))
+	end
+	local s = string.format("%.0f", ip)
+	if places > 0 then s = s .. "." .. table.concat(out) end
+	if neg then s = "-" .. s end
+	return s
+end
+
 return M
