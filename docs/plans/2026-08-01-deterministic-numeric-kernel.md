@@ -358,6 +358,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PATH="$here/../bin:$PATH"
 export DRANDOM_STATE_HOME="$(mktemp -d)"
 trap 'rm -rf "$DRANDOM_STATE_HOME"' EXIT
+unset IFS
 
 fails=0
 checked=0
