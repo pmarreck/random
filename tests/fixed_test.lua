@@ -400,50 +400,81 @@ check_div(seven_m, seven_e, neg11_m, neg11_e, -5869418568907584605LL, -1,
 check_div(neg7_m, neg7_e, neg11_m, neg11_e, 5869418568907584605LL, -1,
 	"-7 / -11 == 7/11: double negation, positive inexact result")
 
--- JIT miscompilation regression, split dispatch (warmed): discovered
--- while extending tests/kernel_bc_sweep.lua to cover negative operands (a
--- positive-only sweep can NEVER see this -- it only manifests through the
--- sign-handling branches). LuaJIT 2.1.1774638290's trace compiler returns
--- the WRONG mantissa for fx.div(-4735866454561506793, e,
--- -6988739120546013429, 0) once its trace has been JIT-warmed by ~500+
--- prior calls -- verified against bc's exact big-integer
--- floor((|m1|*2^62)/|m2|), and against `luajit -joff` on the identical
--- script, both of which agree on 6250148628221868064 (e adjusts by the
--- usual normalization step). Filed upstream as LuaJIT/LuaJIT#1499. This
--- is a LANGUAGE-RUNTIME bug, not a logic bug in this file.
+-- JIT miscompilation mitigation, split dispatch: LuaJIT 2.1.1774638290's
+-- trace compiler miscompiles the combination of a conditional
+-- unsigned-negation branch followed by a loop, once warmed. Filed
+-- upstream as LuaJIT/LuaJIT#1499. M.div's fix is structural: div_signed
+-- (the sign-handling cold path) carries jit.off(div_signed) and never
+-- shares a prototype with divmag (the loop), which stays JIT-eligible.
+-- See lib/fixed.lua's jit.off(div_signed) doc comment for the full
+-- derivation.
 --
--- M.div now dispatches negative operands to div_signed (which carries
--- `jit.off(div_signed)`) and positive operands to a fast path that calls
--- divmag directly, with no sign branches of its own -- see the
--- jit.off(div_signed) doc comment in lib/fixed.lua for why that split,
--- not a blanket jit.off(M.div), is what neutralizes the bug. This test
--- exercises fx.div's PUBLIC entry point (not div_signed directly), so it
--- guards the split dispatch as actually wired up, not just the
--- lower-level pieces in isolation: it warms the JIT the same way the
--- bug's discovery did (many prior varied div calls, mixing signs, routed
--- through the same M.div every real caller uses) and then checks the
--- known-bad case. 2000 warmup calls is 4x the ~500 observed to reliably
--- trigger the bug when unprotected. Verified this test fails if
--- jit.off(div_signed) is removed, and passes with it restored -- see
--- task-6-report.md's split-dispatch verification appendix for both runs.
-do
-	local jit_m1, jit_m2 = -4735866454561506793LL, -6988739120546013429LL
+-- Shared warmup helper for both checks below: mixed-sign div calls,
+-- mimicking the pattern the bug was discovered under.
+local function jit_warmup_div(n)
 	local lcg = 0x9E3779B97F4A7C15ULL
 	local TWO62_JIT = 0x4000000000000000ULL
 	local function warm_mantissa()
 		lcg = lcg * 6364136223846793005ULL + 1ULL
 		return TWO62_JIT + ((lcg / 4ULL) % TWO62_JIT)
 	end
-	for i = 1, 2000 do
+	for i = 1, n do
 		local wa = ffi.cast("int64_t", warm_mantissa())
 		local wb = ffi.cast("int64_t", warm_mantissa())
 		if i % 2 == 0 then wa = -wa end
 		if i % 3 == 0 then wb = -wb end
 		fx.div(wa, i, wb, 0)
 	end
+end
+
+-- PRIMARY, deterministic control: assert the property jit.off(div_signed)
+-- actually establishes -- that div_signed is never trace-compiled -- via
+-- jit.attach, rather than trying to observe the miscomputed VALUE that
+-- results when it is. An earlier version of this test asserted the value
+-- directly (fx.div(known bad operands) after warmup should equal the
+-- known-correct mantissa). That was NOT reliable: 15 runs of the
+-- unmodified suite with jit.off(div_signed) removed caught the regression
+-- only 5 of 15 times (a coin flip in the direction that matters), because
+-- LuaJIT trace formation is not deterministic and not monotonic in
+-- warmup call count -- 20000 warmup calls was measured to sometimes MISS
+-- the bug even though 2000 sometimes caught it. A control that fires one
+-- time in three is worse than no control: it reads as green. This
+-- structural check was independently verified to be fully deterministic
+-- in both directions (10/10 correct with the mitigation present, 10/10
+-- correct with it removed) before being committed -- see
+-- task-6-report.md's deterministic-control verification appendix.
+do
+	local jutil = require("jit.util")
+	local target_info = jutil.funcinfo(fx._div_signed_for_tests)
+	local target_line = target_info.linedefined
+	local traced = false
+	local function cb(what, tr, func, pc)
+		if what == "start" and func then
+			local okc, finfo = pcall(jutil.funcinfo, func, pc)
+			if okc and finfo and finfo.linedefined == target_line then traced = true end
+		end
+	end
+	jit.attach(cb, "trace")
+	jit_warmup_div(2000)
+	jit.attach(cb)   -- detach (jit.attach with no event removes this callback)
+	ok(not traced,
+		"div_signed is never trace-compiled (the JIT mitigation for LuaJIT/LuaJIT#1499 is in effect)")
+end
+
+-- SECONDARY, PROBABILISTIC check -- kept as an additional, real-world
+-- symptom-level sanity check, but it is NOT a control by itself and must
+-- never be trusted as one: per the measurement above, it detects the
+-- mitigation being removed only ~1 run in 3. If this check alone is ever
+-- green, that is NOT evidence the mitigation is working -- only the
+-- jit.attach check above is deterministic. Retained because when it DOES
+-- fire, it confirms the structural check maps to the real symptom, not
+-- just to trace-compilation bookkeeping.
+do
+	local jit_m1, jit_m2 = -4735866454561506793LL, -6988739120546013429LL
+	jit_warmup_div(2000)
 	local jrm, jre = fx.div(jit_m1, 5000, jit_m2, 0)
 	ok(jrm == 6250148628221868064LL and jre == 4999,
-		"div's split dispatch stays correct on the known JIT-miscompilation trigger after 2000 warmup calls",
+		"div's split dispatch stays correct on the known JIT-miscompilation trigger after 2000 warmup calls (probabilistic, not a control -- see the jit.attach check above)",
 		("got m=%s e=%d want m=6250148628221868064 e=4999"):format(tostring(jrm), jre))
 end
 

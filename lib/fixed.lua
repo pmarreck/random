@@ -347,6 +347,18 @@ end
 -- would then no longer be covering the loop at all.
 jit.off(div_signed)
 
+-- TEST-ONLY. Not part of the public API -- nothing outside
+-- tests/fixed_test.lua should read this field. Exposed so the test suite
+-- can locate div_signed's `linedefined` via jit.util.funcinfo and assert,
+-- via jit.attach, that it is NEVER trace-compiled -- the actual property
+-- jit.off(div_signed) establishes, and a deterministic one. (Observing the
+-- miscomputed VALUE instead, as an earlier version of that test did, is
+-- NOT deterministic: trace formation is not monotonic in warmup call
+-- count, and the value-based check was measured to detect the mitigation
+-- being removed in only ~1 of 3 runs. See LuaJIT/LuaJIT#1499 and
+-- tests/fixed_test.lua's own comment on the check that uses this field.)
+M._div_signed_for_tests = div_signed
+
 --- Soft-float divide. See divmag for the algorithm and div_signed for the
 --- sign-handling cold path this dispatches negative operands to.
 ---
