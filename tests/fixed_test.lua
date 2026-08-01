@@ -97,6 +97,99 @@ ok(hi2 == 0xFFFFFFFFFFFFFFFEULL and lo2 == 1ULL, "mul128(2^64-1, 2^64-1) carries
    ("got hi=%s lo=%s"):format(tostring(hi2), tostring(lo2)))
 
 print("")
+print("--- Section 2: addition, subtraction, comparison ---")
+
+local function eqint(m, e, want)
+	local wm, we = fx.from_int(want)
+	return m == wm and e == we
+end
+
+-- exact small-integer arithmetic
+local a1, a2 = fx.from_int(2)
+local b1, b2 = fx.from_int(3)
+local s1, s2 = fx.add(a1, a2, b1, b2)
+ok(eqint(s1, s2, 5), "2 + 3 == 5 exactly")
+
+local d1, d2 = fx.sub(b1, b2, a1, a2)
+ok(eqint(d1, d2, 1), "3 - 2 == 1 exactly")
+
+local n1, n2 = fx.sub(a1, a2, b1, b2)
+ok(eqint(n1, n2, -1), "2 - 3 == -1 exactly")
+
+-- identity: x + 0 == x, 0 + x == x
+local i1, i2 = fx.add(a1, a2, 0LL, 0)
+ok(i1 == a1 and i2 == a2, "x + 0 == x")
+local j1, j2 = fx.add(0LL, 0, a1, a2)
+ok(j1 == a1 and j2 == a2, "0 + x == x")
+
+-- total cancellation must produce canonical zero, not a denormal
+local c1, c2 = fx.sub(a1, a2, a1, a2)
+ok(c1 == 0LL and c2 == 0, "x - x == canonical zero", ("got m=%s e=%d"):format(tostring(c1), c2))
+
+-- PARTIAL cancellation must NOT be mistaken for total cancellation: two
+-- adjacent odd mantissas at the same exponent have a true difference of
+-- exactly 1 ULP. A naive implementation that pre-halves EACH operand toward
+-- zero before summing loses that 1 ULP from both sides identically and
+-- reports canonical zero for a genuinely nonzero difference -- verified by
+-- hand-tracing the brief's original arithmetic against this exact case
+-- before the fix (see the doc comment on M.add).
+local odd1, oe1 = 0x4000000000000123LL, 5
+local odd2, oe2 = odd1 - 1LL, 5
+local p1, p2 = fx.sub(odd1, oe1, odd2, oe2)
+ok(not (p1 == 0LL and p2 == 0), "a true 1-ULP difference must not collapse to false zero",
+   ("got m=%s e=%d"):format(tostring(p1), p2))
+-- and it must be the RIGHT nonzero value: 1 ULP at exponent 5 is 2^(5-62).
+local want1, want2 = fx.norm(1LL, 5)
+ok(p1 == want1 and p2 == want2, "a true 1-ULP difference is recovered exactly",
+   ("got m=%s e=%d want m=%s e=%d"):format(tostring(p1), p2, tostring(want1), want2))
+
+-- adding a value far below the ulp must not change the larger operand
+local big1, big2 = fx.from_int(1)
+local tiny1, tiny2 = fx.norm(0x4000000000000000LL, -200)
+local u1, u2 = fx.add(big1, big2, tiny1, tiny2)
+ok(u1 == big1 and u2 == big2, "1 + 2^-200 == 1 (addend below the ulp)")
+
+-- commutativity over a sampled set (add is order-independent by construction)
+local comm_ok = true
+for _, p in ipairs({{1,2},{7,-3},{-5,-9},{1000000,1},{3,-3}}) do
+	local x1,x2 = fx.from_int(p[1]); local y1,y2 = fx.from_int(p[2])
+	local r1,r2 = fx.add(x1,x2,y1,y2)
+	local q1,q2 = fx.add(y1,y2,x1,x2)
+	if not (r1 == q1 and r2 == q2) then comm_ok = false end
+end
+ok(comm_ok, "addition is commutative over the sampled set")
+
+-- comparison
+ok(fx.cmp(a1, a2, b1, b2) == -1, "cmp(2, 3) == -1")
+ok(fx.cmp(b1, b2, a1, a2) == 1, "cmp(3, 2) == 1")
+ok(fx.cmp(a1, a2, a1, a2) == 0, "cmp(2, 2) == 0")
+ok(fx.cmp(n1, n2, 0LL, 0) == -1, "cmp(-1, 0) == -1")
+ok(fx.cmp(0LL, 0, 0LL, 0) == 0, "cmp(0, 0) == 0")
+
+-- comparison must invert the exponent ordering for negative operands: a
+-- bigger exponent means a bigger MAGNITUDE, which is a SMALLER value once the
+-- sign is negative. -8 < -2 even though |−8| > |−2|.
+local neg8_1, neg8_2 = fx.from_int(-8)
+local neg2_1, neg2_2 = fx.from_int(-2)
+ok(fx.cmp(neg8_1, neg8_2, neg2_1, neg2_2) == -1, "cmp(-8, -2) == -1 (bigger magnitude, more negative)")
+ok(fx.cmp(neg2_1, neg2_2, neg8_1, neg8_2) == 1, "cmp(-2, -8) == 1")
+
+-- negation: exact sign flip, zero stays canonical, double negation round-trips
+local nz1, nz2 = fx.neg(0LL, 0)
+ok(nz1 == 0LL and nz2 == 0, "neg(0) == canonical zero")
+
+local five1, five2 = fx.from_int(5)
+local negfive_want1, negfive_want2 = fx.from_int(-5)
+local negfive1, negfive2 = fx.neg(five1, five2)
+ok(negfive1 == negfive_want1 and negfive2 == negfive_want2, "neg(5) == -5 exactly")
+
+local rt1, rt2 = fx.neg(negfive1, negfive2)
+ok(rt1 == five1 and rt2 == five2, "neg(neg(5)) == 5 (double negation round-trips)")
+
+local zsum1, zsum2 = fx.add(five1, five2, negfive1, negfive2)
+ok(zsum1 == 0LL and zsum2 == 0, "x + neg(x) == canonical zero")
+
+print("")
 print("============================================")
 if fails > 0 then
 	io.stderr:write(("fixed test FAILED: %d of %d checks failed\n"):format(fails, checks))

@@ -148,6 +148,77 @@ function M.mul(m1, e1, m2, e2)
 	return r, e
 end
 
+--- Soft-float addition.
+--- Same-sign operands are combined by pre-halving each mantissa one bit
+--- before summing: |m1| and |shifted| can each approach 2^63, so a same-sign
+--- sum could reach 2^64 and overflow int64. That costs up to one bit of the
+--- 62-bit mantissa; norm() reclaims the rest.
+--- Opposite-sign operands -- the catastrophic-cancellation path every
+--- alternating-sign Taylor series (cos!) depends on -- are combined EXACTLY,
+--- with NO pre-halving. A same/opposite-sign combination of two values each
+--- under 2^63 in magnitude can never overflow int64 (the result magnitude is
+--- bounded by the larger operand's own magnitude), so there is nothing to
+--- protect against here, and halving anyway is not merely imprecise, it is
+--- wrong: independently truncating m1/2 and shifted/2 toward zero before
+--- summing discards the low bit of EACH operand, and when both operands are
+--- odd and adjacent (true difference == 1 ULP) the two truncations cancel
+--- exactly, producing 0 for a genuinely nonzero difference. (Measured: the
+--- brief's original "always pre-halve" version returned canonical zero for
+--- fx.sub(X, e, X-1, e) -- see fixed_test.lua's "true 1-ULP difference must
+--- not collapse to zero" check.) The exact integer-subtraction path below
+--- fixes that and, as a bonus, makes same-exponent subtraction exact
+--- whenever the true difference needs no alignment shift (d == 0) --
+--- matching the Sterbenz-lemma exactness real floating-point subtraction
+--- guarantees, which the original always-halve version violated even for
+--- trivial exact-integer inputs.
+function M.add(m1, e1, m2, e2)
+	if m1 == 0 then return m2, e2 end
+	if m2 == 0 then return m1, e1 end
+	-- order so e1 is the larger exponent
+	if e1 < e2 then m1, e1, m2, e2 = m2, e2, m1, e1 end
+	local d = e1 - e2
+	if d >= 63 then return m1, e1 end   -- second operand is below the ulp
+	local shifted = m2 / POW2[d]
+	if shifted == 0 then return m1, e1 end
+	local sum, e
+	if (m1 < 0) == (shifted < 0) then
+		-- same sign: magnitudes add, could overflow int64, halve first
+		sum = (m1 / 2LL) + (shifted / 2LL)
+		e = e1 + 1
+	else
+		-- opposite signs: magnitudes only shrink, exact, cannot overflow
+		sum = m1 + shifted
+		e = e1
+	end
+	if sum == 0 then return 0LL, 0 end
+	return M.norm(sum, e)
+end
+
+function M.sub(m1, e1, m2, e2)
+	if m2 == 0 then return m1, e1 end
+	return M.add(m1, e1, -m2, e2)
+end
+
+function M.neg(m, e)
+	if m == 0 then return 0LL, 0 end
+	return -m, e
+end
+
+--- Three-way comparison. Exponents only rank magnitudes once signs agree, so
+--- sign is checked first.
+function M.cmp(m1, e1, m2, e2)
+	local s1 = (m1 > 0 and 1) or (m1 < 0 and -1) or 0
+	local s2 = (m2 > 0 and 1) or (m2 < 0 and -1) or 0
+	if s1 ~= s2 then return s1 < s2 and -1 or 1 end
+	if s1 == 0 then return 0 end
+	if e1 ~= e2 then
+		local bigger = (e1 > e2) and 1 or -1
+		return (s1 > 0) and bigger or -bigger
+	end
+	if m1 == m2 then return 0 end
+	return (m1 < m2) and -1 or 1
+end
+
 --- Exact conversion from a Lua integer (|v| < 2^53 for safety) to soft-float.
 function M.from_int(v)
 	if v == 0 then return 0LL, 0 end
