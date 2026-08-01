@@ -63,6 +63,14 @@ for _, c in ipairs(cases) do
 end
 ok(sign_ok, "multiply handles all four sign combinations")
 
+-- mul rejects an unnormalized operand instead of silently miscomputing
+local okmul = pcall(fx.mul, 1LL, 0, ONE_M, ONE_E)
+ok(not okmul, "mul rejects an unnormalized operand instead of miscomputing")
+
+-- mul rejects INT64_MIN: its magnitude is 2^63, outside the invariant
+local okmul_min = pcall(fx.mul, -0x8000000000000000LL, 0, ONE_M, ONE_E)
+ok(not okmul_min, "mul rejects INT64_MIN (magnitude 2^63, outside the invariant)")
+
 -- multiplying by zero yields canonical zero
 local z1, z2 = fx.mul(am, ae, 0LL, 0)
 ok(z1 == 0LL and z2 == 0, "x * 0 == canonical zero")
