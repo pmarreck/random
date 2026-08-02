@@ -29,6 +29,14 @@
 - [ ] `randomz` C CLI + `drandomz`/`nrandomz` symlinks, argv[0] dispatch
 - [ ] Differential harness: `randomz` vs `bin/random` over a seed x flag matrix
 - [ ] Cross-target digest control: x86_64 / aarch64 / musl must agree
+- [ ] `./bm` benchmark suite covering **both** implementations — LuaJIT and Zig —
+      so the port's speedup is measured rather than assumed, and so a regression
+      in either is visible. Per the fleet convention: ndjson log per machine-id,
+      committed, two-sided tolerance (a surprise speedup may mean lost work),
+      CPU time for single-threaded kernels, ReleaseFast only. Note the existing
+      measured figure to beat: the `#1499` mitigation costs ~5.5x on the float
+      distributions on pre-fix LuaJIT and nothing on fixed builds, so the
+      benchmark must record which LuaJIT it ran under.
 - [ ] Mechatron Prime CI via the `mechatron-ci` skill
 
 ## Deferred (recorded, deliberately not fixed)
