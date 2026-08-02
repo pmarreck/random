@@ -56,6 +56,18 @@ was no compatibility guarantee to preserve). Also, fractional range bounds are
 no longer accepted — `random 1.5 6.5` is now an error, not a silently-truncated
 range.
 
+#### `$IFS` is not part of the reproducibility contract
+
+The default output delimiter (and default stdin item delimiter for
+`--choose`/`--shuffle`/`--weighted`) is always a newline, regardless of
+the shell's `$IFS`. Earlier versions derived the default from `$IFS`,
+which meant a seeded stream's exact bytes — and even which stdin item a
+`--choose`/`--shuffle`/`--weighted` call selected — silently depended on
+an ambient shell variable neither the seed nor the command line
+mentioned. Same seed, same arguments, different `$IFS`, different
+output. `--delimiter` remains the explicit, documented control for
+anyone who wants something other than newline.
+
 ## Usage
 
 ```sh

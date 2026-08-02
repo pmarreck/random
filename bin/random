@@ -530,7 +530,7 @@ local function print_help(invocation)
 	print("  -b, --binaryoutput  Output binary bytes")
 	print("  -c, --count N       Output N numbers (default: 1, or 1024 with -b)")
 	print("  -d, --deterministic Use PCG32 PRNG (reproducible with seed)")
-	print("      --delimiter S   Set delimiter for output/input (default: newline/$IFS)")
+	print("      --delimiter S   Set delimiter for output/input (default: newline)")
 	print("  -h, --help          Show this help message")
 	print("      --hex           Output as hexadecimal")
 	print("      --base64        Output as base64 (for binary)")
@@ -642,7 +642,7 @@ local function parse_args()
 		binary_output = false,
 		hex_output = false,
 		base64_output = false,
-		delimiter = nil,  -- nil means use default (newline or $IFS)
+		delimiter = nil,  -- nil means use the default (always newline, never $IFS)
 		choose = false,
 		shuffle = false,
 		weighted = false,
@@ -846,14 +846,18 @@ local function parse_args()
 		os.exit(1)
 	end
 
-	-- Default delimiter from $IFS or newline
+	-- Default delimiter is always newline, regardless of $IFS. A seeded
+	-- stream must not depend on an ambient shell variable -- $IFS also
+	-- governed stdin tokenization (--choose/--shuffle/--weighted) via
+	-- this same default, so an exported $IFS silently selected a
+	-- DIFFERENT item from the SAME stdin at the SAME seed. Confirmed
+	-- directly: `env IFS=, random --seed 42 -c 3` printed "26,9,35"
+	-- while `env -u IFS random --seed 42 -c 3` printed "26\n9\n35" --
+	-- same seed, same arguments, different bytes. --delimiter remains
+	-- the explicit, documented control for anyone who wants something
+	-- else.
 	if options.delimiter == nil then
-		local ifs = os.getenv("IFS")
-		if ifs and #ifs > 0 then
-			options.delimiter = ifs:sub(1, 1)
-		else
-			options.delimiter = "\n"
-		end
+		options.delimiter = "\n"
 	end
 
 	return options, positionals, invocation

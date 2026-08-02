@@ -1315,6 +1315,67 @@ verycommon:100"
 		(( fails++ ))
 	fi
 
+	echo ""
+	echo "--- Section 13: \$IFS independence ---"
+
+	# Test 52: default output delimiter ignores $IFS entirely -- a seeded
+	# stream must not depend on an ambient shell variable. Confirmed
+	# directly before this fix: `env IFS=, random --seed 42 -c 3` printed
+	# "26,9,35" while `env -u IFS random --seed 42 -c 3` printed
+	# "26\n9\n35" -- same seed, same arguments, different bytes.
+	# --delimiter remains the explicit, documented control (see Test 54).
+	(( tests++ ))
+	echo "Testing default delimiter ignores \$IFS..."
+
+	local ifs_unset_out ifs_comma_out ifs_space_out
+	ifs_unset_out=$(env -u IFS random -d --seed 42 -c 3 2>/dev/null)
+	ifs_comma_out=$(env IFS=, random -d --seed 42 -c 3 2>/dev/null)
+	ifs_space_out=$(env IFS=' ' random -d --seed 42 -c 3 2>/dev/null)
+
+	if [ "$ifs_unset_out" = "$ifs_comma_out" ] && [ "$ifs_unset_out" = "$ifs_space_out" ] \
+		&& [ "$ifs_unset_out" = "$(printf '26\n9\n35')" ]; then
+		echo "✓ Default delimiter ignores \$IFS"
+	else
+		echo "✗ Default delimiter depends on \$IFS: unset='$ifs_unset_out' comma='$ifs_comma_out' space='$ifs_space_out'" >&2
+		(( fails++ ))
+	fi
+
+	# Test 53: stdin tokenization (--choose/--shuffle/--weighted) shares
+	# the same options.delimiter default as output, so a caller with
+	# $IFS exported would otherwise select a DIFFERENT item from the
+	# SAME stdin at the SAME seed -- e.g. a newline-separated stdin
+	# becomes one giant unsplit item once the default delimiter becomes
+	# a comma that never appears in it.
+	(( tests++ ))
+	echo "Testing --choose stdin tokenization ignores \$IFS..."
+
+	local choose_unset choose_comma
+	choose_unset=$(printf 'apple\nbanana\ncherry\ndate' | env -u IFS random --choose -d --seed 42 2>/dev/null)
+	choose_comma=$(printf 'apple\nbanana\ncherry\ndate' | env IFS=, random --choose -d --seed 42 2>/dev/null)
+
+	if [ "$choose_unset" = "$choose_comma" ] && [ "$choose_unset" = "cherry" ]; then
+		echo "✓ --choose stdin tokenization ignores \$IFS (both: $choose_unset)"
+	else
+		echo "✗ --choose stdin tokenization depends on \$IFS: unset='$choose_unset' comma='$choose_comma'" >&2
+		(( fails++ ))
+	fi
+
+	# Test 54: --delimiter remains the explicit override this fix must
+	# not disturb -- it must still win over the (now IFS-independent)
+	# default, and over $IFS itself.
+	(( tests++ ))
+	echo "Testing --delimiter still overrides the default and \$IFS..."
+
+	local explicit_delim
+	explicit_delim=$(env IFS=, random -d --seed 42 -c 3 --delimiter '|' 2>/dev/null)
+
+	if [ "$explicit_delim" = "$(printf '26|9|35')" ]; then
+		echo "✓ --delimiter still overrides the default and \$IFS"
+	else
+		echo "✗ --delimiter override broken: got '$explicit_delim'" >&2
+		(( fails++ ))
+	fi
+
 	# ===== Final results =====
 	echo ""
 	echo "============================================"
