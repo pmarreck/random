@@ -571,6 +571,61 @@ do
 		("got m=%s e=%d want m=6250148628221868064 e=4999"):format(tostring(jrm), jre))
 end
 
+-- A SECOND, INDEPENDENT instance of the same LuaJIT/LuaJIT#1499 shape,
+-- found during Task 12 (bin/random integration), not by anything before
+-- it. M.norm has the identical "negate based on a runtime-computed sign
+-- flag, then branch on it" pattern div_signed above was isolated for --
+-- and it turns out to be vulnerable too, just under a different warm-up
+-- pattern than this file's own div-focused checks exercise, which is why
+-- neither this suite nor kernel_bc_sweep.lua caught it before now.
+--
+-- CONFIRMED BY DIRECT REPRODUCTION, not inferred from the shape alone:
+-- `bin/random --exponential -d --seed 11111 -c 5` crashed with "fixed.ln:
+-- argument must be positive" on the 4th draw. Instrumenting pcg32_uniform
+-- showed M.from_int(3830421010) -- a POSITIVE input -- returning
+-- (-9223372034939565303LL, 63), a corrupted NEGATIVE mantissa, under the
+-- normal JIT; the same call under `luajit -joff` (JIT fully disabled)
+-- correctly returned (8225766483930644480LL, 31), and the whole run
+-- completed with no crash. JIT on/off was the only variable that
+-- changed. See lib/fixed.lua's jit.off(M.norm) doc comment and
+-- task-12-report.md for the full instrumented transcript.
+--
+-- Same PRIMARY (deterministic, jit.attach-based) structure as the
+-- div_signed check above -- see that check's own comment for why a
+-- value-based check alone is not trustworthy (LuaJIT trace formation is
+-- not deterministic in warmup call count).
+local function jit_warmup_norm(n)
+	local lcg = 0xD1B54A32D192ED03ULL
+	local TWO62_JIT = 0x4000000000000000ULL
+	local function warm_mantissa()
+		lcg = lcg * 6364136223846793005ULL + 1ULL
+		return (lcg / 4ULL) % TWO62_JIT + 1ULL   -- sub-2^62: exercises norm's own shift-up loop
+	end
+	for i = 1, n do
+		local wm = ffi.cast("int64_t", warm_mantissa())
+		if i % 2 == 0 then wm = -wm end
+		fx.norm(wm, i % 40 - 20)
+	end
+end
+
+do
+	local jutil = require("jit.util")
+	local target_info = jutil.funcinfo(fx.norm)
+	local target_line = target_info.linedefined
+	local traced = false
+	local function cb(what, tr, func, pc)
+		if what == "start" and func then
+			local okc, finfo = pcall(jutil.funcinfo, func, pc)
+			if okc and finfo and finfo.linedefined == target_line then traced = true end
+		end
+	end
+	jit.attach(cb, "trace")
+	jit_warmup_norm(2000)
+	jit.attach(cb)   -- detach (jit.attach with no event removes this callback)
+	ok(not traced,
+		"M.norm is never trace-compiled (the JIT mitigation for the M.norm instance of LuaJIT/LuaJIT#1499 is in effect)")
+end
+
 end
 
 print("")

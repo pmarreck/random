@@ -7,6 +7,7 @@ open=[
 ]
 
 annotate=[
+	bin/random = unified random CLI; distributions/parsing/output run entirely through lib/fixed.lua's integer kernel (no math.*, no tonumber, no %f)
 	docs/luajit-bug-report-DRAFT.md = Draft LuaJIT issue report (awaiting Peter's review before filing)
 	docs/luajit-bug-report.md = Filed LuaJIT issue #1499 plus the pre-filing critique record
 	docs/luajit-div-miscompilation.lua = Minimal standalone repro of a LuaJIT 2.1.1774638290 trace-compiler miscompilation found while building the kernel; exits non-zero when miscompiled
@@ -14,10 +15,11 @@ annotate=[
 	docs/luajit-ir-without-fwd.txt = IR dump (-jdump=i -O3 -O-fwd): the correct build, for diffing
 	docs/plans/2026-08-01-deterministic-numeric-kernel.md = Implementation plan, spec steps 1-4: pcg32_range fix, integer goldens, soft-float kernel, LuaJIT conversion
 	docs/specs/2026-07-31-deterministic-fixed-point-rng-design.md = Design spec: integer-only Q32.32+soft-float RNG kernel for cross-platform bit-identical seeded streams; Zig/FFI port plan
-	lib/fixed.lua = integer-only soft-float kernel (mul/add/sub/neg/cmp/norm/from_int/frac/div/ln/exp/cos_turns/sqrt/pow/parse/parse_int/tostring); replaces libm and strtod/%f for cross-platform reproducibility
+	lib/fixed.lua = integer-only soft-float kernel (mul/add/sub/neg/cmp/norm/from_int/frac/div/ln/exp/cos_turns/sqrt/pow/parse/parse_int/tostring); replaces libm and strtod/%f for cross-platform reproducibility. M.norm and div_signed both need jit.off (LuaJIT/LuaJIT#1499)
 	tests/fixed_test.lua = fast pure-Lua unit tests for lib/fixed.lua: exactness pins, precondition/assert coverage, oracle-free metamorphic ln checks, decimal parse/format round-trip
 	tests/kernel_bc_sweep = bash entrypoint: sweeps fixed.lua div/ln against bc -l as an independent arbitrary-precision oracle
 	tests/kernel_bc_sweep.lua = generates the bc program + parses results for the div/ln/exp/cos/sqrt/pow/tostring sweep; a Lua-double comparison cannot validate this kernel's ~2^-62 precision claim
 	tests/kernel_jit_diff = bash entrypoint: diffs the whole kernel's output under luajit vs luajit -joff, a differential control for LuaJIT/LuaJIT#1499-class trace-compiler miscompilations
 	tests/kernel_jit_diff.lua = deterministic whole-kernel digest (mul/div/add/sub/norm/ln/exp/cos_turns/sqrt/pow, mixed-sign) run twice by kernel_jit_diff and compared byte-for-byte
+	tests/random_test = CLI behavior + statistical distribution tests for bin/random; Test 45 asserts no libm/tonumber(argv)/%f calls remain
 ]

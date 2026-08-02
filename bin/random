@@ -12,6 +12,10 @@ Unified random number generator
 local ffi = require("ffi")
 local bit = require("bit")
 
+local here = (arg[0] or ""):match("^(.*)/[^/]+$") or "."
+package.path = here .. "/../lib/?.lua;" .. here .. "/lib/?.lua;" .. package.path
+local fx = require("fixed")
+
 local argv = arg or {}
 
 -- ===== FFI declarations =====
@@ -201,9 +205,15 @@ local function pcg32_range(start_val, end_val)
 	end
 end
 
--- Get uniform random in [0, 1)
+-- Draws are exact 32-bit integers k, and k/2^32 is exact too (2^32 is a
+-- power of two), so this soft-float division has no rounding to worry
+-- about at all -- unlike the transcendental functions below it feeds.
+local TWO32_M, TWO32_E = fx.from_int(4294967296)
+
+-- Get uniform random in [0, 1) as a soft-float (m, e).
 local function pcg32_uniform()
-	return pcg32_random() / 4294967296
+	local km, ke = fx.from_int(pcg32_random())
+	return fx.div(km, ke, TWO32_M, TWO32_E)
 end
 
 -- ===== /dev/urandom random =====
@@ -239,9 +249,21 @@ end
 local function urandom_range(start_val, end_val)
 	local span = end_val - start_val + 1
 	if span <= 1 then return start_val end
-	local bytes_needed = math.ceil(math.log(span) / math.log(256)) + 1
-	local max_val = 256^bytes_needed
-	local limit = math.floor(max_val / span) * span
+	-- Smallest number of base-256 bytes that can represent span, plus one
+	-- extra byte of headroom for the rejection-sampling limit below.
+	-- Integer-only: doubling a running power of 256 instead of a base-256
+	-- logarithm-and-ceiling, which routed a plain counting problem through
+	-- two transcendental libm calls.
+	local bytes_needed = 1
+	local power = 256
+	while power < span do
+		power = power * 256
+		bytes_needed = bytes_needed + 1
+	end
+	bytes_needed = bytes_needed + 1
+	local max_val = 1
+	for _ = 1, bytes_needed do max_val = max_val * 256 end
+	local limit = max_val - (max_val % span)
 	while true do
 		local bytes = get_random_bytes(bytes_needed)
 		local random_val = bytes_to_integer(bytes)
@@ -251,94 +273,172 @@ local function urandom_range(start_val, end_val)
 	end
 end
 
--- Get uniform random in [0, 1) from urandom
+-- Get uniform random in [0, 1) from urandom, as a soft-float (m, e).
 local function urandom_uniform()
 	local bytes = get_random_bytes(4)
-	return bytes_to_integer(bytes) / 4294967296
+	local km, ke = fx.from_int(bytes_to_integer(bytes))
+	return fx.div(km, ke, TWO32_M, TWO32_E)
 end
 
--- ===== Distribution functions =====
+-- ===== Distribution functions (integer-only, via lib/fixed.lua) =====
 
--- Normal distribution (Box-Muller) - for integer output with range
+local ONE_M, ONE_E = fx.from_int(1)
+local TWO_M, TWO_E = fx.from_int(2)
+local NEG2_M, NEG2_E = fx.from_int(-2)
+local SIX_M, SIX_E = fx.from_int(6)
+local HALF_M, HALF_E = fx.div(ONE_M, ONE_E, TWO_M, TWO_E)
+
+-- Substitute for an exact-zero uniform draw (k=0 out of 2^32), which would
+-- otherwise trip fx.ln's positive-argument assertion. The old math.log-based
+-- code clamped any draw below 1e-6 (a lazy hack to dodge math.log(0)==-inf,
+-- silently biasing roughly 1 in a million draws); ln is well-defined for
+-- every OTHER draw all the way down to k=1 (~2.3e-10, ln ~= -22.18, well
+-- inside this kernel's documented domain -- see lib/fixed.lua's top-of-file
+-- comment), so only the exact-zero case needs a substitute now.
+local MIN_UNIFORM_M, MIN_UNIFORM_E = fx.div(ONE_M, ONE_E, fx.from_int(1000000))
+
+-- Normal distribution (Box-Muller) - for integer output with range.
+-- rand_func(1, 1000000) is always in [1, 1000000], so u1/u2 can never be
+-- exactly zero here -- no MIN_UNIFORM substitution needed, unlike the
+-- soft-float uniform_func() path below.
 local function normal_random_int(start_val, end_val, rand_func)
 	local range = end_val - start_val
+	local rng_m, rng_e = fx.from_int(range)
+	local sixth_m, sixth_e = fx.div(rng_m, rng_e, SIX_M, SIX_E)
+	local half_range_m, half_range_e = fx.div(rng_m, rng_e, TWO_M, TWO_E)
+	local start_m, start_e = fx.from_int(start_val)
+	local mil_m, mil_e = fx.from_int(1000000)
 	local result
 	repeat
-		local u1 = (rand_func(1, 1000000)) / 1000000
-		local u2 = (rand_func(1, 1000000)) / 1000000
-		if u1 < 0.000001 then u1 = 0.000001 end
-		local z0 = math.sqrt(-2 * math.log(u1)) * math.cos(2 * math.pi * u2)
-		local random_number = start_val + (z0 * (range / 6)) + (range / 2)
-		result = math.floor(random_number + 0.5)
+		local n1m, n1e = fx.from_int(rand_func(1, 1000000))
+		local n2m, n2e = fx.from_int(rand_func(1, 1000000))
+		local u1m, u1e = fx.div(n1m, n1e, mil_m, mil_e)
+		local u2m, u2e = fx.div(n2m, n2e, mil_m, mil_e)
+		local lm, le = fx.ln(u1m, u1e)
+		local pm, pe = fx.mul(NEG2_M, NEG2_E, lm, le)
+		local rm, re = fx.sqrt(pm, pe)
+		local cm, ce = fx.cos_turns(u2m, u2e)
+		local zm, ze = fx.mul(rm, re, cm, ce)
+		-- start + z*(range/6) + range/2, rounded to nearest by adding 1/2
+		-- before truncating toward zero (this kernel's one rounding rule).
+		local vm, ve = fx.mul(zm, ze, sixth_m, sixth_e)
+		vm, ve = fx.add(vm, ve, half_range_m, half_range_e)
+		vm, ve = fx.add(vm, ve, start_m, start_e)
+		vm, ve = fx.add(vm, ve, HALF_M, HALF_E)
+		result = fx.to_int_trunc(vm, ve)
 	until result >= start_val and result <= end_val
 	return result
 end
 
--- Normal distribution with mean/stddev - returns float
-local function normal_random_float(mean, stddev, uniform_func)
-	local u1 = uniform_func()
-	local u2 = uniform_func()
-	if u1 < 0.000001 then u1 = 0.000001 end
-	local z0 = math.sqrt(-2 * math.log(u1)) * math.cos(2 * math.pi * u2)
-	return mean + z0 * stddev
+-- Normal distribution with mean/stddev - returns a soft-float (m, e).
+local function normal_random_float(mean_m, mean_e, sd_m, sd_e, uniform_func)
+	local u1m, u1e = uniform_func()
+	local u2m, u2e = uniform_func()
+	if u1m == 0 then u1m, u1e = MIN_UNIFORM_M, MIN_UNIFORM_E end
+	local lm, le = fx.ln(u1m, u1e)
+	local pm, pe = fx.mul(NEG2_M, NEG2_E, lm, le)
+	local rm, re = fx.sqrt(pm, pe)
+	local cm, ce = fx.cos_turns(u2m, u2e)     -- cos(2*pi*u2), u2 already in turns
+	local zm, ze = fx.mul(rm, re, cm, ce)
+	local sm, se = fx.mul(zm, ze, sd_m, sd_e)
+	return fx.add(mean_m, mean_e, sm, se)
 end
 
--- Exponential distribution (rate = 1 by default)
-local function exponential_random(rate, uniform_func)
-	local u = uniform_func()
-	if u < 0.000001 then u = 0.000001 end
-	return -math.log(u) / rate
+-- Exponential distribution (rate given as a soft-float).
+local function exponential_random(rate_m, rate_e, uniform_func)
+	local um, ue = uniform_func()
+	if um == 0 then um, ue = MIN_UNIFORM_M, MIN_UNIFORM_E end
+	local lm, le = fx.ln(um, ue)
+	local nm, ne = fx.neg(lm, le)
+	return fx.div(nm, ne, rate_m, rate_e)
 end
 
--- Poisson distribution using inverse transform
-local function poisson_random(lambda, uniform_func)
-	local L = math.exp(-lambda)
+-- Poisson by SUM OF EXPONENTIALS rather than the old product form. The
+-- product form (multiply uniforms until p <= e^-lambda) underflows any
+-- fixed-width fraction: at lambda=20 the threshold is already 2e-9, well
+-- past where a 62-bit product still carries any signal. Counting
+-- exponential inter-arrivals (k = count of draws where the running sum of
+-- -ln(u_i) first exceeds lambda) is the same Poisson distribution and
+-- consumes the same number of uniforms per variate as the product form,
+-- but stays well-conditioned across the entire useful lambda range.
+local function poisson_random(lambda_m, lambda_e, uniform_func)
+	local sum_m, sum_e = 0LL, 0
 	local k = 0
-	local p = 1
-	repeat
+	while true do
+		local um, ue = uniform_func()
+		if um == 0 then um, ue = MIN_UNIFORM_M, MIN_UNIFORM_E end
+		local lm, le = fx.ln(um, ue)
+		local nm, ne = fx.neg(lm, le)
+		sum_m, sum_e = fx.add(sum_m, sum_e, nm, ne)
+		if fx.cmp(sum_m, sum_e, lambda_m, lambda_e) > 0 then return k end
 		k = k + 1
-		p = p * uniform_func()
-	until p <= L
-	return k - 1
+	end
 end
 
--- Log-normal distribution
-local function lognormal_random(mu, sigma, uniform_func)
-	local normal = normal_random_float(mu, sigma, uniform_func)
-	return math.exp(normal)
+-- Log-normal distribution - returns a soft-float (m, e).
+local function lognormal_random(mu_m, mu_e, sigma_m, sigma_e, uniform_func)
+	local nm, ne = normal_random_float(mu_m, mu_e, sigma_m, sigma_e, uniform_func)
+	return fx.exp(nm, ne)
 end
 
--- Beta distribution using Gamma variates (rejection method for small params)
-local function gamma_random(alpha, uniform_func)
-	if alpha < 1 then
-		-- Ahrens-Dieter method for alpha < 1
-		local u = uniform_func()
-		return gamma_random(1 + alpha, uniform_func) * math.pow(u, 1 / alpha)
+-- Gamma via Marsaglia-Tsang, with Ahrens-Dieter for alpha < 1. Returns a
+-- soft-float (m, e).
+local function gamma_random(alpha_m, alpha_e, uniform_func)
+	if fx.cmp(alpha_m, alpha_e, ONE_M, ONE_E) < 0 then
+		local um, ue = uniform_func()
+		if um == 0 then um, ue = MIN_UNIFORM_M, MIN_UNIFORM_E end
+		local am, ae = fx.add(ONE_M, ONE_E, alpha_m, alpha_e)
+		local gm, ge = gamma_random(am, ae, uniform_func)
+		local invm, inve = fx.div(ONE_M, ONE_E, alpha_m, alpha_e)
+		local pm, pe = fx.pow(um, ue, invm, inve)
+		return fx.mul(gm, ge, pm, pe)
 	end
 	-- Marsaglia and Tsang's method for alpha >= 1
-	local d = alpha - 1/3
-	local c = 1 / math.sqrt(9 * d)
+	local third_m, third_e = fx.div(ONE_M, ONE_E, fx.from_int(3))
+	local dm, de = fx.sub(alpha_m, alpha_e, third_m, third_e)
+	local nine_m, nine_e = fx.from_int(9)
+	local nine_d_m, nine_d_e = fx.mul(nine_m, nine_e, dm, de)
+	local sq_m, sq_e = fx.sqrt(nine_d_m, nine_d_e)
+	local cm, ce = fx.div(ONE_M, ONE_E, sq_m, sq_e)
+	local c0331_m, c0331_e = fx.parse("0.0331")
 	while true do
-		local x, v
+		local xm, xe, vm, ve
 		repeat
-			x = normal_random_float(0, 1, uniform_func)
-			v = 1 + c * x
-		until v > 0
-		v = v * v * v
-		local u = uniform_func()
-		if u < 1 - 0.0331 * (x * x) * (x * x) then
-			return d * v
+			xm, xe = normal_random_float(0LL, 0, ONE_M, ONE_E, uniform_func)
+			local t1m, t1e = fx.mul(cm, ce, xm, xe)
+			vm, ve = fx.add(ONE_M, ONE_E, t1m, t1e)
+		until fx.cmp(vm, ve, 0LL, 0) > 0
+		local v3m, v3e = fx.mul(vm, ve, vm, ve)
+		v3m, v3e = fx.mul(v3m, v3e, vm, ve)
+		local um, ue = uniform_func()
+		local x2m, x2e = fx.mul(xm, xe, xm, xe)
+		local x4m, x4e = fx.mul(x2m, x2e, x2m, x2e)
+		local bm, be = fx.mul(c0331_m, c0331_e, x4m, x4e)
+		local limm, lime = fx.sub(ONE_M, ONE_E, bm, be)
+		if fx.cmp(um, ue, limm, lime) < 0 then
+			return fx.mul(dm, de, v3m, v3e)
 		end
-		if math.log(u) < 0.5 * x * x + d * (1 - v + math.log(v)) then
-			return d * v
+		if um ~= 0 then
+			local lum, lue = fx.ln(um, ue)
+			local lvm, lve = fx.ln(v3m, v3e)
+			local h1m, h1e = fx.mul(HALF_M, HALF_E, x2m, x2e)
+			local t2m, t2e = fx.sub(ONE_M, ONE_E, v3m, v3e)
+			t2m, t2e = fx.add(t2m, t2e, lvm, lve)
+			local t3m, t3e = fx.mul(dm, de, t2m, t2e)
+			local rhs_m, rhs_e = fx.add(h1m, h1e, t3m, t3e)
+			if fx.cmp(lum, lue, rhs_m, rhs_e) < 0 then
+				return fx.mul(dm, de, v3m, v3e)
+			end
 		end
 	end
 end
 
-local function beta_random(alpha, beta_param, uniform_func)
-	local x = gamma_random(alpha, uniform_func)
-	local y = gamma_random(beta_param, uniform_func)
-	return x / (x + y)
+-- Beta distribution using Gamma variates. Returns a soft-float (m, e).
+local function beta_random(alpha_m, alpha_e, beta_m, beta_e, uniform_func)
+	local xm, xe = gamma_random(alpha_m, alpha_e, uniform_func)
+	local ym, ye = gamma_random(beta_m, beta_e, uniform_func)
+	local sm, se = fx.add(xm, xe, ym, ye)
+	return fx.div(xm, xe, sm, se)
 end
 
 -- ===== Time-based seed generation =====
@@ -588,7 +688,7 @@ local function parse_args()
 				stderr_write("Error: --count requires a number\n")
 				os.exit(1)
 			end
-			options.count = tonumber(argv[i])
+			options.count = fx.parse_int(argv[i])
 			if not options.count then
 				stderr_write("Error: --count value must be a number\n")
 				os.exit(1)
@@ -608,44 +708,48 @@ local function parse_args()
 				stderr_write("Error: --mean requires a number\n")
 				os.exit(1)
 			end
-			options.mean = tonumber(argv[i])
-			if not options.mean then
+			local mm, me = fx.parse(argv[i])
+			if not mm then
 				stderr_write("Error: --mean value must be a number\n")
 				os.exit(1)
 			end
+			options.mean = { mm, me }
 		elseif arg_val == "--stddev" then
 			i = i + 1
 			if i > #argv then
 				stderr_write("Error: --stddev requires a number\n")
 				os.exit(1)
 			end
-			options.stddev = tonumber(argv[i])
-			if not options.stddev then
+			local sm, se = fx.parse(argv[i])
+			if not sm then
 				stderr_write("Error: --stddev value must be a number\n")
 				os.exit(1)
 			end
+			options.stddev = { sm, se }
 		elseif arg_val == "--alpha" then
 			i = i + 1
 			if i > #argv then
 				stderr_write("Error: --alpha requires a number\n")
 				os.exit(1)
 			end
-			options.alpha = tonumber(argv[i])
-			if not options.alpha then
+			local am, ae = fx.parse(argv[i])
+			if not am then
 				stderr_write("Error: --alpha value must be a number\n")
 				os.exit(1)
 			end
+			options.alpha = { am, ae }
 		elseif arg_val == "--beta-param" then
 			i = i + 1
 			if i > #argv then
 				stderr_write("Error: --beta-param requires a number\n")
 				os.exit(1)
 			end
-			options.beta_param = tonumber(argv[i])
-			if not options.beta_param then
+			local bm, be = fx.parse(argv[i])
+			if not bm then
 				stderr_write("Error: --beta-param value must be a number\n")
 				os.exit(1)
 			end
+			options.beta_param = { bm, be }
 		else
 			table.insert(positionals, arg_val)
 		end
@@ -654,16 +758,16 @@ local function parse_args()
 
 	-- Parse positional arguments
 	if #positionals >= 1 then
-		options.start_val = tonumber(positionals[1])
+		options.start_val = fx.parse_int(positionals[1])
 		if not options.start_val then
-			stderr_write("Error: start value must be a number\n")
+			stderr_write("Error: start value must be a whole number\n")
 			os.exit(1)
 		end
 	end
 	if #positionals >= 2 then
-		options.end_val = tonumber(positionals[2])
+		options.end_val = fx.parse_int(positionals[2])
 		if not options.end_val then
-			stderr_write("Error: end value must be a number\n")
+			stderr_write("Error: end value must be a whole number\n")
 			os.exit(1)
 		end
 	end
@@ -849,7 +953,11 @@ local function main()
 		stderr_write("(with a start of 0 and an end of 99)\n")
 	end
 
-	-- Generate values
+	-- Generate values. Each value is either a plain Lua integer (uniform,
+	-- --normalized, --poisson -- all produced by rand_func/to_int_trunc
+	-- already applied below) or a 2-element {m, e} soft-float table
+	-- (--exponential, --log-normal, --beta) -- the shape distinguishes the
+	-- two cases downstream, so no separate is-integer flag is needed.
 	local values = {}
 	local binary_data = {}
 
@@ -857,22 +965,32 @@ local function main()
 		local value
 
 		if options.exponential then
-			value = exponential_random(1, uniform_func)
+			value = { exponential_random(ONE_M, ONE_E, uniform_func) }
 		elseif options.poisson then
-			local lambda = options.mean or 1
-			value = poisson_random(lambda, uniform_func)
+			local lm, le = ONE_M, ONE_E
+			if options.mean then lm, le = options.mean[1], options.mean[2] end
+			value = poisson_random(lm, le, uniform_func)
 		elseif options.log_normal then
-			local mu = options.mean or 0
-			local sigma = options.stddev or 1
-			value = lognormal_random(mu, sigma, uniform_func)
+			local mum, mue = 0LL, 0
+			if options.mean then mum, mue = options.mean[1], options.mean[2] end
+			local sdm, sde = ONE_M, ONE_E
+			if options.stddev then sdm, sde = options.stddev[1], options.stddev[2] end
+			value = { lognormal_random(mum, mue, sdm, sde, uniform_func) }
 		elseif options.beta then
-			local alpha = options.alpha or 2
-			local beta_p = options.beta_param or 2
-			value = beta_random(alpha, beta_p, uniform_func)
+			local am, ae = TWO_M, TWO_E
+			if options.alpha then am, ae = options.alpha[1], options.alpha[2] end
+			local bm, be = TWO_M, TWO_E
+			if options.beta_param then bm, be = options.beta_param[1], options.beta_param[2] end
+			value = { beta_random(am, ae, bm, be, uniform_func) }
 		elseif options.normalized then
 			if options.mean and options.stddev then
-				-- Use custom mean/stddev, output as float rounded to int
-				value = math.floor(normal_random_float(options.mean, options.stddev, uniform_func) + 0.5)
+				-- Use custom mean/stddev, output as an int rounded to nearest
+				-- (add 1/2, then truncate toward zero -- this kernel's one
+				-- rounding rule).
+				local vm, ve = normal_random_float(options.mean[1], options.mean[2],
+					options.stddev[1], options.stddev[2], uniform_func)
+				vm, ve = fx.add(vm, ve, HALF_M, HALF_E)
+				value = fx.to_int_trunc(vm, ve)
 			else
 				value = normal_random_int(start_val, end_val, rand_func)
 			end
@@ -881,7 +999,13 @@ local function main()
 		end
 
 		if options.binary_output then
-			table.insert(binary_data, string.char(math.floor(value) % 256))
+			local byte_val
+			if type(value) == "table" then
+				byte_val = fx.to_int_trunc(value[1], value[2])
+			else
+				byte_val = value
+			end
+			table.insert(binary_data, string.char(byte_val % 256))
 		else
 			table.insert(values, value)
 		end
@@ -909,10 +1033,10 @@ local function main()
 					io.stdout:write(output_delimiter)
 				end
 				local formatted
-				if type(v) == "number" and v == math.floor(v) then
-					formatted = string.format("%x", math.floor(v))
+				if type(v) == "number" then
+					formatted = string.format("%x", v)
 				else
-					formatted = tostring(v)
+					formatted = fx.tostring(v[1], v[2], 6)
 				end
 				if output_delimiter == "\n" then
 					print(formatted)
@@ -930,13 +1054,9 @@ local function main()
 				end
 				local formatted
 				if type(v) == "number" then
-					if v == math.floor(v) then
-						formatted = tostring(math.floor(v))
-					else
-						formatted = string.format("%.6f", v)
-					end
-				else
 					formatted = tostring(v)
+				else
+					formatted = fx.tostring(v[1], v[2], 6)
 				end
 				if output_delimiter == "\n" then
 					print(formatted)

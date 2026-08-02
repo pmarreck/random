@@ -129,6 +129,45 @@ end
 --- program produces -- the largest observed is exp(500)'s result
 --- exponent, 721 -- six orders of magnitude of headroom, not a bound
 --- picked to just barely fit current usage.
+-- LuaJIT/LuaJIT#1499 MITIGATION, DISCOVERED DURING TASK 12 (bin/random
+-- integration), not any task before it -- fixed_test.lua and
+-- kernel_bc_sweep.lua's call patterns apparently never warmed up a trace
+-- through this exact shape. M.norm has the SAME "negate based on a
+-- runtime-computed sign flag, then branch on it later" shape that
+-- div_signed (below) was isolated and jit.off'd for -- and it turns out to
+-- be vulnerable the same way, just needing a different warm-up pattern to
+-- surface it.
+--
+-- CONFIRMED BY DIRECT REPRODUCTION, not inferred from the shape alone:
+-- `bin/random --exponential -d --seed 11111 -c 5` crashed with "fixed.ln:
+-- argument must be positive" on the 4th draw. Instrumented pcg32_uniform
+-- to print M.from_int's return for raw PCG32 output 3830421010 (the exact
+-- draw that crashed): under the normal JIT, M.from_int(3830421010)
+-- returned (-9223372034939565303LL, 63) -- a NEGATIVE mantissa for a
+-- POSITIVE input, i.e. M.norm itself corrupted the sign. Re-running the
+-- identical invocation under `luajit -joff` (JIT fully disabled) returned
+-- the correct (8225766483930644480LL, 31) for that same input, and the
+-- whole run completed with no crash. JIT on/off is the only variable that
+-- changed between the two runs -- same seed, same PCG32 sequence, same
+-- source. That is a JIT miscompilation, not a logic bug in this function's
+-- algorithm (the algorithm itself is correct, as -joff proves).
+--
+-- This is the more dangerous half of the LuaJIT#1499 family, worse than
+-- the crash that exposed it: a caller whose corrupted value happens NOT to
+-- hit a downstream assert (M.ln's m>0 check here was pure luck) would get
+-- a silently wrong answer with no error at all, in a kernel whose entire
+-- purpose is bit-exact reproducibility. See task-12-report.md for the
+-- full instrumented transcript.
+--
+-- FIX: same mitigation as div_signed -- jit.off(M.norm) below keeps this
+-- function permanently interpreted, never trace-compiled, so the
+-- miscompilation can never fire. M.norm's negation branch is far more
+-- frequently hit than div_signed's (roughly half of all real inputs are
+-- negative, not just the rare negative-operand division), so this is a
+-- real interpreted-vs-compiled cost on a hot function, not a free fix --
+-- but a wrong answer in this kernel is strictly worse than a slower right
+-- one, and M.norm's own body (a couple of bounded shift loops) is cheap
+-- relative to the mul/div/ln/exp callers built on top of it.
 function M.norm(m, e)
 	if m == 0 then return 0LL, 0 end
 	local neg = m < 0
@@ -140,6 +179,7 @@ function M.norm(m, e)
 	if neg then r = -r end
 	return r, e
 end
+jit.off(M.norm)
 
 --- Soft-float multiply. Mantissa product lands in [2^124, 2^126); take 62 or
 --- 63 bits off the top depending on which, so the result is normalized without

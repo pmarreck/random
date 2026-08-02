@@ -1042,6 +1042,22 @@ verycommon:100"
 		(( fails++ ))
 	fi
 
+	# Test 45: no floating-point math remains on the deterministic path
+	(( tests++ ))
+	echo "Testing bin/random contains no libm calls..."
+
+	local libm_hits
+	libm_hits=$(grep -nE 'math\.(log|cos|sin|exp|pow|sqrt|pi)|tonumber\(argv|string\.format\("%\.?[0-9]*f' \
+		"$(command -v random)" | grep -v '^[0-9]*:--' || true)
+
+	if [ -z "$libm_hits" ]; then
+		echo "✓ No libm calls remain"
+	else
+		echo "✗ libm calls still present:" >&2
+		echo "$libm_hits" >&2
+		(( fails++ ))
+	fi
+
 	# ===== Final results =====
 	echo ""
 	echo "============================================"
