@@ -1,7 +1,7 @@
 # Deterministic integer-only RNG numerics — design
 
 **Date:** 2026-07-31
-**Status:** approved (design); implementation not started
+**Status:** steps 1-4 implemented 2026-08-01; step 5 (Zig port) pending
 **Author:** Claude + Peter Marreck
 **Supersedes:** the float-based numerics in `bin/random`
 

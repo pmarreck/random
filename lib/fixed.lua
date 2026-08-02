@@ -1126,6 +1126,9 @@ function M.cos_turns(m, e)
 	-- normalize into [0, 1) the same way a real turns-based angle would
 	-- wrap, rather than assuming every caller already range-checked u.
 	local fm, fe = M.frac(m, e)
+	-- Intentional out-of-domain defense: every real caller's u arrives in
+	-- [0, 1), so this branch is unreachable and untested in practice; kept
+	-- anyway rather than trusting callers to range-check first.
 	if fm < 0 then fm, fe = M.add(fm, fe, M.from_int(1)) end
 	-- quadrant = floor(4u); within = 4u - quadrant
 	local q4m, q4e = M.mul(fm, fe, M.from_int(4))

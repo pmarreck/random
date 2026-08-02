@@ -7,9 +7,12 @@
 set -u
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# A silently-skipped control is worse than no control: it would let the
+# kernel's precision claim go unverified forever if bc ever went missing
+# from PATH (dev shell or CI) without anyone noticing. Fail loudly instead.
 if ! command -v bc >/dev/null 2>&1; then
-	echo "kernel_bc_sweep: SKIPPED (bc not found on PATH)" >&2
-	exit 0
+	echo "kernel_bc_sweep: FAILED -- bc not found on PATH (this control needs it as an independent arbitrary-precision oracle; see flake.nix's testTools)" >&2
+	exit 1
 fi
 
 exec luajit "$here/kernel_bc_sweep.lua"

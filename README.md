@@ -16,7 +16,45 @@ the invocation name selects the mode (`nrandom` ⇒ normalized, `drandom` ⇒ de
 - **Stdin ops:** `--choose` one item, `--shuffle` all items, `--weighted` (`value:weight`)
 - **Output formats:** decimal, `--hex`, `--base64`, raw `--binaryoutput`
 - **Reproducible sessions:** deterministic state persists per session so sequences continue across calls
+- **Reproducible across platforms:** seeded streams are bit-identical across machines, operating systems and CPU architectures, because all math runs on an integer-only kernel instead of the platform's libm — see [Determinism](#determinism) below
 - **Zero heavy deps:** just LuaJIT (FFI + bit are built in)
+
+### Determinism
+
+Seeded streams are **bit-identical across runs, machines, operating systems and
+CPU architectures**. All math runs on an integer-only software float
+(`lib/fixed.lua`) rather than the platform's libm, because libm transcendentals
+are not portable: IEEE-754 pins down `+ - * / sqrt` and says nothing about
+`log`, `cos` or `exp`. Measured glibc vs musl over this program's actual input
+domain, `log` differs on 0.006% of inputs, `cos` on 3.06%, and `exp` on 8.85% —
+which meant roughly 3% of seeded "normal" values differed between two builds of
+the same source at the same seed.
+
+The algorithm is PCG32 (XSH-RR 64/32), multiplier `6364136223846793005`,
+increment `1442695040888963407`, seeded by `state = 0; advance; state += seed;
+advance`. A stream is reproducible from that description alone.
+
+While building this kernel we found and filed
+[LuaJIT/LuaJIT#1499](https://github.com/LuaJIT/LuaJIT/issues/1499), an
+unsigned negate-then-branch trace-compiler miscompilation that silently
+corrupted this exact kernel shape. It is fixed upstream, but `lib/fixed.lua`
+still ships a `jit.off` mitigation, gated at load time on the running
+`jit.version` against the commit that carries the fix — most systems will be
+on a pre-fix LuaJIT build for a long time yet. That mitigation is not free:
+measured ~5.7x slower on the soft-float distributions (`--normalized`,
+`--exponential`, `--poisson`, `--log-normal`, `--beta`) while it's active, and
+nothing on the integer-only paths. Once your LuaJIT is built from the fix
+commit or later, the mitigation switches itself off automatically.
+
+#### Compatibility note
+
+Converting to the integer kernel deliberately changed seeded output **once**:
+values from `--normalized`, `--exponential`, `--poisson`, `--log-normal` and
+`--beta` at a given seed differ from pre-conversion runs of this program (the
+old float path was never cross-platform-reproducible to begin with, so there
+was no compatibility guarantee to preserve). Also, fractional range bounds are
+no longer accepted — `random 1.5 6.5` is now an error, not a silently-truncated
+range.
 
 ## Usage
 
@@ -66,11 +104,12 @@ A dev shell with LuaJIT and the test tooling is provided:
 direnv allow      # or: nix develop
 ./test            # FAST mode (quick, quiet on success)
 FAST= ./test      # full statistical run
-nix flake check   # hermetic CI check (also what Garnix runs)
+nix flake check   # hermetic CI check (runs the full ./test suite)
 ```
 
-The suite lives in `tests/random_test` and is hermetic and concurrency-safe (each run
-isolates its own state directory).
+`./test` runs every suite under `tests/` (CLI behavior, kernel unit tests, golden
+vectors, the `bc` sweep, and the deep-mode-only JIT differential). Each suite is
+hermetic and concurrency-safe — every run isolates its own state directory.
 
 ## Layout
 
@@ -78,7 +117,14 @@ isolates its own state directory).
 bin/random          the program (LuaJIT)
 bin/nrandom         -> random   (normalized mode)
 bin/drandom         -> random   (deterministic mode)
-tests/random_test   the test suite (bash)
+lib/fixed.lua       integer-only soft-float kernel (see Determinism above)
+tests/random_test   CLI behavior + statistical distribution suite (bash)
+tests/fixed_test    unit tests for lib/fixed.lua (bash)
+tests/golden_test   verifies committed golden vectors still reproduce
+tests/kernel_bc_sweep sweeps the kernel against `bc -l` as an independent oracle
+tests/kernel_jit_diff JIT-vs-interpreter differential control (deep mode only)
+tests/bless-goldens run deliberately to regenerate golden vectors; never from ./test
+tests/golden/       committed golden vectors (integer.txt, dist.txt)
 alternates/         earlier reference implementations (nrandombash, nrandomlua)
 flake.nix           dev shell, package, and CI check
 test                test runner

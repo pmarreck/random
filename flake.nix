@@ -25,8 +25,12 @@
           dontBuild = true;
           installPhase = ''
             runHook preInstall
-            mkdir -p $out/bin $out/share/random/tests
+            mkdir -p $out/bin $out/lib $out/share/random/tests
             cp bin/random $out/bin/random
+            # bin/random resolves '../lib/?.lua' relative to itself -- without
+            # this, the packaged binary can find lib/fixed.lua only inside the
+            # build sandbox, not from $out/bin.
+            cp lib/*.lua $out/lib/
             cp tests/random_test $out/share/random/tests/random_test
             chmod +x $out/bin/random $out/share/random/tests/random_test
             # Mode-by-invocation-name: nrandom => normalized, drandom => deterministic
@@ -47,7 +51,9 @@
         packages.default = random;
         packages.random = random;
 
-        # Garnix picks this up automatically and runs the suite hermetically.
+        # Hermetic CI check: runs the FULL suite runner (./test), not just
+        # tests/random_test, so fixed_test/golden_test/kernel_bc_sweep are
+        # actually exercised here too, not just the CLI-behavior suite.
         checks.random-test = pkgs.runCommand "random-test"
           { nativeBuildInputs = runtimeTools ++ testTools; } ''
             cp -r ${./.} work
@@ -59,8 +65,10 @@
             patchShebangs bin tests
             export HOME="$TMPDIR"
             export PATH="$PWD/bin:$PATH"
-            export RANDOM_TEST_FILE="$PWD/tests/random_test"
-            FAST=1 bash tests/random_test
+            # ./test sets RANDOM_TEST_FILE itself; FAST=1 keeps this hermetic
+            # check fast (kernel_jit_diff is deep-mode-only by design — see
+            # its own header comment).
+            FAST=1 bash ./test
             touch $out
           '';
 

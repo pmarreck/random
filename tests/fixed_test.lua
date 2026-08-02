@@ -1509,6 +1509,17 @@ ok(fx.parse(".5") ~= nil, "parse('.5') (no leading integer digit) is accepted")
 local p_dot_m, p_dot_e = fx.parse("1.")
 ok(fx.cmp(p_dot_m, p_dot_e, fx.from_int(1)) == 0, "parse('1.') (empty fraction after the dot) == 1")
 
+-- Dedicated pin for "sign applies to the full integer+fraction magnitude",
+-- not just the integer part -- a bug that negated int_v before adding the
+-- (unsigned) fraction would make parse('-1.5') land on -0.5, not -1.5. The
+-- 96-case sweep at Verification item 3 below covers this only indirectly.
+local onem, onee = fx.from_int(1)
+local wholem, wholee = fx.add(onem, onee, halfm, halfe)   -- 1 + 1/2 = 1.5
+local expnegm, expnege = fx.neg(wholem, wholee)           -- -1.5
+local pnegm, pnege = fx.parse("-1.5")
+ok(fx.cmp(pnegm, pnege, expnegm, expnege) == 0,
+   "parse('-1.5') == -1.5 (sign applies to the whole magnitude, not just the integer part)")
+
 -- === tostring: baseline cases (from the task brief) =======================
 local z0m, z0e = fx.from_int(0)
 ok(fx.tostring(z0m, z0e, 6) == "0.000000", "tostring(0) == '0.000000'")
