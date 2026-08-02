@@ -194,12 +194,26 @@ local function pcg32_range(start_val, end_val)
 	-- Compute bound using unsigned arithmetic that stays entirely in u64.
 	-- 0 - urange gives 2^64 - range by wraparound; mod range gives 2^64 mod range.
 	local remainder = (ffi.cast(u64, 0) - urange) % urange   -- 2^64 mod range
-	local bound = ffi.cast(u64, 0) - remainder               -- 2^64 - (2^64 mod range)
+	-- When remainder is 0, range divides 2^64 exactly (every power of two
+	-- from 2^33 up -- 2^32 and below take the narrow path above and never
+	-- reach here). `bound = 0 - remainder` would then be 0 in u64
+	-- wraparound arithmetic, which is not "reject everything", it is
+	-- unrepresentable: no u64 draw can ever satisfy `r < 0`, so the
+	-- rejection loop below spun forever for every such range -- confirmed
+	-- directly, `random --seed 42 -c 1 0 8589934591` (span 2^33) hung
+	-- until killed. There is nothing to reject in this case: every 64-bit
+	-- draw already lands in exactly range/2^64 proportion, so ALL draws
+	-- are unbiased and none need to be rejected. exact_divides short-
+	-- circuits the loop's `r < bound` check rather than trying to make
+	-- bound represent "accept everything" as a u64 value, which it
+	-- cannot.
+	local exact_divides = (remainder == 0)
+	local bound = ffi.cast(u64, 0) - remainder               -- 2^64 - (2^64 mod range); meaningless when exact_divides
 	while true do
 		local hi = ffi.cast(u64, pcg32_random())
 		local lo = ffi.cast(u64, pcg32_random())
 		local r = hi * 4294967296ULL + lo
-		if r < bound then
+		if exact_divides or r < bound then
 			return start_val + tonumber(r % urange)
 		end
 	end

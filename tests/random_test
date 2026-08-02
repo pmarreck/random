@@ -441,6 +441,58 @@ test_random() {
 		(( fails++ ))
 	fi
 
+	# Test 20d: power-of-two range classifier. The wide path's rejection
+	# bound is `2^64 - (2^64 mod range)`; when range divides 2^64 exactly
+	# (every power of two >= 2^33, since 2^32 and below use the narrow,
+	# plain-Lua-arithmetic path that never wraps this way) `2^64 mod
+	# range` is 0, so bound wraps to 0 in u64 and `r < bound` is never
+	# true -- no draw is ever accepted, forever. Tested as a classifier
+	# over the WHOLE set the finding specified, not one example: every
+	# power of two from 2^33 through 2^62, the non-power-of-two neighbor
+	# on each side of every one of those (so a mutant that skips
+	# rejection unconditionally rather than only when remainder==0 still
+	# has a chance to be caught by a neighbor going out of range), plus
+	# 2^32 exactly (the narrow/wide path boundary, already correct) and
+	# 2^32+1 (the smallest wide-path input, already correct) as
+	# regressions on the boundary this fix must not disturb.
+	(( tests++ ))
+	echo "Testing power-of-two range termination (2^33..2^62, neighbors, 2^32 boundary)..."
+
+	local pow2_fail=0
+	pow2_check() {
+		local label="$1" start="$2" end="$3"
+		local out status
+		out=$(timeout 3 random -d --seed 3 -c 1 "$start" "$end" 2>/dev/null)
+		status=$?
+		if [ $status -eq 124 ]; then
+			echo "  ✗ $label: timed out (infinite loop)" >&2
+			pow2_fail=$((pow2_fail + 1))
+		elif [ $status -ne 0 ]; then
+			echo "  ✗ $label: exit $status" >&2
+			pow2_fail=$((pow2_fail + 1))
+		elif ! { [ "$out" -ge "$start" ] && [ "$out" -le "$end" ]; } 2>/dev/null; then
+			echo "  ✗ $label: '$out' out of range [$start, $end]" >&2
+			pow2_fail=$((pow2_fail + 1))
+		fi
+	}
+
+	local k span
+	for k in $(seq 33 62); do
+		span=$(( 1 << k ))
+		pow2_check "2^$k exact (span=$span)" 0 $(( span - 1 ))
+		pow2_check "2^$k - 1 neighbor" 0 $(( span - 2 ))
+		pow2_check "2^$k + 1 neighbor" 0 "$span"
+	done
+	pow2_check "2^32 exactly (narrow/wide boundary)" 0 4294967295
+	pow2_check "2^32 + 1 (smallest wide-path input)" 0 4294967296
+
+	if [ "$pow2_fail" -eq 0 ]; then
+		echo "✓ Power-of-two range classifier passed (92 cases)"
+	else
+		echo "✗ Power-of-two range classifier: $pow2_fail case(s) failed" >&2
+		(( fails++ ))
+	fi
+
 	# ===== SECTION 4: --normalized mode =====
 	echo ""
 	echo "--- Section 4: --normalized mode ---"
