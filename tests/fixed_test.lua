@@ -536,22 +536,61 @@ end
 -- in both directions (10/10 correct with the mitigation present, 10/10
 -- correct with it removed) before being committed -- see
 -- task-6-report.md's deterministic-control verification appendix.
-do
-	local jutil = require("jit.util")
-	local target_info = jutil.funcinfo(fx._div_signed_for_tests)
-	local target_line = target_info.linedefined
-	local traced = false
-	local function cb(what, tr, func, pc)
-		if what == "start" and func then
-			local okc, finfo = pcall(jutil.funcinfo, func, pc)
-			if okc and finfo and finfo.linedefined == target_line then traced = true end
+-- Shared by both the div_signed check below and the M.norm check further
+-- down: fixed.lua now gates jit.off(div_signed)/jit.off(M.norm) on
+-- fx._needs_1499_mitigation_for_tests (computed once from jit.version --
+-- see lib/fixed.lua's own doc comment on NEEDS_1499_MITIGATION), so the
+-- "never trace-compiled" assertion is only the correct expectation when
+-- THIS runtime's own predicate says the mitigation is active. On a build
+-- that already carries the upstream #1499 fix, jit.off is not applied,
+-- the target function WILL be trace-compiled, and asserting "never
+-- traced" unconditionally would fail there -- not because anything is
+-- wrong, but because the test would be asserting the wrong thing for
+-- that runtime. Factored into one function (not duplicated per check)
+-- specifically so the two checks below cannot drift apart on this
+-- branching logic -- exactly the kind of duplication that lets a guard
+-- silently stop meaning what it says in one copy but not the other.
+--
+-- On the "mitigation inactive" side, this deliberately does NOT try to
+-- assert the function DOES get traced -- trace formation is not
+-- guaranteed even when JIT-eligible (LuaJIT's trace heuristics are not
+-- obligated to compile any specific function), so that would be exactly
+-- the kind of flaky, non-deterministic check this file's own PRIMARY/
+-- SECONDARY distinction elsewhere exists to avoid. Instead it prints a
+-- visible, version-naming notice (never a silent no-op) and asserts the
+-- one thing that IS deterministic here: that the predicate itself
+-- reports this runtime correctly. Real protection against a broken
+-- predicate (e.g. an inverted fail-safe) lives in the dedicated
+-- synthetic-string check further below, which runs identically on every
+-- runtime regardless of which branch this function takes.
+local function check_1499_mitigation(target_fn, warmup_fn, label)
+	if fx._needs_1499_mitigation_for_tests then
+		local jutil = require("jit.util")
+		local target_info = jutil.funcinfo(target_fn)
+		local target_line = target_info.linedefined
+		local traced = false
+		local function cb(what, tr, func, pc)
+			if what == "start" and func then
+				local okc, finfo = pcall(jutil.funcinfo, func, pc)
+				if okc and finfo and finfo.linedefined == target_line then traced = true end
+			end
 		end
+		jit.attach(cb, "trace")
+		warmup_fn(2000)
+		jit.attach(cb)   -- detach (jit.attach with no event removes this callback)
+		ok(not traced,
+			label .. " is never trace-compiled (the JIT mitigation for LuaJIT/LuaJIT#1499 is in effect)")
+	else
+		print(("  (%s trace-compilation check SKIPPED -- mitigation inactive on %s)")
+			:format(label, tostring(jit.version)))
+		ok(fx._needs_1499_mitigation_for_tests == false,
+			label .. "'s #1499 mitigation is correctly INACTIVE on this LuaJIT (" ..
+				tostring(jit.version) .. ") -- upstream fix present, trace-compilation check does not apply")
 	end
-	jit.attach(cb, "trace")
-	jit_warmup_div(2000)
-	jit.attach(cb)   -- detach (jit.attach with no event removes this callback)
-	ok(not traced,
-		"div_signed is never trace-compiled (the JIT mitigation for LuaJIT/LuaJIT#1499 is in effect)")
+end
+
+do
+	check_1499_mitigation(fx._div_signed_for_tests, jit_warmup_div, "div_signed")
 end
 
 -- SECONDARY, PROBABILISTIC check -- kept as an additional, real-world
@@ -615,21 +654,32 @@ local function jit_warmup_norm(n)
 end
 
 do
-	local jutil = require("jit.util")
-	local target_info = jutil.funcinfo(fx.norm)
-	local target_line = target_info.linedefined
-	local traced = false
-	local function cb(what, tr, func, pc)
-		if what == "start" and func then
-			local okc, finfo = pcall(jutil.funcinfo, func, pc)
-			if okc and finfo and finfo.linedefined == target_line then traced = true end
-		end
-	end
-	jit.attach(cb, "trace")
-	jit_warmup_norm(2000)
-	jit.attach(cb)   -- detach (jit.attach with no event removes this callback)
-	ok(not traced,
-		"M.norm is never trace-compiled (the JIT mitigation for the M.norm instance of LuaJIT/LuaJIT#1499 is in effect)")
+	check_1499_mitigation(fx.norm, jit_warmup_norm, "M.norm")
+end
+
+-- Dedicated, deterministic, runtime-INDEPENDENT coverage of the fail-safe
+-- direction itself: needs_1499_mitigation_fn_for_tests's real behavior on
+-- the ACTUAL running LuaJIT can only ever exercise one branch (whichever
+-- this runtime's own jit.version happens to hit), and jit.version is
+-- never actually unparseable in practice -- so the only way to test the
+-- "unparseable version" fail-safe branch at all is with synthetic input.
+-- This is also the check that catches an inverted fail-safe (mitigation
+-- needed on parse failure -> mitigation NOT needed on parse failure),
+-- which the coordinator specifically asked to be able to verify via
+-- mutation: flip the `if roll == nil then return true end` in
+-- lib/fixed.lua to `return false` and every assertion in this block
+-- fails, on any runtime, regardless of which branch check_1499_mitigation
+-- above happened to take.
+do
+	local fn = fx._needs_1499_mitigation_fn_for_tests
+	ok(fn(nil) == true, "needs_1499_mitigation(nil): fail-safe assumes mitigation IS needed")
+	ok(fn("") == true, "needs_1499_mitigation(''): fail-safe assumes mitigation IS needed")
+	ok(fn("garbage") == true, "needs_1499_mitigation('garbage'): fail-safe assumes mitigation IS needed")
+	ok(fn("LuaJIT 2.0.5") == true, "needs_1499_mitigation('LuaJIT 2.0.5'): unrecognized branch, fail-safe assumes needed")
+	ok(fn("LuaJIT 2.1.1774638290") == true, "needs_1499_mitigation: pinned toolchain's actual version needs the mitigation")
+	ok(fn("LuaJIT 2.1.1785606157") == false, "needs_1499_mitigation: the verified upstream-fixed build does not need it")
+	ok(fn("LuaJIT 2.1.1785577137") == false, "needs_1499_mitigation: exactly at the fix threshold does not need it (boundary, not off-by-one)")
+	ok(fn("LuaJIT 2.1.1785577136") == true, "needs_1499_mitigation: one roll below the fix threshold still needs it (boundary, not off-by-one)")
 end
 
 end

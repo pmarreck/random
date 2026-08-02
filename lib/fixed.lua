@@ -80,6 +80,65 @@ M.POW2 = POW2
 
 M.ZERO_M, M.ZERO_E = 0LL, 0
 
+-- LuaJIT/LuaJIT#1499 ("Don't fold -a / -b for unsigned operands", fixed
+-- upstream in commit 5ed524c, first released as 2.1.1785577137)
+-- miscompiles this kernel's unsigned negate-then-branch shape -- see
+-- jit.off(div_signed) and jit.off(M.norm) below for the two confirmed
+-- instances (the second found and verified during Task 12; see
+-- task-12-report.md for both the original finding and the
+-- coordinator-requested confirmation against the actual upstream fix).
+-- We found and reported it; it is fixed upstream, but users will be on
+-- pre-fix builds for a long time, so the mitigation is kept --
+-- CONDITIONALLY, gated on the running LuaJIT's own version, rather than
+-- paid unconditionally forever. Measured cost when active: ~5.7x on the
+-- soft-float distributions (hyperfine, `--log-normal -c 20000`: 6.178s
+-- vs 1.079s on a build where toggling the mitigation is safe to compare
+-- either way) and nothing on the integer-only paths, which never enter
+-- this file at all.
+--
+-- jit.version carries a rolling build timestamp as the third dotted
+-- component (e.g. "LuaJIT 2.1.1774638290" on the toolchain this
+-- project's flake.nix currently pins, "LuaJIT 2.1.1785606157" on a
+-- build of the fix commit). Below LUAJIT_1499_FIXED_IN, #1499 is
+-- present; at or above it, the running LuaJIT carries the fix and
+-- jit.off is unnecessary overhead.
+--
+-- FAIL SAFE: if the version string cannot be parsed at all (a future
+-- LuaJIT release changing its version format, or this code somehow
+-- running under something whose jit.version doesn't match the expected
+-- shape), ASSUME THE MITIGATION IS STILL NEEDED. A slow correct build
+-- beats a fast wrong one. Do NOT invert this — see
+-- tests/fixed_test.lua's dedicated fail-safe-inversion mutation check,
+-- which exists specifically to catch that class of edit and runs
+-- against synthetic version strings, not the live runtime (the real
+-- jit.version is never actually unparseable in practice, so only a
+-- synthetic-input test can exercise this branch at all).
+--
+-- Factored into a standalone function, not inlined at the two jit.off
+-- call sites, for exactly that reason: tests/fixed_test.lua needs to
+-- exercise the parsing/fail-safe logic directly against strings that
+-- were never real jit.version output.
+local LUAJIT_1499_FIXED_IN = 1785577137
+local function needs_1499_mitigation(version_string)
+	local roll = tonumber(tostring(version_string):match("2%.1%.(%d+)"))
+	if roll == nil then return true end   -- FAIL SAFE: unparseable => needed
+	return roll < LUAJIT_1499_FIXED_IN
+end
+-- TEST-ONLY, matching M._div_signed_for_tests' established pattern --
+-- exposes the pure parsing function so fixed_test.lua can probe the
+-- fail-safe branch with synthetic input, independent of whichever real
+-- LuaJIT is running the suite.
+M._needs_1499_mitigation_fn_for_tests = needs_1499_mitigation
+
+local NEEDS_1499_MITIGATION = needs_1499_mitigation(jit.version)
+-- TEST-ONLY. Lets fixed_test.lua branch its jit.attach checks on
+-- whether THIS runtime actually needs the mitigation, rather than
+-- asserting a fixed expectation that would fail the moment the suite
+-- runs on a build that already carries the upstream fix -- see that
+-- file's own comment on why "never traced" is only the right assertion
+-- when the mitigation is active.
+M._needs_1499_mitigation_for_tests = NEEDS_1499_MITIGATION
+
 --- Full 64x64 -> 128 unsigned product, returned as (hi, lo).
 --- Needed because LuaJIT cannot do __int128 arithmetic: ffi.cdef accepts the
 --- typedef but construction fails ("cannot convert 'number' to 'int128_t'").
@@ -203,7 +262,12 @@ function M.norm(m, e)
 	if neg then r = -r end
 	return r, e
 end
-jit.off(M.norm)
+-- Gated on NEEDS_1499_MITIGATION (defined near the top of this file,
+-- computed once from jit.version) rather than applied unconditionally --
+-- see that predicate's own doc comment for the version threshold, the
+-- fail-safe direction, and the measured cost of paying this when it
+-- isn't needed.
+if NEEDS_1499_MITIGATION then jit.off(M.norm) end
 
 --- Soft-float multiply. Mantissa product lands in [2^124, 2^126); take 62 or
 --- 63 bits off the top depending on which, so the result is normalized without
@@ -501,7 +565,13 @@ end
 -- the shape LuaJIT#1499 miscompiles -- collapsing this split back to one
 -- function silently VOIDS the mitigation, and jit.off(div_signed) alone
 -- would then no longer be covering the loop at all.
-jit.off(div_signed)
+--
+-- Gated on NEEDS_1499_MITIGATION (defined near the top of this file,
+-- computed once from jit.version) rather than applied unconditionally --
+-- see that predicate's own doc comment for the version threshold, the
+-- fail-safe direction, and the measured cost of paying this when it
+-- isn't needed.
+if NEEDS_1499_MITIGATION then jit.off(div_signed) end
 
 -- TEST-ONLY. Not part of the public API -- nothing outside
 -- tests/fixed_test.lua should read this field. Exposed so the test suite
