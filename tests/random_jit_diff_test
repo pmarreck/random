@@ -55,14 +55,59 @@ combos=0
 for dist in "${DISTS[@]}"; do
 	for seed in "${SEEDS[@]}"; do
 		combos=$((combos + 1))
+		# Capture raw stdout into a variable FIRST (not piped straight into
+		# md5sum) so `$?` right after each command substitution is the
+		# producer's OWN exit status, not a pipeline's -- `| md5sum`'s exit
+		# status is md5sum's, which is always 0 regardless of whether
+		# luajit itself crashed upstream. This is the gap that let both
+		# invocations fail (`luajit() { return 70; }` exported) while the
+		# control still reported PASSED: with no producer-output on either
+		# side, md5sum hashed the SAME empty input twice, producing a
+		# real, matching, non-empty digest (md5 of "" is always
+		# d41d8cd98f00b204e9800998ecf8427e) -- `[ -z "$on_md5" ]` can never
+		# catch that, because the digest string itself is never empty even
+		# when the DATA it was computed over is.
 		# Intentional word-splitting: $dist is a fixed, quote-free flag
 		# string from the DISTS array above, never external input.
 		# shellcheck disable=SC2086
-		on_md5=$(luajit "$random_bin" -d --seed "$seed" -c "$COUNT" $dist 2>/dev/null | md5sum | awk '{print $1}')
+		on_out=$(luajit "$random_bin" -d --seed "$seed" -c "$COUNT" $dist 2>/dev/null)
+		on_rc=$?
 		# shellcheck disable=SC2086
-		off_md5=$(luajit -joff "$random_bin" -d --seed "$seed" -c "$COUNT" $dist 2>/dev/null | md5sum | awk '{print $1}')
-		if [ "$on_md5" != "$off_md5" ] || [ -z "$on_md5" ]; then
+		off_out=$(luajit -joff "$random_bin" -d --seed "$seed" -c "$COUNT" $dist 2>/dev/null)
+		off_rc=$?
+		bad=0
+		if [ "$on_rc" -ne 0 ]; then
+			echo "✗ PRODUCER FAILED: seed=$seed dist='$dist' JIT-on exited $on_rc" >&2
+			bad=1
+		fi
+		if [ "$off_rc" -ne 0 ]; then
+			echo "✗ PRODUCER FAILED: seed=$seed dist='$dist' JIT-off exited $off_rc" >&2
+			bad=1
+		fi
+		# Plausibility check independent of exit status: a producer that
+		# exits 0 but emits truncated or empty output (e.g. crashes after
+		# printing a partial line, or a broken pipe silently swallowed)
+		# would still pass the rc check above. Each of bin/random's
+		# COUNT draws prints exactly one line, so line count must match
+		# COUNT exactly -- not just "be nonzero", which an empty digest
+		# already showed is too weak a bar.
+		on_lines=$(printf '%s\n' "$on_out" | grep -c '^')
+		off_lines=$(printf '%s\n' "$off_out" | grep -c '^')
+		if [ "$on_lines" -ne "$COUNT" ]; then
+			echo "✗ IMPLAUSIBLE OUTPUT: seed=$seed dist='$dist' JIT-on produced $on_lines line(s), expected $COUNT" >&2
+			bad=1
+		fi
+		if [ "$off_lines" -ne "$COUNT" ]; then
+			echo "✗ IMPLAUSIBLE OUTPUT: seed=$seed dist='$dist' JIT-off produced $off_lines line(s), expected $COUNT" >&2
+			bad=1
+		fi
+		on_md5=$(printf '%s' "$on_out" | md5sum | awk '{print $1}')
+		off_md5=$(printf '%s' "$off_out" | md5sum | awk '{print $1}')
+		if [ "$bad" -eq 0 ] && { [ "$on_md5" != "$off_md5" ] || [ -z "$on_md5" ]; }; then
 			echo "✗ DIVERGENCE: seed=$seed dist='$dist'  JIT-on=$on_md5  JIT-off=$off_md5" >&2
+			bad=1
+		fi
+		if [ "$bad" -ne 0 ]; then
 			fails=$((fails + 1))
 		fi
 	done
