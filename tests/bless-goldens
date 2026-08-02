@@ -65,6 +65,13 @@ dist)
 		for seed in 1 42 12345; do
 			emit "normal/$seed"      random -d -n --seed "$seed" -c 12 0 100
 			emit "normalms/$seed"    random -d -n --seed "$seed" -c 12 --mean 75 --stddev 5
+			# Negative range and negative mean: lock the sign-aware rounding
+			# fix (bin/random's round_to_int) at both call sites -- the
+			# positive-only cases above never drove the composed
+			# pre-rounding value negative, so they never exercised the
+			# truncation-direction bug those two functions used to have.
+			emit "normalneg/$seed"   random -d -n --seed "$seed" -c 12 -100 0
+			emit "normalmsneg/$seed" random -d -n --seed "$seed" -c 12 --mean -75 --stddev 5
 			emit "exponential/$seed" random -d --exponential --seed "$seed" -c 12
 			emit "poisson/$seed"     random -d --poisson --mean 5 --seed "$seed" -c 12
 			emit "lognormal/$seed"   random -d --log-normal --seed "$seed" -c 12

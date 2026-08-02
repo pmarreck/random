@@ -906,6 +906,100 @@ verycommon:100"
 		(( fails++ ))
 	fi
 
+	# Test 39b: --mean/--stddev with a NEGATIVE mean -- regression coverage
+	# for the sign-aware rounding fix (bin/random's round_to_int). "Add 1/2,
+	# then truncate toward zero" is round-half-away-from-zero only for a
+	# NON-NEGATIVE composed value; for a negative one it rounds one unit
+	# too HIGH (toward zero) instead, e.g. -2.4 -> -1, not -2. Test 39
+	# above (--mean 75) never exercises this: the composed value there is
+	# essentially never negative (>15 sigma away). --mean -75 puts almost
+	# every draw on the buggy side instead. Same NORMAL_TEST_SEEDS set as
+	# Test 39, same awk mean/stddev computation, same style of bound --
+	# 0.7 was picked from real measurements, not guessed: against the
+	# unfixed code these 5 seeds land 0.81-1.54 away from -75 at both
+	# SAMPLE_SIZE=100 and 1000 (comfortably over 0.7); against the fixed
+	# code they land 0.01-0.54 away (comfortably under it) -- see
+	# final-fix-report.md for the full before/after table.
+	(( tests++ ))
+	echo "Testing --mean and --stddev with a NEGATIVE mean (${#NORMAL_TEST_SEEDS[@]} fixed seeds)..."
+
+	local neg_mean=-75
+	local neg_mean_stddev=5
+	local neg_mean_pass=true
+	for seed in "${NORMAL_TEST_SEEDS[@]}"; do
+		local stats=$(random -n --mean $neg_mean --stddev $neg_mean_stddev --seed "$seed" -c $SAMPLE_SIZE 2>/dev/null | awk '
+		{
+			sum += $1
+			samples[NR] = $1
+		}
+		END {
+			mean = sum / NR
+			for (i = 1; i <= NR; i++) {
+				variance_sum += (samples[i] - mean) * (samples[i] - mean)
+			}
+			stddev = sqrt(variance_sum / (NR - 1))
+			printf "MEAN=%.4f STDDEV=%.4f\n", mean, stddev
+		}')
+
+		eval "$stats"
+		local mean_diff=$(echo "scale=4; if ($MEAN - $neg_mean < 0) $neg_mean - $MEAN else $MEAN - $neg_mean" | bc -l)
+
+		if (( $(echo "$mean_diff < 0.7" | bc -l) )); then
+			echo "  seed=$seed  mean=$MEAN stddev=$STDDEV -> ok"
+		else
+			echo "  ✗ seed=$seed: mean=$MEAN vs $neg_mean (diff=$mean_diff, tolerance 0.7)" >&2
+			neg_mean_pass=false
+		fi
+	done
+
+	if $neg_mean_pass; then
+		echo "✓ negative --mean/--stddev test passed (${#NORMAL_TEST_SEEDS[@]}/${#NORMAL_TEST_SEEDS[@]} seeds within bounds)"
+	else
+		(( fails++ ))
+	fi
+
+	# Test 39c: --normalized over a NEGATIVE range (both bounds < 0) --
+	# regression coverage for the SAME sign-aware rounding fix, but through
+	# normal_random_int (bin/random's range-based path, distinct code from
+	# the --mean/--stddev path above -- both call sites had the bug and
+	# both need their own coverage). Range 0..100 in Test 22 above never
+	# drives the composed pre-rounding value negative (>3 sigma from a
+	# center of 50), so it never touched the buggy branch either. -18..0
+	# (implicit stddev = range/6 = 3, center -9) puts the center squarely
+	# on it while keeping sampling noise low enough for a tight bound at
+	# SAMPLE_SIZE=100. Same 0.7 tolerance as Test 39b, chosen the same
+	# way: measured 0.58-1.55 away from -9 pre-fix, 0.06-0.57 away
+	# post-fix, across both SAMPLE_SIZE=100 and 1000 -- see
+	# final-fix-report.md.
+	(( tests++ ))
+	echo "Testing --normalized over a NEGATIVE range (${#NORMAL_TEST_SEEDS[@]} fixed seeds)..."
+
+	local neg_range_start=-18
+	local neg_range_end=0
+	local neg_range_center=-9
+	local neg_range_pass=true
+	for seed in "${NORMAL_TEST_SEEDS[@]}"; do
+		local stats=$(random -n --seed "$seed" -c $SAMPLE_SIZE $neg_range_start $neg_range_end 2>/dev/null | awk '
+		{ sum += $1; n++ }
+		END { printf "MEAN=%.4f\n", sum / n }')
+
+		eval "$stats"
+		local mean_diff=$(echo "scale=4; if ($MEAN - $neg_range_center < 0) $neg_range_center - $MEAN else $MEAN - $neg_range_center" | bc -l)
+
+		if (( $(echo "$mean_diff < 0.7" | bc -l) )); then
+			echo "  seed=$seed  mean=$MEAN -> ok"
+		else
+			echo "  ✗ seed=$seed: mean=$MEAN vs center $neg_range_center (diff=$mean_diff, tolerance 0.7)" >&2
+			neg_range_pass=false
+		fi
+	done
+
+	if $neg_range_pass; then
+		echo "✓ negative-range --normalized test passed (${#NORMAL_TEST_SEEDS[@]}/${#NORMAL_TEST_SEEDS[@]} seeds within bounds)"
+	else
+		(( fails++ ))
+	fi
+
 	# ===== SECTION 11: Additional distributions =====
 	echo ""
 	echo "--- Section 11: Distribution types (statistical validation) ---"

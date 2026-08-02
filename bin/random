@@ -288,6 +288,28 @@ local NEG2_M, NEG2_E = fx.from_int(-2)
 local SIX_M, SIX_E = fx.from_int(6)
 local HALF_M, HALF_E = fx.div(ONE_M, ONE_E, TWO_M, TWO_E)
 
+-- Round a soft-float to the nearest integer (ties away from zero), then
+-- truncate -- this kernel's ONE rounding rule (truncation toward zero)
+-- composed with a SIGN-AWARE half-unit offset so the composite rounds
+-- correctly in both directions. "Add 1/2, then truncate toward zero" is
+-- round-half-away-from-zero ONLY for a non-negative input; for a negative
+-- one it rounds one unit too HIGH (toward zero) instead, e.g.
+-- -2.4 + 0.5 = -1.9, trunc = -1, not the correct -2 -- and even an exact
+-- negative integer gets bumped: -50 + 0.5 = -49.5, trunc = -49. The old,
+-- pre-kernel code used math.floor(v + 0.5), which is correct in both
+-- directions; this is the truncation-only equivalent. Subtracting 1/2
+-- for negative inputs before truncating fixes it: -2.4 - 0.5 = -2.9,
+-- trunc = -2 (correct); -50 - 0.5 = -50.5, trunc = -50 (correct, exact
+-- integers pass through unchanged either way).
+local function round_to_int(m, e)
+	if m < 0 then
+		m, e = fx.sub(m, e, HALF_M, HALF_E)
+	else
+		m, e = fx.add(m, e, HALF_M, HALF_E)
+	end
+	return fx.to_int_trunc(m, e)
+end
+
 -- Substitute for an exact-zero uniform draw (k=0 out of 2^32), which would
 -- otherwise trip fx.ln's positive-argument assertion. The old math.log-based
 -- code clamped any draw below 1e-6 (a lazy hack to dodge math.log(0)==-inf,
@@ -319,13 +341,13 @@ local function normal_random_int(start_val, end_val, rand_func)
 		local rm, re = fx.sqrt(pm, pe)
 		local cm, ce = fx.cos_turns(u2m, u2e)
 		local zm, ze = fx.mul(rm, re, cm, ce)
-		-- start + z*(range/6) + range/2, rounded to nearest by adding 1/2
-		-- before truncating toward zero (this kernel's one rounding rule).
+		-- start + z*(range/6) + range/2, rounded to nearest via round_to_int
+		-- (sign-aware: see that function's own doc comment for why a plain
+		-- "add 1/2, truncate toward zero" is wrong for negative results).
 		local vm, ve = fx.mul(zm, ze, sixth_m, sixth_e)
 		vm, ve = fx.add(vm, ve, half_range_m, half_range_e)
 		vm, ve = fx.add(vm, ve, start_m, start_e)
-		vm, ve = fx.add(vm, ve, HALF_M, HALF_E)
-		result = fx.to_int_trunc(vm, ve)
+		result = round_to_int(vm, ve)
 	until result >= start_val and result <= end_val
 	return result
 end
@@ -984,13 +1006,13 @@ local function main()
 			value = { beta_random(am, ae, bm, be, uniform_func) }
 		elseif options.normalized then
 			if options.mean and options.stddev then
-				-- Use custom mean/stddev, output as an int rounded to nearest
-				-- (add 1/2, then truncate toward zero -- this kernel's one
-				-- rounding rule).
+				-- Use custom mean/stddev, output as an int rounded to
+				-- nearest via round_to_int (sign-aware -- see its own doc
+				-- comment for why a plain "add 1/2, truncate toward zero"
+				-- is wrong for negative results).
 				local vm, ve = normal_random_float(options.mean[1], options.mean[2],
 					options.stddev[1], options.stddev[2], uniform_func)
-				vm, ve = fx.add(vm, ve, HALF_M, HALF_E)
-				value = fx.to_int_trunc(vm, ve)
+				value = round_to_int(vm, ve)
 			else
 				value = normal_random_int(start_val, end_val, rand_func)
 			end
