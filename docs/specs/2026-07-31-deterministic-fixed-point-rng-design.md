@@ -5,6 +5,21 @@
 **Author:** Claude + Peter Marreck
 **Supersedes:** the float-based numerics in `bin/random`
 
+**AS-BUILT NOTE (2026-08-02):** this document was written BEFORE steps 1-4
+landed, as a forward-looking design proposal, and originally described the
+implementation it was proposing rather than what was actually shipped. A
+hostile audit of the codebase's tests and documentation found this doc had
+drifted materially from the real implementation in multiple places (wrong
+mantissa representation, wrong term counts, wrong `bc` generation scale,
+stale sample counts, and three promised-but-not-implemented features). The
+sections below have been corrected to describe the SHIPPED code
+(`lib/fixed.lua` / `bin/random`) as of this note's date, marked inline
+where they diverge from the original proposal. Where a promised feature was
+never implemented, it is recorded explicitly as DROPPED, with the reason,
+rather than left as a dangling promise. Step 5 (the Zig port) remains
+pending, so §3's architecture diagram and §7's `randomz` differential
+control are still forward-looking, not yet built.
+
 ---
 
 ## 1. Purpose
@@ -16,13 +31,21 @@ for deterministic fuzzing across the fleet.
 Then port it to a Zig 0.16 core + C FFI + `randomz` C CLI, keeping the LuaJIT
 implementation permanently as an independent differential oracle.
 
-## 2. Why the current implementation cannot deliver that
+## 2. Why the (then-)current implementation could not deliver that
 
-`bin/random` computes its distributions with `math.log`, `math.cos`, `math.exp`
-and `math.pow`. LuaJIT forwards these to the platform libm. **libm results are
-not portable**, because IEEE-754 specifies exact results for `+ - * / sqrt` and
-says essentially nothing about transcendental functions. Every libc is free to
-return a different final ulp, and they do.
+**HISTORICAL, describing the PRE-kernel state this spec proposed replacing --
+not the current one.** As of this note (2026-08-02), `bin/random` no longer
+calls `math.log`/`math.cos`/`math.exp`/`math.pow` anywhere; every
+distribution routes through `lib/fixed.lua`'s integer-only kernel (`fx.ln`,
+`fx.cos_turns`, `fx.exp`, `fx.pow`). The measurements below were true of the
+libm-based code that existed BEFORE this spec's work landed, and are exactly
+the numbers that motivated building the kernel in the first place.
+
+`bin/random` used to compute its distributions with `math.log`, `math.cos`,
+`math.exp` and `math.pow`. LuaJIT forwards these to the platform libm. **libm
+results are not portable**, because IEEE-754 specifies exact results for
+`+ - * / sqrt` and says essentially nothing about transcendental functions.
+Every libc is free to return a different final ulp, and they do.
 
 Measured on this machine, glibc vs musl, identical inputs, sweeping
 `u = k / 2^32` (the exact domain `pcg32_uniform()` produces):
@@ -118,8 +141,23 @@ tradeoff rather than relocating it.
 
 ### 4.2 The value type: normalized binary soft-float
 
-`{ m : u64, e : i32, sign }`, value `= sign · (m / 2^63) · 2^e`, with
-`m ∈ [2^63, 2^64)` for every nonzero value. Zero is `m = 0, e = 0`.
+**AS-BUILT (differs from the original proposal below it):** the shipped
+representation is `{ m : i64 (signed), e : i32 }`, value `= m · 2^(e-62)`,
+with `|m| ∈ [2^62, 2^63)` for every nonzero value (`m` itself carries the
+sign via ordinary two's-complement, `M.norm`'s own `assert`s enforce the
+bound). Zero is `m = 0, e = 0`. This is a 63-bit-magnitude signed mantissa,
+not the 64-bit unsigned-magnitude-plus-separate-sign-field the original
+proposal below specifies -- using a plain signed `i64` directly lets every
+arithmetic primitive (`M.mul`, `M.add`/`M.sub`, `M.div`) work with ordinary
+signed integer ops instead of unsigned magnitude plus a carried sign flag.
+The precision and normalization-cost
+arguments in this section apply identically to either convention (one
+mantissa bit of headroom does not change the analysis); only the concrete
+type and bit width differ from what was originally proposed.
+
+ORIGINAL PROPOSAL (2026-07-31, not what shipped): `{ m : u64, e : i32,
+sign }`, value `= sign · (m / 2^63) · 2^e`, with `m ∈ [2^63, 2^64)` for
+every nonzero value.
 
 Normalized mantissa means **62-63 bits of relative precision at every
 magnitude**, better than a double, with no wasted bits at any scale.
@@ -139,22 +177,35 @@ has no tie-breaking rule to get subtly wrong in one implementation.
 
 ### 4.3 Primitive operations
 
-- **`mul128(a,b)`** — full 64×64→128 product from four 32-bit partials.
+**AS-BUILT function names** (the original proposal below used placeholder
+names `sfmul`/`sfadd`/`normalize` that do not exist in the shipped code;
+the actual public functions are `M.mul`, `M.add`/`M.sub`, and `M.norm`).
+Bit ranges below are also updated for the AS-BUILT §4.2 representation
+(`|m| ∈ [2^62, 2^63)`, not `[2^63, 2^64)`), which shifts every product
+range down by one bit from the original proposal's figures.
+
+- **`M.mul128(a,b)`** — full 64×64→128 product from four 32-bit partials.
   Required because **LuaJIT cannot do `__int128` arithmetic**: `ffi.cdef` accepts
   the typedef, but construction fails with `cannot convert 'number' to
   'int128_t'`. Mike Pall's "box it in the FFI" guidance covers storage; LuaJIT
   implements arithmetic only to 64 bits. Zig uses native `u128` and must produce
   identical results.
-- **`sfmul`** — mantissa product lands in `[2^126, 2^128)`. If the high word has
-  its top bit set the product is `≥ 2^127`, so take `hi` and `e₁+e₂+1`;
-  otherwise take `(hi<<1)|(lo>>63)` and `e₁+e₂`. **Verified against `bc` at
-  scale=40 over 64 mantissa pairs spanning both branches: worst relative error
-  6.2×10⁻²⁰, below the 2⁻⁶³ = 1.08×10⁻¹⁹ representation floor.**
-- **`sfadd`** — align the smaller exponent by right-shifting its mantissa, add
-  or subtract by sign, renormalize.
-- **`normalize`** — leading-zero count and shift. LuaJIT lacks a CLZ primitive,
-  so a de Bruijn table or a 6-step binary search is used; Zig uses `@clz`. Both
-  must agree, which they do since the result is exact.
+- **`M.mul`** — mantissa product lands in `[2^124, 2^126)`. If the high word is
+  `>= 2^61` the product is `>= 2^125`, so take `hi` (shifted) and `e₁+e₂+1`;
+  otherwise take the `[2^124, 2^125)` branch and `e₁+e₂`. Both branches also
+  assert the COMBINED `e₁+e₂[+1]` against the i32 exponent contract, and (as
+  of the 2026-08-02 audit fix) `e₁` and `e₂` individually on entry too -- see
+  `M.mul`'s own doc comment for a case where each operand is individually
+  in-contract but their sum was not.
+- **`M.add`/`M.sub`** — align the smaller exponent by right-shifting its
+  mantissa, add or subtract by sign, renormalize via `M.norm`.
+- **`M.norm`** — leading-zero-style shift loop (a `while` loop over the
+  mantissa, not a closed-form CLZ) that renormalizes an arbitrary-magnitude
+  mantissa back into `[2^62, 2^63)`, adjusting the exponent by the shift
+  count; Zig's port is expected to use `@clz` for the same result. Also
+  validates both its input AND output exponent against the i32 contract
+  (input check added 2026-08-02; see its own doc comment for why an
+  out-of-contract input could otherwise walk back into range undetected).
 
 ### 4.4 Transcendental algorithms
 
@@ -167,7 +218,14 @@ optimization. Soft-float is the interface type at every function boundary.
 **`ln(x)`, `x > 0`** — the soft-float form already *is* the decomposition:
 `x = m·2^e` gives `ln x = e·ln2 + ln(m)` directly, with no work. Then
 `ln(m) = 2·atanh(t)`, `t = (m−1)/(m+1) ∈ [0, 1/3)`, summed as
-`2·(t + t³/3 + t⁵/5 + …)` to 12 terms. Converges quickly because `t < 1/3`.
+`2·(t + t³/3 + t⁵/5 + …)`. **AS-BUILT: 20 terms, not the 12 originally
+proposed here** -- 12 terms converges the IDEALIZED (arithmetic-noise-free)
+series to only ~1.56×10⁻¹⁴ at the domain's own worst case (`t` approaching
+1/3), nowhere near this kernel's ~2⁻⁶² precision floor; `ATANH_TERMS = 20`
+in `lib/fixed.lua` is where the real kernel's error stops improving at all
+(dominated by ~62-bit mul/add truncation compounding across ~40
+operations, not further series truncation) -- see that constant's own doc
+comment for the full measurement.
 
 **`exp(x)`** — reduce `x = k·ln2 + r`, `|r| ≤ ln2/2 ≈ 0.3466`, evaluate `exp(r)`
 by Taylor to 16 terms. The result `(exp(r), k)` **is already a soft-float**;
@@ -195,17 +253,31 @@ class of overflow hazard (see §7 for the one that was actually caught).
 ### 4.5 Constants
 
 `ln2`, `π/2`, and the reciprocal tables are stored as normalized
-mantissa/exponent pairs, **generated by `bc` at scale=40 and rounded to
-nearest**. The generating `bc` expression is committed alongside each constant so
+mantissa/exponent pairs, **generated by `bc` at scale=60 and FLOORED (truncated
+toward zero), not rounded to nearest** -- e.g. `LN2_M` is generated by `echo
+'scale=60; l(2)' | bc -l`, and `PI_2_M` by `echo 'scale=60; (4*a(1)/2)*
+4611686018427387904' | bc -l` with the fractional part of that product
+dropped (floor), matching this kernel's own global "truncation toward
+zero, everywhere" rounding rule from §4.2 -- a "round to nearest" constant
+generator would have been inconsistent with that rule at the ULP level.
+(AS-BUILT: the original proposal said scale=40, rounded to nearest;
+neither matches what the constants were actually generated with.) The
+generating `bc` expression is committed alongside each constant so
 they are auditable and regenerable rather than magic numbers.
 
 ### 4.6 Measured accuracy
 
 Measured by `tests/kernel_bc_sweep` against `bc -l` at `scale=90` (~90
-decimal digits): GNU bc 1.08.2 links only libc and carries its own
-arbitrary-precision decimal arithmetic, sharing no lineage with
-`lib/fixed.lua`, making it an independent oracle rather than a
-self-referential check. The sweep strides deterministically over the real
+decimal digits): GNU bc 1.08.2 carries its own arbitrary-precision decimal
+arithmetic in `number.c`, sharing no lineage with `lib/fixed.lua`, making
+it an independent oracle rather than a self-referential check. (Its
+INDEPENDENCE rests on that arithmetic being self-contained -- NOT on it
+"linking only libc": `ldd $(command -v bc)` also shows `libreadline` and
+`libncursesw`, pulled in for its interactive REPL front-end, which has
+nothing to do with the arbitrary-precision arithmetic this oracle
+actually exercises. An earlier version of this doc claimed libc-only
+linkage; corrected here since the independence argument itself does not
+depend on that claim.) The sweep strides deterministically over the real
 `k/2^32` uniform-draw domain (for `cos`) plus an LCG-seeded mantissa/exponent
 spread covering the full normalized range (for `ln`/`exp`/`sqrt`/`pow`/
 `tostring`). Figures below are from the full (non-`FAST`) run; `./test`'s
@@ -219,7 +291,7 @@ speed, not a different domain.
 | `cos`      | 1.08×10⁻¹⁸ absolute, all cases; 1.54×10⁻¹⁰ relative, near-zero cancellation probes only (see note) | 236 cases |
 | `sqrt`     | 2.26×10⁻¹⁹ relative | 1995 cases |
 | `pow`      | 5.25×10⁻¹⁷ relative | 241 cases |
-| `tostring` | exact string match against bc's own truncated decimal, 0 mismatches | 650 cases |
+| `tostring` | exact string match against bc's own truncated decimal, 0 mismatches | 800 cases (AS-BUILT; was 650 in the original proposal) |
 
 **Why `ln` and `cos` are reported as absolute error, not relative:** both
 compute a difference of two close values for some inputs — `ln` via
@@ -245,12 +317,27 @@ A deterministic core fed by `strtod` is not deterministic. Both boundaries are
 closed as part of this work:
 
 - **Input** — `--mean`, `--stddev`, `--alpha` and `--beta-param` parse from
-  decimal strings directly to soft-float by integer accumulation. Positional
-  range bounds parse to plain `i64`; a fractional positional bound is rejected
+  decimal strings directly to soft-float by integer accumulation (`fx.parse`).
+  Positional range bounds and `--weighted` weights parse via `fx.parse_int_safe`
+  (**AS-BUILT: capped at magnitude 2^53, not "plain i64" as originally
+  proposed** -- added after this spec was written, once a downstream
+  double-precision conversion path was found to silently corrupt integers
+  between 2^53 and i64's own ~9.2×10^18 ceiling; `fx.parse_int` still parses
+  the full i64 range for callers that need it and can tolerate that
+  contract, e.g. `--count`). A fractional positional bound is rejected
   with an error rather than silently floored. No `tonumber`, no `strtod`.
-- **Output** — values format to decimal by integer division. No `%f`. Values
-  whose magnitude exceeds the plain-decimal window format in scientific notation
-  via an integer decimal-exponent computation.
+- **Output** — values format to decimal by integer division. No `%f`.
+  **AS-BUILT / DROPPED: scientific notation for large-magnitude values was
+  never implemented.** `M.tostring` emits fixed decimal digits
+  unconditionally (verified: `fx.tostring` of a value at exponent 700
+  prints out to hundreds of literal digits, not `1.234e+210`-style
+  notation), erroring above a fixed digit-count ceiling
+  (`MAX_INT_PART_DIGITS = 2000`) rather than switching representations.
+  DROPPED, not merely deferred: fixed-decimal output with a hard,
+  clearly-erroring ceiling already fully serves this CLI's real inputs
+  (RNG draws over ranges a user actually asks for), and a second output
+  representation would need its own determinism/round-trip guarantees for
+  no exercised use case. Reconsider only if a real caller needs it.
 
 ## 6. Distribution algorithms
 
@@ -295,8 +382,12 @@ statistical bounds.
 | **`randomz` vs `bin/random` differential** | differential | Zig/LuaJIT divergence across a seed × flag matrix |
 
 `bc` is a stronger oracle than assumed at the outset. **GNU bc 1.08.2 does not
-use GMP**; it links only libc and carries its own arbitrary-precision decimal
-arithmetic in `number.c`. It therefore shares no lineage with GMP, with
+use GMP**; its arbitrary-precision decimal arithmetic in `number.c` is
+entirely self-contained. (It links `libreadline`/`libncursesw` in addition
+to libc, for its interactive REPL -- an earlier version of this doc
+claimed libc-only linkage, which `ldd` does not bear out; the independence
+argument rests on the ARITHMETIC being self-contained, not on the binary's
+total link set.) It therefore shares no lineage with GMP, with
 `blip_mp`, or with anything written here.
 
 The `bc` control has already earned its place twice during design: it caught a
@@ -344,14 +435,26 @@ into a correct one, and no previously-produced output changes.
 **Changed once, deliberately and permanently:** seeded values from
 `--normalized`, `--exponential`, `--poisson`, `--log-normal`, `--beta`. Anyone
 depending on a specific seeded float stream from a prior version must re-bless.
-Documented in README and CHANGELOG.
+Documented in README. **AS-BUILT / DROPPED: a CHANGELOG.md was proposed but
+never created.** DROPPED, not merely deferred: this project is not part of
+the fleet's mandatory-conventions list that requires one, and PLAN.md (work
+items, checked off with dates) plus git history already serve as the
+change record in practice. Reconsider if this project ever ships to
+end users who need a user-facing change log independent of git log.
 
 **Tightened:** a fractional positional bound (`random 1.5 6.5`) is now an error.
 It previously "worked" by accident through double arithmetic, was never
 documented, and has no sensible meaning for an integer range.
 
 **`--about`** adopts the fleet one-line format (name, version, platform, arch),
-replacing the current prose sentence. Approved 2026-07-31.
+replacing the prose-only sentence that originally shipped. **AS-BUILT
+(2026-08-02):** implemented as part of the same audit round that found this
+promise unfulfilled -- `bin/random --about` now prints e.g. `random v0.1.0
+(Linux/x64): Unified random number generator: ...` (`jit.os`/`jit.arch`
+standing in for "platform and chip architecture it was compiled for", the
+closest equivalent available to a non-compiled LuaJIT script). `VERSION` is
+a manually-maintained constant in `bin/random`, kept in sync with
+`flake.nix`'s package version by convention, not by a shared build step.
 
 ## 10. Non-goals
 
@@ -360,7 +463,11 @@ replacing the current prose sentence. Approved 2026-07-31.
 - Matching any particular libm. We are not glibc-compatible or musl-compatible.
   We are **self-compatible**, which is the property actually wanted.
 - Correctly-rounded transcendentals. Accuracy need only suffice for valid
-  distributions, and §4.6 shows roughly eight orders of margin.
+  distributions, and §4.6/§2 show roughly fourteen orders of margin (worst
+  measured `exp` full-pipeline relative error 1.51×10⁻¹⁵ against the
+  ±0.5-scale statistical tolerances `tests/random_test` actually checks;
+  an earlier version of this line said "eight orders", measured before
+  the more precise figure above was current).
 - Arbitrary precision (`lua-bint`, `blip_mp`, GMP). We need bounded reproducible
   precision, not unbounded accuracy. A 64-bit normalized mantissa already
   delivers ~1e-9 against tolerances of 0.5. Exact rationals were measured at
