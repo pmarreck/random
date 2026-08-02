@@ -1401,6 +1401,88 @@ verycommon:100"
 		(( fails++ ))
 	fi
 
+	echo ""
+	echo "--- Section 14: seed grammar validation ---"
+
+	# Test 55: malformed --seed values are rejected with a clear error,
+	# not silently treated as seed 0. Tested as a classifier over the
+	# WHOLE set the finding specified: parse_seed() already correctly
+	# returned nil for most of these (the seed GRAMMAR was mostly not
+	# the bug) but NEITHER call site (the --seed flag here, and
+	# DRANDOM_SEED in main()) ever checked for that nil -- both did
+	# `pcg32_seed(options.seed or ffi.new(u64, 0))`, silently defaulting
+	# to seed 0 on any parse failure. Confirmed directly before this fix:
+	# `random --seed -1 -c 1 0 0` and `random --seed --count 3` both
+	# exited 0 with seed 0, no error at all. Also closes two real
+	# GRAMMAR gaps found while verifying this: parse_uint64_dec/hex had
+	# NO overflow check at all, so values >= 2^64 silently wrapped
+	# modulo 2^64 rather than being rejected.
+	(( tests++ ))
+	echo "Testing malformed --seed values are rejected cleanly..."
+
+	local seed_grammar_fail=0
+	seed_reject_check() {
+		local label="$1"; shift
+		local out status
+		out=$("$@" 2>&1)
+		status=$?
+		if [ "$status" -eq 0 ] || ! echo "$out" | grep -qi "^Error:" || echo "$out" | grep -qi "stack traceback"; then
+			echo "  ✗ $label not rejected cleanly (status=$status): $out" >&2
+			seed_grammar_fail=$((seed_grammar_fail + 1))
+		fi
+	}
+
+	seed_reject_check "seed '-1'"          random --seed "-1" -c 1 0 0
+	seed_reject_check "seed '+1'"          random --seed "+1" -c 1 0 0
+	seed_reject_check "seed '' (empty)"    random --seed "" -c 1 0 0
+	seed_reject_check "seed '   ' (ws)"    random --seed "   " -c 1 0 0
+	seed_reject_check "seed '42x'"         random --seed "42x" -c 1 0 0
+	seed_reject_check "seed '0x'"          random --seed "0x" -c 1 0 0
+	seed_reject_check "seed 'nan'"         random --seed "nan" -c 1 0 0
+	seed_reject_check "seed 'inf'"         random --seed "inf" -c 1 0 0
+	seed_reject_check "seed 2^64 (dec)"    random --seed "18446744073709551616" -c 1 0 0
+	seed_reject_check "seed 2^64 (hex)"    random --seed "0x10000000000000000" -c 1 0 0
+	seed_reject_check "'--seed --count 3'" random --seed --count 3
+	seed_reject_check "DRANDOM_SEED=-1"    env DRANDOM_SEED=-1 random -c 1 0 0
+	seed_reject_check "DRANDOM_SEED=nan"   env DRANDOM_SEED=nan random -c 1 0 0
+
+	if [ "$seed_grammar_fail" -eq 0 ]; then
+		echo "✓ Malformed seed classifier passed (13 cases)"
+	else
+		echo "✗ Malformed seed classifier: $seed_grammar_fail case(s) not rejected" >&2
+		(( fails++ ))
+	fi
+
+	# Test 56: valid seeds still work -- a specificity check, so Test
+	# 55's classifier cannot be trivially satisfied by a "reject
+	# everything" checker. Covers decimal, 0x-prefixed hex, the
+	# documented bare-hex-with-warning form, and the exact u64-max
+	# boundary the new overflow guard must still accept exactly (not
+	# reject past it).
+	(( tests++ ))
+	echo "Testing valid --seed values are still accepted..."
+
+	local seed_accept_fail=0
+	seed_accept_check() {
+		local label="$1" value="$2"
+		if ! random --seed "$value" -c 1 0 0 >/dev/null 2>&1; then
+			echo "  ✗ valid seed '$label' was wrongly rejected" >&2
+			seed_accept_fail=$((seed_accept_fail + 1))
+		fi
+	}
+	seed_accept_check "42" "42"
+	seed_accept_check "0xDEADBEEF" "0xDEADBEEF"
+	seed_accept_check "DEADBEEF (bare hex, warns)" "DEADBEEF"
+	seed_accept_check "u64 max" "18446744073709551615"
+	seed_accept_check "0" "0"
+
+	if [ "$seed_accept_fail" -eq 0 ]; then
+		echo "✓ Valid-seed specificity check passed (5 cases)"
+	else
+		echo "✗ Valid-seed specificity check: $seed_accept_fail case(s) wrongly rejected" >&2
+		(( fails++ ))
+	fi
+
 	# ===== Final results =====
 	echo ""
 	echo "============================================"
