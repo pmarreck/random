@@ -80,6 +80,38 @@ M.POW2 = POW2
 
 M.ZERO_M, M.ZERO_E = 0LL, 0
 
+-- i32 EXPONENT CONTRACT (see M.norm's own doc comment below for the full
+-- rationale): design.md:121 fixes `e` as a real i32 in the eventual Zig
+-- port, so every soft-float exponent this kernel produces must fit in
+-- [I32_MIN, I32_MAX] -- and, just as importantly, every exponent it
+-- ACCEPTS as an argument must too, since Zig's i32 makes an out-of-range
+-- value unrepresentable at the call site, not merely undesirable.
+--
+-- Named once here and reused by both the input AND output checks at
+-- every i32 choke point below (M.norm, M.mul, M.div) rather than
+-- separate inline literal pairs, so the contract has exactly one place
+-- to change. Before this helper existed, ONLY results were ever
+-- checked: `fx.norm(1LL, 2147483648)` (an input exponent one past
+-- I32_MAX, paired with an unnormalized mantissa needing 62 left-shifts)
+-- was silently ACCEPTED, because the shift loop's own decrements walked
+-- the exponent back into range before the sole (output-side) assert
+-- ever inspected it -- confirmed directly: it returned
+-- (4611686018427387904LL, 2147483586) with no error. `fx.mul` and
+-- `fx.div` had the identical gap on e1/e2 individually: `fx.mul(m1,
+-- 3000000000, m2, -3000000000)` and `fx.div(m1, 3000000000, m2,
+-- 2999999900)` (each e1 individually well past I32_MAX) both returned
+-- successfully, because only the COMBINED e1+e2 or e1-e2 was ever
+-- checked, never the raw operands themselves. A caller passing such an
+-- out-of-contract exponent has already violated the contract at the
+-- call site regardless of whether the arithmetic happens to land back
+-- in range -- and the Zig port's real i32 parameter type cannot even
+-- receive such a value in the first place, so a Lua reference that
+-- accepts it is more permissive than the port it exists to validate.
+local I32_MIN, I32_MAX = -2147483648, 2147483647
+local function assert_i32(e, label)
+	assert(e >= I32_MIN and e <= I32_MAX and e % 1 == 0, label)
+end
+
 -- LuaJIT/LuaJIT#1499 ("Don't fold -a / -b for unsigned operands", fixed
 -- upstream in commit 5ed524c, first released as 2.1.1785606157 -- see the
 -- LUAJIT_1499_FIXED_IN comment below for why this exact number matters and
@@ -270,11 +302,17 @@ end
 -- kernel is strictly worse than a slower right one.
 function M.norm(m, e)
 	if m == 0 then return 0LL, 0 end
+	-- INPUT check, not just output: without this, an out-of-contract
+	-- input e (e.g. 2147483648, one past I32_MAX) paired with an
+	-- unnormalized m can walk back into range via the shift loops below
+	-- before the output check ever sees it -- see assert_i32's own doc
+	-- comment for the confirmed repro.
+	assert_i32(e, "fixed.norm: exponent outside i32")
 	local neg = m < 0
 	local u = ffi.cast(u64, neg and -m or m)
 	while u < TWO62 do u = u * 2ULL; e = e - 1 end
 	while u >= 0x8000000000000000ULL do u = u / 2ULL; e = e + 1 end
-	assert(e >= -2147483648 and e <= 2147483647 and e % 1 == 0, "fixed.norm: exponent outside i32")
+	assert_i32(e, "fixed.norm: exponent outside i32")
 	local r = ffi.cast(i64, u)
 	if neg then r = -r end
 	return r, e
@@ -317,6 +355,18 @@ if NEEDS_1499_MITIGATION then jit.off(M.norm) end
 --- Checked directly, not assumed a priori.
 function M.mul(m1, e1, m2, e2)
 	if m1 == 0 or m2 == 0 then return 0LL, 0 end
+	-- INPUT check on e1/e2 INDIVIDUALLY, not just their sum: the sum-only
+	-- output check below cannot see e.g. e1=3000000000, e2=-3000000000
+	-- (each individually well past the i32 bound, summing back to an
+	-- in-contract 0) -- see assert_i32's own doc comment for the
+	-- confirmed repro.
+	-- Same message text as the output check below ("fixed.mul: exponent
+	-- outside i32"), not "input exponent N": pre-existing tests already
+	-- pin that exact message for a fractional/out-of-range e1 (see
+	-- fixed_test.lua's mul_r3), and the contract violated is identical
+	-- either way -- only WHICH check fires first changes.
+	assert_i32(e1, "fixed.mul: exponent outside i32")
+	assert_i32(e2, "fixed.mul: exponent outside i32")
 	-- Magnitudes are taken by UNSIGNED negation, never `-a`. Negating INT64_MIN
 	-- in signed arithmetic is a wraparound coincidence in LuaJIT and a panic in
 	-- Zig's safe build modes; `0 - x` in u64 is well-defined in both, so the
@@ -337,7 +387,7 @@ function M.mul(m1, e1, m2, e2)
 		m = hi * 4ULL + lo / TWO62
 		e = e1 + e2
 	end
-	assert(e >= -2147483648 and e <= 2147483647 and e % 1 == 0, "fixed.mul: exponent outside i32")
+	assert_i32(e, "fixed.mul: exponent outside i32")
 	local r = ffi.cast(i64, m)
 	if neg then r = -r end
 	return r, e
@@ -621,6 +671,20 @@ function M.div(m1, e1, m2, e2)
 	-- divisor by construction.
 	assert(m2 ~= 0, "fixed.div: division by zero")
 	if m1 == 0 then return 0LL, 0 end
+	-- INPUT check on e1/e2 INDIVIDUALLY, not just the combined e1-e2
+	-- M.norm eventually sees: the fast path below hands M.norm exactly
+	-- e1-e2, so an out-of-contract e1 (or e2) that happens to cancel out
+	-- (e.g. e1=3000000000, e2=2999999900, both individually well past
+	-- I32_MAX) would sail through with M.norm only ever validating the
+	-- already-combined value -- see assert_i32's own doc comment for the
+	-- confirmed repro. Checked before the fast/slow dispatch below, not
+	-- inside either branch, so both paths (and div_signed) are covered
+	-- by one check without touching the dispatch structure itself.
+	-- "fixed.div: exponent outside i32", matching M.norm's and M.mul's own
+	-- message convention (functionname: exponent outside i32) rather than
+	-- inventing a distinct "input"/operand-numbered variant.
+	assert_i32(e1, "fixed.div: exponent outside i32")
+	assert_i32(e2, "fixed.div: exponent outside i32")
 	if m1 > 0 and m2 > 0 then
 		-- Fast path: both operands already known positive, so the
 		-- magnitude is a direct cast -- no conditional negation, no

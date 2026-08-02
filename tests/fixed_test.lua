@@ -118,6 +118,37 @@ ok((not ln_propagation_ok) and tostring(ln_propagation_err):find("fixed.norm: ex
    "norm+ln: a fractional exponent is rejected before it can reach ln and silently return 0",
    tostring(ln_propagation_err))
 
+-- HOSTILE-AUDIT FINDING B1: everything above only ever exercises norm_r1/
+-- norm_r2 with an ALREADY-NORMALIZED mantissa (0x4000000000000000LL ==
+-- 2^62 exactly), so the shift loops inside M.norm never run and the
+-- output-side assert is the ONLY check that could possibly have fired --
+-- indistinguishable from a genuine input check by exact-message pcall
+-- alone. The actual gap: an out-of-contract INPUT e paired with an
+-- UNNORMALIZED mantissa can walk back into i32 range via those shift
+-- loops before any check ever inspects it. Confirmed directly before
+-- this fix existed: fx.norm(1LL, 2147483648) (e is one past I32_MAX,
+-- m=1 needs 62 left-shifts to normalize) returned successfully --
+-- (4611686018427387904LL, 2147483586), no error -- because the loop's
+-- 62 decrements walked e from 2147483648 down to 2147483586, comfortably
+-- back in range, before the sole (output-only) assert saw it. Same class
+-- of gap in M.mul and M.div: each validated only the COMBINED e1+e2 (mul)
+-- or e1-e2 (div, via M.norm), never e1/e2 INDIVIDUALLY, so
+-- fx.mul(m, 3000000000, m, -3000000000) and fx.div(m, 3000000000, m,
+-- 2999999900) (e1 alone well past I32_MAX in both) also returned
+-- successfully before this fix, the sum/difference canceling back into
+-- range. A caller has already violated the contract at the call site the
+-- moment it hands in such an e -- the eventual Zig port's real i32
+-- parameter type cannot even receive it -- regardless of what the
+-- arithmetic does afterward.
+local unnorm_r1, unnorm_why1 = rejects_norm(1LL, 2147483648, "fixed.norm: exponent outside i32")
+ok(unnorm_r1, "norm: out-of-contract INPUT exponent on an UNNORMALIZED mantissa is rejected, " ..
+   "not walked back into range by the shift loop [B1]", unnorm_why1)
+local unnorm_r2, unnorm_why2 = rejects_norm(1LL, -2147483649, "fixed.norm: exponent outside i32")
+ok(unnorm_r2, "norm: same gap, negative side (input one past I32_MIN, needs right-shifts) [B1]", unnorm_why2)
+-- mul's and div's identical gap (e1/e2 individually out of contract,
+-- cancelling back in-range once combined) is pinned further down, right
+-- after each function's own rejects_mul/rejects_div helper is defined.
+
 -- zero is canonical
 local zm, ze = fx.from_int(0)
 ok(zm == 0LL and ze == 0, "zero is canonical (m=0, e=0)")
@@ -171,6 +202,20 @@ ok(mul_r2, "mul: two in-contract exponents (-2000000000 each) whose sum underflo
 local mul_r3, mul_why3 = rejects_mul(0x4000000000000000LL, 0.5, 0x4000000000000000LL, 0,
    "fixed.mul: exponent outside i32")
 ok(mul_r3, "mul: fractional input exponent (0.5) asserts, not silently propagated", mul_why3)
+
+-- HOSTILE-AUDIT FINDING B1 (see the matching norm test above for the full
+-- rationale): the sum-only check above cannot see e1/e2 individually.
+-- e1=3000000000, e2=-3000000000 -- each alone well past I32_MAX/I32_MIN
+-- respectively -- sum back to an in-contract e=0. Confirmed directly
+-- before this fix existed: fx.mul(m, 3000000000, m, -3000000000)
+-- returned successfully (no error) despite e1 alone violating the
+-- contract at the call site.
+local mul_indiv_r, mul_indiv_why = rejects_mul(
+	0x4000000000000000LL, 3000000000, 0x4000000000000000LL, -3000000000,
+	"fixed.mul: exponent outside i32")
+ok(mul_indiv_r, "mul: e1 individually past I32_MAX is rejected even though e1+e2 " ..
+   "cancels back in-contract [B1]", mul_indiv_why)
+
 -- sign handling across all four quadrants
 local cases = {{2,3,6},{-2,3,-6},{2,-3,-6},{-2,-3,6}}
 local sign_ok = true
@@ -411,24 +456,33 @@ ok(dr2, "div rejects an unnormalized operand 1", dwhy2)
 local dr3, dwhy3 = rejects_div(ONEm, ONEe, 1LL, 0, "operand 2 not normalized")
 ok(dr3, "div rejects an unnormalized operand 2", dwhy3)
 
--- div's i32 exponent contract: CHECKED rather than assumed to need a new
--- assert, per instruction ("check rather than assume, and say what you
--- found either way"). Unlike M.mul, BOTH of div's dispatch paths (the
--- fast positive-only path and div_signed) already call
--- `M.norm(result, e1 - e2)` directly -- confirmed by reading, then
--- confirmed by execution below -- so M.norm's own i32 assert already
--- covers div's exponent difference on both paths; no new code was
--- needed here, and none was added (this pins that finding as a
--- regression test, not a change in behavior). Exercises BOTH dispatch
--- paths with two in-contract exponents (M.norm accepts each alone)
--- whose DIFFERENCE underflows past i32's min.
+-- div's i32 exponent contract on the COMBINED e1-e2: BOTH of div's
+-- dispatch paths (the fast positive-only path and div_signed) call
+-- `M.norm(result, e1 - e2)` directly, so M.norm's own i32 assert catches
+-- an out-of-range DIFFERENCE on both paths -- exercised here with two
+-- individually in-contract exponents (M.norm would accept each alone)
+-- whose difference underflows past i32's min.
 local dr4, dwhy4 = rejects_div(ONEm, -2000000000, ONEm, 2000000000, "fixed.norm: exponent outside i32")
 ok(dr4, "div (fast positive path): e1-e2 underflowing past i32 min asserts " ..
-   "(already covered by M.norm, not new code)", dwhy4)
+   "(via M.norm's own check)", dwhy4)
 local negONEm = fx.neg(ONEm, ONEe)
 local dr5, dwhy5 = rejects_div(negONEm, -2000000000, ONEm, 2000000000, "fixed.norm: exponent outside i32")
 ok(dr5, "div (div_signed path, negative operand): same e1-e2 underflow asserts " ..
-   "(already covered by M.norm, not new code)", dwhy5)
+   "(via M.norm's own check)", dwhy5)
+
+-- HOSTILE-AUDIT FINDING B1: the checks above (and M.norm's own combined-
+-- difference check) still cannot see e1/e2 INDIVIDUALLY -- e1=3000000000,
+-- e2=2999999900 (e1 alone well past I32_MAX) differ by only 100, sailing
+-- through M.norm's combined check with no error. Confirmed directly
+-- before this fix existed: fx.div(m, 3000000000, m, 2999999900) returned
+-- successfully despite e1 alone violating the contract at the call site.
+-- M.div now validates e1 and e2 individually before EITHER dispatch
+-- path runs -- this is new code, unlike dr4/dr5 above.
+local div_indiv_r, div_indiv_why = rejects_div(
+	0x4000000000000000LL, 3000000000, 0x4000000000000000LL, 2999999900,
+	"fixed.div: exponent outside i32")
+ok(div_indiv_r, "div: e1 individually past I32_MAX is rejected even though e1-e2 " ..
+   "cancels back in-contract [B1]", div_indiv_why)
 
 -- 0 / x == canonical zero
 local zd1, zd2 = fx.div(0LL, 0, ONEm, ONEe)
