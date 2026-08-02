@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# CLI-level JIT-vs-interpreter differential control, over bin/random
+# ITSELF rather than a standalone repro script -- see lib/fixed.lua's
+# jit.off(M.norm) doc comment for why that distinction matters: a
+# hand-extracted standalone script with the SAME PCG32 + exponential_random
+# logic did NOT reproduce the LuaJIT/LuaJIT#1499 miscompilation Task 12
+# found through bin/random's own call site, because trace formation is
+# sensitive to the exact warm-up/bytecode context only a real caller
+# creates. This control exercises the real binary, not a proxy for it.
+#
+# Complementary to tests/kernel_jit_diff (deep-mode-only, ~31s, over
+# lib/fixed.lua's own internal digest -- see that file's own comment for
+# the cost/benefit call behind gating it out of FAST mode). THIS control
+# is intentionally cheap (CLI startup x a few hundred draws x 30
+# distribution/seed combinations, a few seconds total end to end) and
+# therefore runs unconditionally, in FAST mode and therefore in CI --
+# closing the gap the final whole-branch review found: neither the
+# default run nor CI exercised bin/random's own call sites into
+# M.mul/M.add/M.ln/cos_rad/sin_rad/sqrt/exp/pow under a live JIT at all.
+#
+# Verified directly, not assumed: temporarily removing lib/fixed.lua's
+# jit.off(M.norm) on this project's pinned pre-#1499-fix toolchain
+# (2.1.1774638290) makes this control fail on 10/10 consecutive runs;
+# restoring it passes 10/10 -- see final-fix-report.md.
+# NOTE: no `set -e` -- see ./test.
+set -u
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+random_bin="$here/../bin/random"
+
+if ! command -v luajit >/dev/null 2>&1; then
+	echo "random_jit_diff: SKIPPED (luajit not found on PATH)" >&2
+	exit 0
+fi
+
+# Only distributions that actually call into lib/fixed.lua's soft-float
+# kernel -- plain uniform mode never enters that file at all (confirmed
+# in lib/fixed.lua's own cost-measurement comment: "pcg32_range ... makes
+# zero calls into lib/fixed.lua at all"), so differential-testing it here
+# would exercise nothing this control exists to catch.
+DISTS=(
+	"--normalized --mean 50 --stddev 15"
+	"--exponential"
+	"--poisson --mean 5"
+	"--log-normal"
+	"--beta --alpha 2 --beta-param 5"
+)
+SEEDS=(1 42 12345 11111 22222 33333)
+COUNT=300
+
+echo "Diffing JIT-on vs JIT-off CLI output across $((${#DISTS[@]} * ${#SEEDS[@]})) distribution/seed combinations..."
+echo "============================================"
+
+fails=0
+combos=0
+for dist in "${DISTS[@]}"; do
+	for seed in "${SEEDS[@]}"; do
+		combos=$((combos + 1))
+		# Intentional word-splitting: $dist is a fixed, quote-free flag
+		# string from the DISTS array above, never external input.
+		# shellcheck disable=SC2086
+		on_md5=$(luajit "$random_bin" -d --seed "$seed" -c "$COUNT" $dist 2>/dev/null | md5sum | awk '{print $1}')
+		# shellcheck disable=SC2086
+		off_md5=$(luajit -joff "$random_bin" -d --seed "$seed" -c "$COUNT" $dist 2>/dev/null | md5sum | awk '{print $1}')
+		if [ "$on_md5" != "$off_md5" ] || [ -z "$on_md5" ]; then
+			echo "✗ DIVERGENCE: seed=$seed dist='$dist'  JIT-on=$on_md5  JIT-off=$off_md5" >&2
+			fails=$((fails + 1))
+		fi
+	done
+done
+
+echo "============================================"
+if [ "$fails" -gt 0 ]; then
+	echo "random_jit_diff FAILED: $fails of $combos combination(s) diverged between JIT-on and JIT-off" >&2
+	echo "  (a JIT miscompilation has crept into a real bin/random call site --" >&2
+	echo "  see lib/fixed.lua's jit.off(div_signed)/jit.off(M.norm) notes)" >&2
+	exit "$fails"
+fi
+echo "random_jit_diff PASSED: $combos combinations agree (JIT-on == JIT-off)"
+exit 0
