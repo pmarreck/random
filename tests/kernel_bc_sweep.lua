@@ -13,8 +13,7 @@
 -- check: it reports a flat 0.000e+00 worst-case error because
 -- math_abs_rel's double-precision scoring cannot resolve the ~1e-18-scale
 -- error that is actually there -- see this file's exp sweep below for the
--- real number, and task-7-report.md for the mantissa-level proof it is
--- not bit-exact.)
+-- real number; it is not bit-exact.)
 --
 -- No `math.*`, no float literals, never `^` -- except here, deliberately:
 -- this file is test-only infrastructure that talks to bc, not kernel code.
@@ -49,8 +48,8 @@ local LN_EXPS = {-50, -5, -1, 0, 1, 5, 50}
 -- the exp() FUNCTION sweep count, split into two domains that stress
 -- different things: RDOMAIN samples |r| <= ln2/2 directly (k forced to 0
 -- by construction), isolating the Taylor series' own convergence from any
--- range-reduction arithmetic -- this is the domain task-7-report.md's
--- "worst-case series error" figure is measured over. XDOMAIN instead
+-- range-reduction arithmetic -- this is the domain the "worst-case series
+-- error" figure below (worst_expfn_r_rel) is measured over. XDOMAIN instead
 -- samples whole integers x, exercising the FULL pipeline (div-based k
 -- estimate, the +/-1 correction loop, and the series) exactly as a real
 -- caller would.
@@ -145,7 +144,7 @@ end
 -- sees. That is real, unavoidable catastrophic cancellation inherent to
 -- computing ln via k*ln2 + ln(mantissa) with no dedicated log1p-style path
 -- for arguments near 1 -- not a coding bug, and not something more series
--- terms can fix (see task-6-report.md). Tracking absdiff lets the pass/fail
+-- terms can fix. Tracking absdiff lets the pass/fail
 -- check use whichever bound is actually meaningful per case, the same way
 -- e.g. numpy's isclose combines atol and rtol instead of relying on either
 -- alone.
@@ -277,9 +276,9 @@ for i = 1, #lnset do
 end
 
 -- === exp: r-domain sweep, |r| <= ln2/2 (k forced to 0), isolating the ===
--- === Taylor series' own convergence -- see task-7-report.md's         ===
--- === "worst-case series error" figure, measured exactly over this     ===
--- === same domain.                                                     ===
+-- === Taylor series' own convergence -- this is the domain the         ===
+-- === "worst-case series error" figure below is measured exactly       ===
+-- === over.                                                            ===
 local HALF_LN2_M, HALF_LN2_E = fx.div(fx.LN2_M, fx.LN2_E, fx.from_int(2))
 local NEG_HALF_LN2_M, NEG_HALF_LN2_E = fx.neg(HALF_LN2_M, HALF_LN2_E)
 local expfn_r_count = 0
@@ -673,7 +672,7 @@ local DIV_RTOL = 5e-19
 local LN_RTOL = 5e-18     -- ~23x the 2^-62 ULP, budget for series + compounding
 local LN_ATOL = 1e-15     -- ~350x the observed cancellation-case absolute error
 -- exp's r-domain (|r| <= ln2/2, k=0) isolates the Taylor series' own
--- convergence: measured worst case (task-7-report.md) 3.32e-18 -- roughly
+-- convergence: measured worst case 3.32e-18 -- roughly
 -- 3x this bound, giving margin without hiding a real regression the way
 -- an order-of-magnitude-looser bound would.
 local EXPFN_R_RTOL = 1e-17
@@ -715,8 +714,7 @@ local EXPFN_X_RTOL = 4e-15
 -- zero can report a nonzero-but-tiny reference purely from scale=90
 -- rounding) -- see the parsing loop below. cos_uniform_ gets COS_RTOL
 -- ONLY, no escape hatch, so a subtle whole-domain bug like the PI_2
--- mutant above cannot hide behind it. See task-8-report.md's mutation
--- section for the re-run transcript confirming this actually catches it.
+-- mutant above cannot hide behind it.
 --
 -- Values: a first COS_RTOL guess of 5e-18 (23x the 2^-62 floor, copying
 -- LN_RTOL's own margin without re-measuring for cos) turned out too

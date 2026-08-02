@@ -548,7 +548,7 @@ ok(div_sign_ok, "divide handles all four sign combinations")
 -- a genuinely different mantissa on real input -- and every test above,
 -- including the sign-quadrant one, was blind to it (confirmed: inserting
 -- that exact mutation left all four suites green before these checks
--- existed; see task-6-report.md's mutation-testing appendix). Values below
+-- existed). Values below
 -- are cross-verified independently against bc's own exact big-integer
 -- floor((|m1|*2^62)/|m2|), not just against this kernel's own output.
 local neg1_m, neg1_e = fx.neg(ONEm, ONEe)
@@ -627,8 +627,7 @@ end
 -- time in three is worse than no control: it reads as green. This
 -- structural check was independently verified to be fully deterministic
 -- in both directions (10/10 correct with the mitigation present, 10/10
--- correct with it removed) before being committed -- see
--- task-6-report.md's deterministic-control verification appendix.
+-- correct with it removed) before being committed.
 -- Shared by both the div_signed check below and the M.norm check further
 -- down: fixed.lua now gates jit.off(div_signed)/jit.off(M.norm) on
 -- fx._needs_1499_mitigation_for_tests (computed once from jit.version --
@@ -729,10 +728,9 @@ end
 -- with correct output (5/5 runs), and a broader differential (every
 -- bin/random distribution, 12 seeds, JIT-on vs -joff, mitigation
 -- removed) found zero divergence on that build. See lib/fixed.lua's
--- jit.off(M.norm) doc comment and task-12-report.md for the full
--- transcript, the fixed-build verification, and the measured
--- interpreted-vs-compiled cost this mitigation pays until every build
--- this project ships against carries that upstream fix.
+-- jit.off(M.norm) doc comment for the fixed-build verification and the
+-- measured interpreted-vs-compiled cost this mitigation pays until every
+-- build this project ships against carries that upstream fix.
 --
 -- Same PRIMARY (deterministic, jit.attach-based) structure as the
 -- div_signed check above -- see that check's own comment for why a
@@ -836,7 +834,7 @@ ok(lh1 == negln2m and lh2 == negln2e, "ln(0.5) == -ln2 exactly")
 -- actual transcendental computation -- multiplies and adds zeros the entire
 -- time and is never really exercised. A broken ODD_RECIP index, a dropped
 -- term, or a flipped sign in the series would pass every test above
--- unchanged. (Confirmed by mutation testing -- see task-6-report.md.)
+-- unchanged. (Confirmed directly by mutation testing.)
 --
 -- These checks use genuinely non-power-of-two mantissas, verified with
 -- ORACLE-FREE metamorphic properties (ln(a) + ln(1/a) == 0,
@@ -951,8 +949,8 @@ print(("  worst exp(ln(x)) == x relative error: %.3e"):format(rt_worst))
 -- stay in the exponent field, never get folded into the (fixed-width)
 -- mantissa. exp(50) ~ 5.18e21 -- if the range-reduction "return acc, e + k"
 -- step were dropped (returning exp(r) alone, k discarded), this exponent
--- would stay near 0 instead of far exceeding 62. See "drop the 2^k
--- exponent adjustment" in task-7-report.md's mutation results.
+-- would stay near 0 instead of far exceeding 62 -- confirmed directly by
+-- mutation-testing exactly that ("drop the 2^k exponent adjustment").
 local bm, be = fx.exp(fx.from_int(50))
 ok(be > 62, "exp(50) uses the exponent rather than overflowing", ("e=%d"):format(be))
 
@@ -995,8 +993,7 @@ ok(fx.cmp(pexpm, pexpe, fx.from_int(1)) ~= 0 and fx.cmp(nexpm, nexpe, fx.from_in
 -- Fixed post-review, once the coordinator caught (and confirmed by
 -- execution) that the committed exp hung for x = 2^61/2^62/2^70 -- the
 -- termination proof above the round-trip check only holds while
--- to_int_trunc actually truncates, not once it starts clamping. See
--- task-7-report.md's fix-up appendix.
+-- to_int_trunc actually truncates, not once it starts clamping.
 local function rejects_exp(m, e, want_msg)
 	local okc, err = pcall(fx.exp, m, e)
 	if okc then return false, "accepted (returned instead of raising)" end
@@ -1099,7 +1096,7 @@ ok(exp55_ok, "exp(2^55) always raises, via correction_guard or the i32 exponent 
 -- fx._div_signed_for_tests' established pattern) rather than via a
 -- naturally-occurring M.exp input. That was tried first and does not
 -- work: an exhaustive search (600,000+ trials across e in [45, 58], plus
--- neighborhood probing -- see task-7-report.md) found the natural
+-- neighborhood probing) found the natural
 -- maximum is 2 corrections, never 3, so no real M.exp call can
 -- distinguish `count > 3` (correct) from a `count >= 3` off-by-one
 -- mutant -- both behave identically on every input that actually occurs.
@@ -1111,7 +1108,7 @@ local guard_ok3 = pcall(fx._correction_guard_for_tests, 3, 0)
 ok(guard_ok3, "correction_guard(3, _) does not raise -- 3 corrections is within EXP_MAX_CORRECTIONS")
 local guard_ok4 = pcall(fx._correction_guard_for_tests, 4, 0)
 ok(not guard_ok4, "correction_guard(4, _) raises -- 4 corrections exceeds EXP_MAX_CORRECTIONS " ..
-   "(this pair is what actually kills a > -> >= off-by-one mutant; see task-7-report.md)")
+   "(this pair is what actually kills a > -> >= off-by-one mutant)")
 
 -- HISTORICAL NOTE, no longer a live "succeeds" check (see below for why):
 -- (6978193117490312577LL, 50) -- x ~= 1.7e15 -- was found by search (not
@@ -1134,7 +1131,7 @@ ok(not guard_ok4, "correction_guard(4, _) raises -- 4 corrections exceeds EXP_MA
 -- cases spanning e in [1, 51] (comfortably covering the entire i32-safe
 -- output range, e up to ~31, plus a wide margin past it) never needed
 -- more than 1 correction; every naturally-occurring 2-correction input
--- found in the original 600,000+-trial search (task-7-report.md) sits in
+-- found in the original 600,000+-trial search sits in
 -- e in [45, 58] specifically BECAUSE that is where k's own double
 -- precision degrades (k > ~2^53) -- and any x large enough for that is,
 -- by the exact same magnitude relationship, large enough that k (the
@@ -1297,7 +1294,7 @@ local function true_fixed_relerr(m1, e1, m2, e2)
 end
 
 -- Bound for the true-precision round trip checks below. Measured worst
--- case over the sampled list is 4.336809e-19 (x=2, see task-9-report.md);
+-- case over the sampled list is 4.336809e-19 (x=2);
 -- SQRT_RTOL gives ~11.5x margin, matching this file's "single-digit
 -- multiple margin" convention (see kernel_bc_sweep.lua's own DIV_RTOL/
 -- SQRT_RTOL derivations) rather than a loose bound that would fail to
@@ -1335,8 +1332,8 @@ local em, ee = fx.sqrt(fx.from_int(4))
 ok(math_abs_rel(em, ee, fx.from_int(2)) < 1e-16, "sqrt(4) == 2")
 
 -- === sqrt: same round trip, TRUE fixed-point precision (MUTATION TARGET) ==
--- This is one of the two tests task-9's mutation pass targets (see
--- task-9-report.md). It is the only assertion in this file precise
+-- This is one of the two tests task-9's mutation pass targets. It is
+-- the only assertion in this file precise
 -- enough to distinguish "full 62-bit precision" from "only the ~31-bit
 -- precision a single raw-integer Newton stage can give" -- the
 -- double-precision check above cannot make that distinction, since a
@@ -1383,7 +1380,7 @@ ok(exp_parity_ok, "sqrt(x)^2 == x across odd/even exponents at magnitude extreme
 -- and doubling any X.5 lands back on an integer by construction (2*(n +
 -- 0.5) = 2n + 1), so the corruption exactly self-cancels under squaring
 -- and every round-trip check above still reads as numerically correct.
--- Confirmed empirically (see task-9-report.md's mutation section): only
+-- Confirmed empirically: only
 -- the bit-exact "sqrt of perfect squares" check above happened to catch
 -- that mutant, incidentally (it compares fx.sqrt's raw output directly
 -- against a genuinely-integer-exponent fx.from_int(want), which a

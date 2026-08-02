@@ -3,7 +3,7 @@
 -- whole kernel? This is the control that would have caught LuaJIT/LuaJIT#1499
 -- (https://github.com/LuaJIT/LuaJIT/issues/1499) directly, mechanically, on
 -- every run -- rather than by the manual instrumented-repro session that
--- originally found it (see task-6-report.md). That bug was a trace-compiler
+-- originally found it. That bug was a trace-compiler
 -- miscompilation of a conditional unsigned-negation branch followed by a
 -- loop, reproducing only after ~500+ prior warmed-up calls; a single-call
 -- check at cold start structurally cannot see it. This file's whole design
@@ -37,14 +37,14 @@ local TWO62 = 0x4000000000000000ULL
 -- re-deriving (and possibly re-breaking) the same fix independently here.
 local fast = os.getenv("FAST")
 if fast == "" then fast = nil end
--- 30000 is the iteration count independently verified (see task-11-report.md)
--- to reliably diverge between `luajit` and `luajit -joff` once
--- jit.off(div_signed) is removed -- big enough that the trace compiler
--- reliably warms up and compiles div_signed's call sites well before the
--- run ends. Deliberately NOT scaled down for FAST mode, unlike every other
--- FAST/deep split in kernel_bc_sweep.lua: measured directly (see
--- task-11-report.md) that smaller counts (6000, 15000, 20000) miss the known
--- regression anywhere from ~17% to ~80% of runs -- LuaJIT's trace formation
+-- 30000 is the iteration count independently verified to reliably diverge
+-- between `luajit` and `luajit -joff` once jit.off(div_signed) is removed
+-- -- big enough that the trace compiler reliably warms up and compiles
+-- div_signed's call sites well before the run ends. Deliberately NOT
+-- scaled down for FAST mode, unlike every other FAST/deep split in
+-- kernel_bc_sweep.lua: measured directly that smaller counts (6000,
+-- 15000, 20000) miss the known regression anywhere from ~17% to ~80% of
+-- runs -- LuaJIT's trace formation
 -- is not deterministic in call count, so a control that reads green most of
 -- the time on a REMOVED mitigation is not a control at all (a bug this
 -- project's own review process has already flagged once, for a differently-

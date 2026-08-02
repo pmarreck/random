@@ -118,9 +118,9 @@ end
 -- how it was confirmed, not assumed)
 -- miscompiles this kernel's unsigned negate-then-branch shape -- see
 -- jit.off(div_signed) and jit.off(M.norm) below for the two confirmed
--- instances (the second found and verified during Task 12; see
--- task-12-report.md for both the original finding and the
--- coordinator-requested confirmation against the actual upstream fix).
+-- instances (the second found and verified during Task 12, both the
+-- original finding and the coordinator-requested confirmation against
+-- the actual upstream fix).
 -- We found and reported it; it is fixed upstream, but users will be on
 -- pre-fix builds for a long time, so the mitigation is kept --
 -- CONDITIONALLY, gated on the running LuaJIT's own version, rather than
@@ -271,8 +271,7 @@ end
 -- the sign. Re-running the identical invocation under `luajit -joff`
 -- (JIT fully disabled) returned the correct (8225766483930644480LL, 31)
 -- for that same input, and the whole run completed with no crash. JIT
--- on/off was the only variable that changed. See task-12-report.md for
--- the full instrumented transcript and the fixed-build verification.
+-- on/off was the only variable that changed.
 --
 -- This is the more dangerous half of the bug, worse than the crash that
 -- exposed it: a caller whose corrupted value happens NOT to hit a
@@ -633,7 +632,7 @@ end
 -- since it contains no sign branches of its own, it never exhibits the
 -- pattern LuaJIT#1499 miscompiles regardless of who calls it. This was
 -- verified directly (see tests/fixed_test.lua's "JIT miscompilation
--- regression, split dispatch" check and task-6-report.md), not assumed
+-- regression, split dispatch" check), not assumed
 -- from the theory above -- the instruction that produced this split was
 -- explicit that if the separation didn't hold in this file, the correct
 -- response was to revert to disabling M.div wholesale, not to trust the
@@ -783,9 +782,8 @@ M.LN2_M, M.LN2_E = 6393154322601327829LL, -1
 -- operations, which more atanh terms cannot fix. 20 gives 3 terms of
 -- margin past that N=17 plateau. See tests/kernel_bc_sweep.
 --
--- Reproduce: run M.ln's series loop standalone with N parameterized (or
--- see the scratch script referenced in task-6-report.md's correction
--- appendix) against `echo 'scale=80; val=(9223372036854775807/
+-- Reproduce: run M.ln's series loop standalone with N parameterized
+-- against `echo 'scale=80; val=(9223372036854775807/
 -- 4611686018427387904); l(val)' | bc -l` as the oracle.
 local ATANH_TERMS = 20
 local ODD_RECIP = {}
@@ -857,8 +855,8 @@ end
 -- Built at module load via M.mul/M.div, same pattern as ODD_RECIP above for
 -- ln's atanh series -- keeps division out of exp's hot loop.
 --
--- "16 terms" is measured, not assumed from the brief (see
--- task-7-report.md): at the worst case this series ever sees, |r| = ln2/2,
+-- "16 terms" is measured, not assumed from the brief: at the worst case
+-- this series ever sees, |r| = ln2/2,
 -- the bc-computed idealized n=16 term is ~2.07e-21 -- already ~100x below
 -- this kernel's own ~62-bit ULP floor (2^-62 ~= 2.168e-19) -- and the tail
 -- beyond n=16 is ~4.2e-23, negligible. Unlike ln's atanh series (which
@@ -940,10 +938,7 @@ end
 -- observed maximum -- it happens in roughly 1 in 1,600 to 1 in 4,700
 -- otherwise-successful large-|x| calls near the boundary (rate varies by
 -- exponent), never more, and
--- 3 never occurred naturally in that search (see task-7-report.md's
--- fix-up appendix for the full sweep and two concrete m,e examples that
--- reproducibly need exactly 2, confirmed against the real M.exp, not just
--- a standalone reproduction). EXP_MAX_CORRECTIONS = 3 is therefore
+-- 3 never occurred naturally in that search. EXP_MAX_CORRECTIONS = 3 is therefore
 -- deliberately 1 unit of headroom ABOVE the empirically-confirmed
 -- maximum, not a number that was picked because it happened to pass --
 -- and correction_guard's own boundary (3 must succeed, 4 must fail) is
@@ -972,7 +967,7 @@ end
 -- must not raise, correction_guard(4, _) must raise), rather than relying
 -- on a naturally-occurring M.exp input to happen to need precisely
 -- EXP_MAX_CORRECTIONS corrections. That reliance would not have worked:
--- an exhaustive search (600,000+ trials, see task-7-report.md) found the
+-- an exhaustive search (600,000+ trials) found the
 -- natural maximum is 2 corrections, never 3 -- so no real M.exp call can
 -- distinguish `count > 3` from a `count >= 3` off-by-one mutant; only a
 -- direct test of the guard's own boundary can.
@@ -1007,8 +1002,8 @@ M._correction_guard_for_tests = correction_guard
 --- this function's PRIMARY domain limit, since the i32 check above now
 --- fires first for any |x| large enough to matter here): before the i32
 --- contract was enforced, |x| beyond roughly 2^52 sat in a measured
---- GRADIENT, not a sharp cutoff (500-2000 trials per exponent, see
---- task-7-report.md): failure rate 0 for |x| < 2^52ish, rising roughly
+--- GRADIENT, not a sharp cutoff (500-2000 trials per exponent):
+--- failure rate 0 for |x| < 2^52ish, rising roughly
 --- monotonically (~8% at e=52, ~72% at e=55, still ~7.5% SUCCEEDING even
 --- at e=57) before reaching certainty at |x/ln2| >= 2^62. The cause: `k`
 --- is a plain Lua double, and once its magnitude crosses ~2^53 the
@@ -1043,8 +1038,8 @@ function M.exp(m, e)
 	-- own small (~2^-62 relative) rounding error can very rarely compound
 	-- enough, near the failure boundary described above, to need a SECOND
 	-- correction -- confirmed empirically (2 is the observed maximum
-	-- across 600,000+ trials; see correction_guard's comment and
-	-- task-7-report.md). This is exactly why the loops below are bounded
+	-- across 600,000+ trials; see correction_guard's comment above).
+	-- This is exactly why the loops below are bounded
 	-- by correction_guard rather than trusted to always terminate at 1 on
 	-- their own -- the idealized proof is real and useful (it is why
 	-- EXP_MAX_CORRECTIONS can be a SMALL constant instead of a large one),
@@ -1138,8 +1133,8 @@ M.PI_2_M, M.PI_2_E = 7244019458077122842LL, 0
 -- 1e-15/1e-16, would have been violated by several orders of magnitude on
 -- the "cos(u) == cos(1-u)" symmetry check the moment it sampled a point
 -- near a quadrant boundary -- confirmed by actually setting COS_TERMS = 8
--- and running this file's real fixed_test.lua Section 6 (task-8-report.md
--- has the full transcript): 3 of the section's checks FAIL, including the
+-- and running this file's real fixed_test.lua Section 6: 3 of the
+-- section's checks FAIL, including the
 -- symmetry check at worst=1.164e-11 vs its 1e-15 bound -- ~11,600x over.
 -- Never assume from the boundary-value checks alone; they all land at
 -- within-quadrant angle exactly 0, where BOTH an 8-term and a
@@ -1159,7 +1154,9 @@ M.PI_2_M, M.PI_2_E = 7244019458077122842LL, 0
 -- COS_TERMS = 14 gives 2 terms of margin past the N=12 plateau (matching
 -- ln's "3 terms past the N=17 plateau" convention; sin's own plateau
 -- arrives even earlier, at N=11, so 14 covers it with room to spare).
--- Reproduce: see the scratch sweep referenced in task-8-report.md.
+-- Reproduce: sweep N from 1 to 20 at x = pi/2 through cos_rad/sin_rad
+-- below, comparing each N's output to `bc -l`'s c()/s() (same method the
+-- table above was measured with).
 local COS_TERMS = 14
 
 -- Reciprocals of the Taylor denominators for cos and sin, precomputed once
@@ -1328,7 +1325,7 @@ local SQRT_REFINE = 3
 --- fixed-point arithmetic (M.sub/M.div on the two soft-floats, converting
 --- to double only the resulting ALREADY-TINY residual) and, independently,
 --- by tests/kernel_bc_sweep.lua's sweep against `bc -l`'s arbitrary-
---- precision sqrt() -- see task-9-report.md for both measurements.
+--- precision sqrt() (see that file's own worst-case figures).
 function M.sqrt(m, e)
 	assert(m >= 0, "fixed.sqrt: argument must be non-negative")
 	if m == 0 then return 0LL, 0 end
