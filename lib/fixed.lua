@@ -129,45 +129,69 @@ end
 --- program produces -- the largest observed is exp(500)'s result
 --- exponent, 721 -- six orders of magnitude of headroom, not a bound
 --- picked to just barely fit current usage.
--- LuaJIT/LuaJIT#1499 MITIGATION, DISCOVERED DURING TASK 12 (bin/random
--- integration), not any task before it -- fixed_test.lua and
--- kernel_bc_sweep.lua's call patterns apparently never warmed up a trace
--- through this exact shape. M.norm has the SAME "negate based on a
--- runtime-computed sign flag, then branch on it later" shape that
--- div_signed (below) was isolated and jit.off'd for -- and it turns out to
--- be vulnerable the same way, just needing a different warm-up pattern to
--- surface it.
+-- LuaJIT/LuaJIT#1499 MITIGATION -- CONFIRMED to be the SAME upstream bug
+-- already documented for div_signed below, reaching M.norm through a
+-- different code path, NOT a second distinct defect. Verified directly
+-- against Mike Pall's actual #1499 fix (commit 5ed524c, built as
+-- 2.1.1785606157), not just inferred from the shared "negate based on a
+-- runtime-computed sign flag, then branch on it later" shape: with this
+-- jit.off removed, `bin/random --exponential -d --seed 11111 -c 5`
+-- crashes on the pinned build (2.1.1774638290, confirmed 3/3 runs) but
+-- completes cleanly and correctly on 5ed524c (confirmed 5/5 runs,
+-- identical output to `luajit -joff` on the pinned build). A broader
+-- differential -- every bin/random distribution, 12 seeds, mitigation
+-- removed, JIT-on vs -joff -- found zero divergence on 5ed524c (0/72
+-- invocations, plus tests/kernel_jit_diff.lua's own 60000-iteration
+-- digest). DISCOVERED DURING TASK 12 (bin/random integration): neither
+-- fixed_test.lua nor kernel_bc_sweep.lua's own call patterns (built and
+-- reviewed across Tasks 1-11, before bin/random had a real caller) ever
+-- warmed up a trace through this exact shape -- a hand-extracted
+-- standalone repro script (same PCG32 + exponential_random logic,
+-- lifted verbatim) did NOT reproduce it either; only the real
+-- bin/random call site, with its own bytecode/warm-up context, does.
+-- That fragility is itself informative: it is consistent with a
+-- warm-up-pattern-sensitive trace-compiler bug, not a deterministic
+-- logic error, and is exactly why the deterministic jit.attach check
+-- below (not a value-based probe) is the right regression control.
 --
--- CONFIRMED BY DIRECT REPRODUCTION, not inferred from the shape alone:
--- `bin/random --exponential -d --seed 11111 -c 5` crashed with "fixed.ln:
--- argument must be positive" on the 4th draw. Instrumented pcg32_uniform
--- to print M.from_int's return for raw PCG32 output 3830421010 (the exact
--- draw that crashed): under the normal JIT, M.from_int(3830421010)
--- returned (-9223372034939565303LL, 63) -- a NEGATIVE mantissa for a
--- POSITIVE input, i.e. M.norm itself corrupted the sign. Re-running the
--- identical invocation under `luajit -joff` (JIT fully disabled) returned
--- the correct (8225766483930644480LL, 31) for that same input, and the
--- whole run completed with no crash. JIT on/off is the only variable that
--- changed between the two runs -- same seed, same PCG32 sequence, same
--- source. That is a JIT miscompilation, not a logic bug in this function's
--- algorithm (the algorithm itself is correct, as -joff proves).
+-- CONFIRMED BY DIRECT REPRODUCTION on the pinned build, not inferred
+-- from the shape alone: the crash above happens on the 4th draw.
+-- Instrumented pcg32_uniform to print M.from_int's return for raw PCG32
+-- output 3830421010 (the exact draw that crashed): under the normal
+-- JIT, M.from_int(3830421010) returned (-9223372034939565303LL, 63) --
+-- a NEGATIVE mantissa for a POSITIVE input, i.e. M.norm itself corrupted
+-- the sign. Re-running the identical invocation under `luajit -joff`
+-- (JIT fully disabled) returned the correct (8225766483930644480LL, 31)
+-- for that same input, and the whole run completed with no crash. JIT
+-- on/off was the only variable that changed. See task-12-report.md for
+-- the full instrumented transcript and the fixed-build verification.
 --
--- This is the more dangerous half of the LuaJIT#1499 family, worse than
--- the crash that exposed it: a caller whose corrupted value happens NOT to
--- hit a downstream assert (M.ln's m>0 check here was pure luck) would get
--- a silently wrong answer with no error at all, in a kernel whose entire
--- purpose is bit-exact reproducibility. See task-12-report.md for the
--- full instrumented transcript.
+-- This is the more dangerous half of the bug, worse than the crash that
+-- exposed it: a caller whose corrupted value happens NOT to hit a
+-- downstream assert (M.ln's m>0 check here was pure luck) would get a
+-- silently wrong answer with no error at all, in a kernel whose entire
+-- purpose is bit-exact reproducibility.
 --
 -- FIX: same mitigation as div_signed -- jit.off(M.norm) below keeps this
 -- function permanently interpreted, never trace-compiled, so the
--- miscompilation can never fire. M.norm's negation branch is far more
--- frequently hit than div_signed's (roughly half of all real inputs are
--- negative, not just the rare negative-operand division), so this is a
--- real interpreted-vs-compiled cost on a hot function, not a free fix --
--- but a wrong answer in this kernel is strictly worse than a slower right
--- one, and M.norm's own body (a couple of bounded shift loops) is cheap
--- relative to the mul/div/ln/exp callers built on top of it.
+-- miscompilation can never fire on any pre-fix build. This is a KNOWN-
+-- TEMPORARY tax, not a permanent one: it can be lifted once every build
+-- this project ships against carries Mike Pall's #1499 fix, which as of
+-- this writing is not yet in the pinned toolchain (2.1.1774638290) --
+-- but users will be on pre-fix builds for a long time, so it stays.
+-- Measured cost (hyperfine, 10 runs, `--log-normal -d --seed 1 -c 20000`,
+-- same 5ed524c build with jit.off(M.norm) present vs removed -- an
+-- apples-to-apples A/B on a build where it is safe to compare either
+-- way): 6.178s +/- 0.131s WITH the mitigation vs 1.079s +/- 0.028s
+-- WITHOUT it, roughly 5.7x. That cost is confined to the soft-float
+-- distributions (--normalized/--exponential/--poisson/--log-normal/
+-- --beta) that actually call into this kernel -- confirmed separately
+-- (same A/B, plain uniform mode, `-c 20000`): 14.8ms +/- 1.1ms vs
+-- 13.3ms +/- 1.0ms, no attributable difference, because pcg32_range (the
+-- default uniform path) makes zero calls into lib/fixed.lua at all.
+-- M.norm's own body (a couple of bounded shift loops) being interpreted
+-- is not free on the paths that DO use it, but a wrong answer in this
+-- kernel is strictly worse than a slower right one.
 function M.norm(m, e)
 	if m == 0 then return 0LL, 0 end
 	local neg = m < 0

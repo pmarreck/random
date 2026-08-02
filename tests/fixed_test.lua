@@ -571,24 +571,30 @@ do
 		("got m=%s e=%d want m=6250148628221868064 e=4999"):format(tostring(jrm), jre))
 end
 
--- A SECOND, INDEPENDENT instance of the same LuaJIT/LuaJIT#1499 shape,
--- found during Task 12 (bin/random integration), not by anything before
--- it. M.norm has the identical "negate based on a runtime-computed sign
--- flag, then branch on it" pattern div_signed above was isolated for --
--- and it turns out to be vulnerable too, just under a different warm-up
--- pattern than this file's own div-focused checks exercise, which is why
--- neither this suite nor kernel_bc_sweep.lua caught it before now.
+-- The SAME LuaJIT/LuaJIT#1499 bug as div_signed above, confirmed to reach
+-- M.norm through a different code path -- NOT a second, distinct defect.
+-- Found during Task 12 (bin/random integration): neither this suite nor
+-- kernel_bc_sweep.lua's own call patterns (built across Tasks 1-11,
+-- before bin/random had a real caller) ever warmed up a trace through
+-- this exact shape.
 --
 -- CONFIRMED BY DIRECT REPRODUCTION, not inferred from the shape alone:
 -- `bin/random --exponential -d --seed 11111 -c 5` crashed with "fixed.ln:
--- argument must be positive" on the 4th draw. Instrumenting pcg32_uniform
--- showed M.from_int(3830421010) -- a POSITIVE input -- returning
+-- argument must be positive" on the 4th draw, on the pinned build
+-- (2.1.1774638290). Instrumenting pcg32_uniform showed
+-- M.from_int(3830421010) -- a POSITIVE input -- returning
 -- (-9223372034939565303LL, 63), a corrupted NEGATIVE mantissa, under the
--- normal JIT; the same call under `luajit -joff` (JIT fully disabled)
--- correctly returned (8225766483930644480LL, 31), and the whole run
--- completed with no crash. JIT on/off was the only variable that
--- changed. See lib/fixed.lua's jit.off(M.norm) doc comment and
--- task-12-report.md for the full instrumented transcript.
+-- normal JIT; the same call under `luajit -joff` correctly returned
+-- (8225766483930644480LL, 31). CONFIRMED to be the identical upstream
+-- bug, not a new one: the same invocation against Mike Pall's actual
+-- #1499 fix (commit 5ed524c, built as 2.1.1785606157) completes cleanly
+-- with correct output (5/5 runs), and a broader differential (every
+-- bin/random distribution, 12 seeds, JIT-on vs -joff, mitigation
+-- removed) found zero divergence on that build. See lib/fixed.lua's
+-- jit.off(M.norm) doc comment and task-12-report.md for the full
+-- transcript, the fixed-build verification, and the measured
+-- interpreted-vs-compiled cost this mitigation pays until every build
+-- this project ships against carries that upstream fix.
 --
 -- Same PRIMARY (deterministic, jit.attach-based) structure as the
 -- div_signed check above -- see that check's own comment for why a
