@@ -9,15 +9,29 @@ export DRANDOM_STATE_HOME="$(mktemp -d)"
 trap 'rm -rf "$DRANDOM_STATE_HOME"' EXIT
 unset IFS
 
+# Required fixture manifest: the *_test loop below only ever sees whatever
+# files happen to be sitting in tests/golden/, so a set going missing
+# (deleted, renamed, or never restored after a rebase) just silently shrinks
+# what "$checked -eq 0" can catch -- that guard only fires if EVERY set
+# vanishes at once, not if any one of them does. Pin the names we actually
+# expect to exist so losing any single one is a loud, named failure instead
+# of a quietly smaller "All N set(s) reproduce".
+REQUIRED_SETS="integer dist"
+
 fails=0
 checked=0
 
 echo "Verifying golden vectors..."
 echo "============================================"
 
-for set_file in "$here"/golden/*.txt; do
-	[ -f "$set_file" ] || continue
-	set_name="$(basename "$set_file" .txt)"
+for set_name in $REQUIRED_SETS; do
+	set_file="$here/golden/$set_name.txt"
+	if [ ! -f "$set_file" ]; then
+		echo "✗ $set_name: golden file missing ($set_file)" >&2
+		fails=$((fails + 1))
+		checked=$((checked + 1))
+		continue
+	fi
 	# Regenerate into a temp file and diff against the committed one. Never write
 	# to a tracked file during a test run: that would clobber deliberate
 	# uncommitted golden edits and make ./test mutate the repo.
@@ -32,6 +46,21 @@ for set_file in "$here"/golden/*.txt; do
 	fi
 	checked=$((checked + 1))
 	rm -f "$tmp"
+done
+
+# Also flag any golden/*.txt set NOT in the required manifest -- an
+# unlisted set would otherwise be regenerated and diffed by nothing,
+# giving a false sense that "all golden vectors" were checked.
+for set_file in "$here"/golden/*.txt; do
+	[ -f "$set_file" ] || continue
+	set_name="$(basename "$set_file" .txt)"
+	case " $REQUIRED_SETS " in
+		*" $set_name "*) ;;
+		*)
+			echo "✗ $set_name: golden file present but not in REQUIRED_SETS -- add it to the manifest" >&2
+			fails=$((fails + 1))
+			;;
+	esac
 done
 
 echo "============================================"
