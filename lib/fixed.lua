@@ -500,6 +500,7 @@ end
 --- exp() for any argument in this program's real domain (would need
 --- |x| ~ 2^62 * ln2 ~= 3.2e18), but a latent bug in a function this task
 --- introduces is still a bug.
+local TO_INT_TRUNC_CLAMP = 9007199254740992LL   -- 2^53, as int64 for an exact pre-tonumber comparison
 function M.to_int_trunc(m, e)
 	if m == 0 then return 0 end
 	local sh = e - 62
@@ -508,7 +509,27 @@ function M.to_int_trunc(m, e)
 	end
 	local s = -sh
 	if s > 62 then return 0 end
-	return tonumber(m / POW2[s])
+	-- HOSTILE-AUDIT FINDING B2: the division itself (int64/int64, exact
+	-- truncation toward zero, no precision loss) was never the problem --
+	-- the bare `tonumber()` on its result was. For a quotient magnitude
+	-- BEYOND 2^53, `tonumber()` on an int64 cdata goes through an IEEE-754
+	-- double, which cannot represent every integer past 2^53 exactly, so
+	-- it silently ROUNDS to the nearest representable double instead of
+	-- clamping -- contradicting this function's own documented contract
+	-- ("values whose magnitude exceeds 2^53 are clamped"). Confirmed
+	-- directly: the true integer 2^54+3 (18014398509481987) returned
+	-- 18014398509481988 (rounded UP, not clamped, and not even the
+	-- nearest-below truncation an unlucky rounding mode might suggest) --
+	-- silently reachable from the CLI via a large --mean (--stddev
+	-- narrow enough to keep the draw near it), which round_to_int feeds
+	-- straight through this function with no error at all. Compare the
+	-- QUOTIENT (still an exact int64 at this point) against the clamp
+	-- threshold BEFORE tonumber() ever runs, so the double-rounding step
+	-- only ever sees a magnitude it can represent exactly.
+	local q = m / POW2[s]
+	if q > TO_INT_TRUNC_CLAMP then return 9007199254740992 end
+	if q < -TO_INT_TRUNC_CLAMP then return -9007199254740992 end
+	return tonumber(q)
 end
 
 --- Fractional part, truncating toward zero (so frac(-1.25) == -0.25), matching

@@ -2099,6 +2099,33 @@ ok(fx.parse_int_safe("+") == nil, "parse_int_safe('+') is nil (bare sign)")
 ok(fx.parse_int_safe("++5") == nil, "parse_int_safe('++5') is nil (a second sign is not a digit)")
 ok(fx.parse_int_safe("1.5") == nil, "parse_int_safe('1.5') is nil (fractional bound rejected)")
 ok(fx.parse_int_safe("12a34") == nil, "parse_int_safe('12a34') is nil (embedded letters)")
+
+-- HOSTILE-AUDIT FINDING B2: M.to_int_trunc's own doc comment claims
+-- "values whose magnitude exceeds 2^53 are clamped" -- true for the
+-- sh>=0 branch (magnitude already >= 2^62), but the sh<0 branch computed
+-- an EXACT int64 quotient and then handed it straight to a bare
+-- tonumber(), which silently ROUNDS (not clamps) once that quotient's
+-- own magnitude passes 2^53 -- a plain IEEE-754 double cannot represent
+-- every integer beyond that point exactly. Confirmed directly before
+-- this fix existed: the true integer 2^54+3 (18014398509481987)
+-- returned 18014398509481988 (rounded UP by 1, not the documented
+-- 9007199254740992 clamp) -- reachable from the CLI via a large --mean
+-- (bin/random -n --mean 18014398509481987 --stddev 1 -d --seed 1 -c 1
+-- printed the same wrong, unclamped value).
+local T53 = 9007199254740992   -- 2^53, the documented clamp
+local function to_int_trunc_of(v)
+	local m, e = fx.norm(v, 62)
+	return fx.to_int_trunc(m, e)
+end
+ok(to_int_trunc_of(18014398509481987LL) == T53,
+   "to_int_trunc: 2^54+3 (past 2^53) is CLAMPED to 9007199254740992, not silently " ..
+   "rounded to 18014398509481988 [B2]")
+ok(to_int_trunc_of(-18014398509481987LL) == -T53,
+   "to_int_trunc: same clamp on the negative side [B2]")
+ok(to_int_trunc_of(9007199254740992LL) == T53,
+   "to_int_trunc: exactly AT 2^53 is NOT clamped away from itself (boundary, not off-by-one) [B2]")
+ok(to_int_trunc_of(9007199254740991LL) == 9007199254740991,
+   "to_int_trunc: 2^53-1 (just under the clamp) is exact, not clamped [B2]")
 end
 
 print("")
