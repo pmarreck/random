@@ -9,6 +9,15 @@ back) without waiting for nixpkgs-unstable to catch up. What actually
 happened along the way is worth a permanent record, because none of it
 was assumed — every claim below was built, run, and diffed.
 
+**UPDATE (2026-08-02, same day):** §2 and §3 below originally reported
+two LuaJIT defects as confirmed findings. Both were challenged, both
+were re-investigated independently, and both are RETRACTED — see each
+section's own "RETRACTED" heading and the "Retraction and root cause"
+section after §3 for the full account. §1's finding (the version-string
+mismatch) held up under the same scrutiny and is unchanged. The sections
+are kept, not deleted, per this project's own discipline that a
+documented non-finding is worth more than silence.
+
 ## 1. The commit hash didn't report the version string everyone expected
 
 The task's starting assumption: pin commit
@@ -57,94 +66,166 @@ rather than re-checking which exact commit produced it. Both commits
 contain the identical functional fix, differing only by an unrelated
 182-second merge — an easy mixup, not a fabrication.
 
-## 2. `bit.*` library functions no longer accept 64-bit cdata operands
+## 2. RETRACTED — "`bit.*` no longer accepts 64-bit cdata operands"
 
-`bin/random`'s PCG32 implementation (`pcg32_random`) passed `pcg_state`
-(a `uint64_t` cdata) directly into `bit.rshift`/`bit.bxor`. This crashed
-immediately on the newly-pinned build:
+**This section originally claimed `bin/random`'s PCG32 code crashed on
+the newly-pinned build. That claim is FALSE for the build actually
+pinned in `flake.nix`. Retracted 2026-08-02, by the coordinator's direct
+challenge and my own independent re-verification — see "Retraction and
+root cause" below.**
 
-```
-bad argument #1 to 'rshift' (number expected, got cdata)
-```
+Original claim (kept for the record, per the discipline that a
+documented non-finding is worth more than silence): `bin/random`'s
+`pcg32_random` passes `pcg_state` (a `uint64_t` cdata) directly into
+`bit.rshift`/`bit.bxor`. A build was observed to crash on this with `bad
+argument #1 to 'rshift' (number expected, got cdata)`, attributed to an
+`lj_carith.c` diff between the pre-fix and newly-pinned source trees
+showing a "64 bit bit operations helpers" section
+(`lj_carith_check64`/`lj_carith_shift64`) present on one side and absent
+on the other.
 
-Confirmed by diffing `src/lj_carith.c` between the OLD (pre-fix,
-`fbb36bb6`, what nixpkgs-unstable currently pins) and NEW (`28084004`)
-source trees: an entire section, "64 bit bit operations helpers"
-(`lj_carith_check64`, `lj_carith_shift64` — "Equivalent to
-`lj_lib_checkbit()`, but handles cdata") was REMOVED between them. This
-was an undocumented extension to the officially 32-bit-only `bit.*` API
-that this project's original PCG32 implementation happened to rely on;
-its removal is not itself a bug, just a tightening back to documented
-behavior.
+**What was actually true:** that crash was real, but on a DIFFERENT
+LuaJIT build than the one this flake pins — commit `5ed524c` built
+BARE (see §1: that commit lives on LuaJIT's `master` branch, not
+`v2.1`), not commit `28084004` (the `v2.1`-branch merge actually pinned
+in `flake.nix`). The two builds were investigated back to back, produced
+different nix store paths, and the crash finding from the first was
+never re-verified against the second before being written up. Directly
+re-tested against the ACTUAL pinned build (`28084004`,
+`jit.version = "LuaJIT 2.1.1785606157"`): `bit.rshift(u64_cdata, 18)`
+and `bit.bxor(u64_cdata, u64_cdata)` both work correctly, both JIT-on
+and JIT-off, matching the pre-fix build's own output exactly. The
+`lj_carith_check64`/`lj_carith_shift64` functions ARE present in
+`28084004`'s source tree (confirmed by grep — 2 matches) despite being
+absent from bare `5ed524c`'s tree; whatever intervening history changed
+this between the two commits was never chased down, because it stopped
+mattering once the real pin was re-tested directly.
 
-**Fix:** `bin/random` now does the required 64-bit right-shifts via plain
-unsigned `u64` cdata DIVISION (`old / 262144ULL` for `old >> 18`, etc. —
-exact for unsigned values, the same technique `lib/fixed.lua`'s own
-`M.norm` shift loops already use) and a hand-rolled `xor64()` helper that
-splits each 64-bit operand into hi/lo 32-bit halves, XORs each half with
-the officially-supported 32-bit `bit.bxor`, and recombines. Verified
-against the removed extension as an independent oracle: 200,000 random
-`u64` pairs plus adversarial edge cases (all-zero, all-one, MSB-only,
-mixed high/low patterns), 0 mismatches, on the pre-fix build where the
-removed extension still works as ground truth.
+## 3. RETRACTED — "a separate, independent trace-compiler miscompilation"
 
-## 3. A SEPARATE, independent trace-compiler miscompilation
+**This section originally claimed a confirmed `ffi.cast("uint32_t", v)`
+miscompilation, version-independent, latent in `bin/random`'s original
+code. That claim is FALSE as stated. Retracted 2026-08-02 — see
+"Retraction and root cause" below for the full account, including one
+narrow, unresolved residual data point that re-verification also turned
+up and that is recorded honestly rather than swept away.**
 
-Even after fixing #2, `tests/random_jit_diff_test` (JIT-on vs JIT-off
-differential over `bin/random` itself) failed 30/30 combinations, and
-`tests/golden_test` failed (both golden sets changed value) — under the
-NEW LuaJIT build specifically. Isolated with a minimal, standalone
-repro (bisection transcript below), NOT inferred from the failure alone:
+Original claim (kept for the record): after "fixing" §2, JIT-on/JIT-off
+differential tests over the real `bin/random` still diverged (30/30
+combinations), and golden vectors changed value. A minimal repro —
+`ffi.cast(ffi.typeof("uint32_t"), <negative Lua number>)` in a hot loop
+— was reported to produce different output streams under JIT-on vs
+JIT-off, on both LuaJIT builds, and attributed to a trace-compiler
+defect rather than a logic error (correctly reasoning that JIT-on/off
+disagreement, not mere wrongness, is the signature of a compiler bug —
+that PRINCIPLE was sound; the specific finding built on it was not).
 
-```lua
--- Isolated repro: a hot loop doing nothing but reinterpreting a signed
--- int32-range Lua number as unsigned via ffi.cast.
-local ffi = require("ffi")
-local u32 = ffi.typeof("uint32_t")
-for i = 1, 200000 do
-  local v = <some int32-range Lua number, occasionally negative>
-  local r = ffi.cast(u32, v)
-  -- accumulate/print r
-end
-```
+**What was actually true, found by direct re-verification, not by
+accepting either side's claim on authority:**
 
-Run under `luajit` (JIT-on) vs `luajit -joff` (interpreted): the output
-streams DIFFER. A genuine logic bug would make JIT-on and JIT-off AGREE
-with each other (both wrong the same way, since both execute the same
-Lua source); disagreement between them is specifically the signature of
-a trace-compiler MISCOMPILATION. Confirmed this reproduces on BOTH the
-pre-fix (`2.1.1774638290`) and post-fix (`2.1.1785606157`) builds —
-version-independent, unlike #1499 itself, and apparently latent in
-`bin/random`'s ORIGINAL `pcg32_random` all along (`tonumber(ffi.cast(
-"uint32_t", res))` at its final line, unchanged by this session until
-this fix) — it simply never manifested because the pre-fix code's exact
-trace-formation pattern happened not to trigger it, the same
-warmup-pattern sensitivity this project's own #1499 documentation
-already describes for that bug.
+1. **The original `pcg32_random` (unmodified) does not crash or diverge
+   on the actual pinned build.** Re-tested directly against `28084004`:
+   `bin/random -d --seed 42 0 99` → `26` under both JIT-on and JIT-off;
+   a 1,000,000-draw stream comparison (`-d --seed 1 -c 1000000 0
+   4294967295`) is byte-for-byte IDENTICAL between JIT-on and JIT-off.
+   `tests/random_jit_diff_test`, run against the ORIGINAL code under the
+   real pinned LuaJIT, PASSES 30/30. The 30/30 divergence originally
+   reported was measured against the WRONG store path — same root cause
+   as §2's retraction, not a second independent error.
 
-Bisection method (each step isolated one operation, comparing JIT-on vs
-JIT-off over 100,000-200,000 iterations):
-1. u64 division/modulo alone (hi/lo split) — IDENTICAL, not the cause.
-2. `bit.bxor` on the resulting hi/lo halves — IDENTICAL, not the cause.
-3. `ffi.cast(u64, ffi.cast("uint32_t", rhi))` recombination — DIVERGED.
-4. Isolated further: a BARE `ffi.cast("uint32_t", <negative Lua number>)`
-   in a hot loop, nothing else — DIVERGED on its own.
+2. **The "minimal repro" that seemed to confirm a `ffi.cast` defect was
+   itself broken.** `tostring()` on a `uint32_t` cdata does not print
+   the numeric value — it prints a boxed-pointer representation:
+   ```
+   > tostring(ffi.cast(ffi.typeof("uint32_t"), 12345))
+   cdata<unsigned int>: 0x71a17d1b7490      -- a HEAP ADDRESS
+   > tostring(ffi.cast(ffi.typeof("uint64_t"), 12345))
+   12345ULL                                  -- the actual value
+   ```
+   (`uint64_t`/`int64_t` get LuaJIT's special decimal+suffix formatting;
+   plain `uint32_t` does not.) Every bisection script that printed a
+   `uint32_t` result via a bare `tostring()` was therefore hashing
+   RANDOM HEAP ADDRESSES across separate process invocations, not
+   computed values — confirmed directly: re-running the identical script
+   twice produced two different digests even in the SAME JIT mode,
+   which is impossible for a deterministic, fixed-seed computation and
+   should have been caught immediately as a test-harness bug rather
+   than treated as signal. Re-run with the value correctly extracted via
+   `tonumber()` first, the same repro (a bare `ffi.cast("uint32_t",
+   <negative>)` hot loop, 300,000 iterations) shows NO divergence, on
+   either LuaJIT build — matching the coordinator's own counter-test
+   exactly.
 
-**Fix:** replaced every `ffi.cast(..., "uint32_t", v)` sign-reinterpretation
-in `bin/random`'s PCG32 path with a pure-arithmetic equivalent:
+3. **One narrow, unresolved residual finding**, surfaced by re-testing
+   more carefully rather than swept under the rug: a SPECIFIC
+   intermediate formulation this investigation tried and then
+   discarded — `ffi.cast(u64, ffi.cast("uint32_t", rhi)) * 4294967296ULL
+   + ffi.cast(u64, ffi.cast("uint32_t", rlo))`, recombining hi/lo halves
+   inside a hot loop that also evolves real `u64` PCG state and calls
+   `bit.bxor` each iteration — DOES show a real, reproducible (not an
+   address-printing artifact: the printed values are genuine, differing
+   `uint64_t` decimal outputs, e.g. `10572366454355499262ULL` vs
+   `10572366458650466558ULL` at the same position) divergence between
+   JIT-on and JIT-off, stable across repeated invocations (12485 of
+   100,000 lines differ, identically, across 3 separate runs), on the
+   ACTUAL pinned build (`28084004`) specifically — it does NOT reproduce
+   on the pre-fix build. This conflicts with the coordinator's own
+   report of testing "step-3 `ffi.cast(u64, ffi.cast(u32, rhi))`
+   recombination" and finding no divergence; the discrepancy was not
+   chased down further (different exact iteration count, different
+   surrounding loop body, or a machine/environment difference are all
+   plausible, unconfirmed candidates). **This does not affect anything
+   shipped**: `bin/random` never used this exact recombination pattern
+   in committed code (it was an intermediate debugging step, replaced by
+   the pure-arithmetic `u32()` before ever being committed), and both
+   the original `pcg32_random` and the current `xor64`/`u32()` rewrite
+   are independently confirmed clean at 1,000,000-draw scale (point 1
+   above, and the current-code verification in §4). Recorded here, not
+   acted on, because a real reproducible anomaly that doesn't affect
+   anything shipped is still worth a permanent note rather than silent
+   disposal — exactly the same discipline this whole retraction is
+   arguing for.
 
-```lua
-local function u32(v)
-  if v < 0 then return v + 4294967296 end
-  return v
-end
-```
+**Fix status: the `xor64`/`u32()` rewrite in `bin/random` is KEPT, but
+its justification in the source comments has been rewritten** to the
+portability argument that actually holds: passing 64-bit cdata to
+`bit.*` relies on an UNDOCUMENTED extension (LuaJIT's manual describes
+`bit.*` as a 32-bit-only API) that happens to work on every build tested
+so far but carries no stated compatibility guarantee — not a claim that
+it is broken, crashes, or miscompiles anywhere in the code that ships.
+See `bin/random`'s own comments on `u32()`/`xor64()` for the corrected
+text.
 
-The result (magnitude < 2^32) is exactly representable as a Lua double
-(far under the 2^53 exact-integer boundary), so this needs no cdata at
-all — sidestepping the cast miscompilation entirely rather than working
-around one specific trigger condition. Re-verified: JIT-on and JIT-off
-now agree bit-for-bit over 200,000+ iterations on BOTH LuaJIT builds.
+## Retraction and root cause
+
+Both §2 and §3's original findings shared ONE underlying methodological
+failure, not two independent ones: **a hypothesis that explained an
+observed symptom was written up as a confirmed finding without an
+independent check that it was the actual cause.**
+
+- §2's crash was real — on a commit (`5ed524c` bare) that was
+  superseded by a DIFFERENT commit (`28084004`) partway through this
+  same investigation, once the version-string mismatch in §1 was found.
+  The crash diagnosis was never re-run against the commit that actually
+  shipped.
+- §3's "confirmed miscompilation" rested on bisection scripts whose
+  PRINTING mechanism was itself broken (`tostring()` on 32-bit cdata),
+  producing digests that varied run-to-run even under a fixed seed and
+  a single JIT mode — a fact that should have been the FIRST thing
+  checked (reproducibility within a mode, before ever comparing across
+  modes) and was not.
+
+This is the same class of error this project has now made roughly six
+times across its history, in both directions (shipping an unverified
+"fixed" claim, and separately, twice, mishandling `FAST=` semantics) —
+worth naming plainly rather than quietly editing away, per the
+coordinator's explicit request. The fix going forward is procedural, not
+just "be more careful": before writing up ANY differential result
+(JIT-on vs JIT-off, old-build vs new-build, or any A-vs-B comparison)
+as a finding, first confirm (a) the exact artifact under test is the one
+that will actually ship, not a superseded intermediate build, and (b)
+the observation is reproducible on its own terms — same input, same
+mode, run twice — before treating cross-mode disagreement as signal.
 
 ## 4. Final verification (all satisfied)
 
@@ -167,20 +248,36 @@ now agree bit-for-bit over 200,000+ iterations on BOTH LuaJIT builds.
   the residual gap is ordinary machine-load noise between separate
   hyperfine invocations, not a discrepancy worth chasing further).
 
+**Re-verified after the §2/§3 retraction** (the `bin/random` comment
+rewrite touches text directly adjacent to live code, so this was
+re-checked rather than assumed safe): `bin/random -d --seed 42 0 99` →
+`26`; `./tests/golden_test` (both sets) still reproduces; the
+1,000,000-draw JIT-on/JIT-off stream comparison against the actual
+pinned build is still byte-for-byte identical. No behavior changed —
+only the comments justifying `xor64()`/`u32()` did.
+
 ## Takeaways
 
 - Don't trust a commit hash's claimed version string without building it
   — a fix landing on `master` vs its merge into a release branch can
   report meaningfully different version metadata even for byte-identical
-  fix content.
+  fix content. (This one HELD UP under challenge — §1's finding, unlike
+  §2/§3, was independently re-confirmed.)
 - "JIT-on and JIT-off disagree with each other" is a stronger, more
-  specific signal than "the test failed" — it immediately rules out
-  ordinary logic bugs and points straight at the trace compiler, which is
-  exactly what let this be isolated to a 4-line minimal repro rather than
-  debugged inside the full `pcg32_random` call graph.
-- An undocumented LuaJIT extension (`bit.*` accepting 64-bit cdata) and a
-  genuine, version-independent miscompilation (`ffi.cast` sign
-  reinterpretation) were BOTH latent in this project's shipped code before
-  this investigation — neither was introduced by pinning a new LuaJIT
-  commit; pinning a different build is simply what finally exercised the
-  code paths that exposed them.
+  specific signal than "the test failed" as a PRINCIPLE — it rules out
+  ordinary logic bugs and points at the trace compiler or the harness.
+  But the principle only works if the disagreement is real: check
+  reproducibility WITHIN a mode (same input, same mode, run twice)
+  before ever comparing ACROSS modes. §3's original "finding" skipped
+  that check and mistook non-deterministic address-printing noise for a
+  compiler bug.
+- When a build changes mid-investigation (as it did here, `5ed524c` →
+  `28084004`, once §1's version-string problem was found), re-run EVERY
+  prior finding against the NEW build before writing any of them up.
+  Carrying a diagnosis forward across a substituted artifact is exactly
+  how a real symptom (on the build actually tested) becomes a false
+  claim (about the build that ships).
+- A reproducible anomaly that doesn't reproduce for someone else's
+  formulation of "the same" test, and that doesn't affect anything
+  shipped, is still worth recording rather than either asserting as fact
+  or discarding — see §3 point 3's residual finding.

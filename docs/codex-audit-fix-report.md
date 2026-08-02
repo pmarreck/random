@@ -16,6 +16,14 @@ except where a fix was in progress. Golden vectors are unmoved at the
 end of this session, verified under both the project's system LuaJIT
 and the newly-pinned LuaJIT (Part D).
 
+**CORRECTION (same day):** Part D originally reported two confirmed
+LuaJIT bugs (§2/§3 of `docs/luajit-1499-pin-investigation.md`). Both
+were challenged by the coordinator with specific counter-evidence,
+independently re-investigated, and RETRACTED — see Part D below and the
+investigation doc's "RETRACTED" sections for the full account. Parts
+A-C and Part D's §1 (the version-string finding) are unaffected and
+were not revisited.
+
 ---
 
 ## Part A — surviving mutants
@@ -340,31 +348,54 @@ fix), expecting it to report `LuaJIT 2.1.1785606157`.
    zero changes to `lib/fixed.lua`'s already-reviewed
    `LUAJIT_1499_FIXED_IN` constant.
 
-2. Building against this pin crashed `bin/random` immediately:
-   `bin/random`'s `pcg32_random` passed `pcg_state` (a `uint64_t` cdata)
-   directly into `bit.rshift`/`bit.bxor`, relying on an undocumented
-   LuaJIT extension (`lj_carith_check64`/`shift64` in `lj_carith.c`)
-   that was removed between the pre-fix commit nixpkgs pins and this
-   one — confirmed by diffing the upstream source trees directly. Fixed
-   with a portable `xor64()` helper (hi/lo 32-bit split, `bit.bxor` each
-   half, recombine) plus u64 division for the 64-bit right-shifts;
-   verified against the removed extension as an independent oracle
-   (200,000 cases, 0 mismatches).
+2. **RETRACTED, see below.** An initial pass reported that this pin
+   crashed `bin/random` immediately (`bit.rshift`/`bit.bxor` rejecting a
+   `uint64_t` cdata operand) and attributed it to an undocumented
+   LuaJIT extension removed between the pre-fix and newly-pinned source
+   trees. That crash was real, but on a DIFFERENT, since-superseded
+   LuaJIT build (`5ed524c` built bare, not the actual pin `28084004`)
+   — the diagnosis was never re-checked against the commit that ended
+   up shipping. Re-verified directly against the real pin: no crash, no
+   divergence, at 1,000,000-draw scale.
 
-3. After fixing #2, `random_jit_diff_test` failed 30/30 and
-   `golden_test` failed (both sets changed) — under the new LuaJIT
-   specifically. Isolated to a minimal, 4-line repro: a hot loop doing
-   nothing but `ffi.cast("uint32_t", <negative Lua number>)` produces
-   DIFFERENT output under JIT-on vs JIT-off — a genuine trace-compiler
-   miscompilation (JIT-on/off disagreeing with each other, not merely
-   both being wrong, is specifically that signature), reproducible on
-   BOTH the pre-fix AND post-fix LuaJIT builds, and apparently latent in
-   `bin/random`'s ORIGINAL `pcg32_random` all along (its final
-   `tonumber(ffi.cast("uint32_t", res))`, unchanged until this fix) —
-   it simply never manifested because the pre-fix code's exact
-   trace-formation pattern never triggered it. Fixed by replacing every
-   such cast with pure arithmetic (`v < 0 and v + 4294967296 or v`),
-   which needs no cdata at all.
+3. **RETRACTED, see below.** The same pass also reported a confirmed,
+   version-independent `ffi.cast("uint32_t", v)` trace-compiler
+   miscompilation, motivating a rewrite of the sign-reinterpretation
+   step. The supporting evidence was contaminated by a test-harness bug:
+   `tostring()` on a `uint32_t` cdata prints a boxed pointer address, not
+   the numeric value (unlike `uint64_t`, which prints `NNNNULL`) — the
+   bisection scripts were hashing heap addresses across separate process
+   invocations, not computed values, which should have been caught by a
+   same-mode reproducibility check that was never run.
+
+**Retraction:** both #2 and #3 were challenged by the coordinator with
+specific counter-evidence, independently re-investigated (not simply
+accepted or defended), and confirmed retracted — full account, including
+one narrow unresolved residual data point the re-investigation itself
+turned up (a discarded intermediate code formulation shows a real,
+reproducible-on-this-machine divergence that doesn't reproduce for the
+coordinator's own test and doesn't affect anything shipped), in
+`docs/luajit-1499-pin-investigation.md`'s "RETRACTED" sections and
+"Retraction and root cause". The `xor64()`/`u32()` rewrite in
+`bin/random` is KEPT — re-verified stream-identical to the code it
+replaced (seed 42 → 26, golden vectors, 1,000,000-draw JIT-on/off
+comparison) — but its justification was rewritten to the claim that
+actually holds: avoiding an UNDOCUMENTED LuaJIT extension (64-bit cdata
+accepted by `bit.*`, which works today but is not part of the officially
+32-bit-only documented API) is a real, modest portability argument, not
+a defect fix.
+
+**Root cause, named explicitly per the coordinator's request:** both
+retracted findings share one methodological failure — a hypothesis that
+explained an observed symptom was written up as a confirmed finding
+without an independent check that it was the actual cause (#2: never
+re-tested against the commit that shipped, after the investigation
+substituted a different one partway through; #3: never checked for
+same-mode reproducibility before treating cross-mode disagreement as
+signal). This is the same class of error this project has made
+repeatedly, in both directions, including two separate `FAST=` mishandlings
+predating this session — worth recording on that basis rather than
+quietly editing away.
 
 **Verification (all satisfied):**
 - `nix build` succeeds; `./result/bin/random -d --seed 42 0 99` → `26`.
@@ -385,7 +416,13 @@ PLAN.md: added a TODO to drop the override once nixpkgs-unstable's own
 `pkgs.luajit` catches up, and updated the `LUAJIT_1499_FIXED_IN`
 deferred note to record the manual (not automated) verification.
 
-Commit: `2fbae65`
+All of the above was re-run and re-confirmed after the #2/#3 retraction
+below (the comment rewrite touches text directly adjacent to live code
+in `bin/random`, so this was checked rather than assumed safe).
+
+Commits: `2fbae65` (original pin + rewrite), `<retraction commit>`
+(retraction of #2/#3, comment rewrite, this report update — see
+`git log` for the actual hash)
 
 ---
 
@@ -409,10 +446,18 @@ Commit: `2fbae65`
   alone — they name a project phase, not a dangling file pointer, and
   remain meaningful without the deleted report files.
 
+- **Part D's §2/§3 findings** (LuaJIT bugs originally reported as
+  motivating the `pcg32_random` rewrite) — retracted; see above and
+  `docs/luajit-1499-pin-investigation.md`. The rewrite itself was NOT
+  reverted (it is stream-identical to the code it replaced and rests on
+  an honest, if more modest, portability argument), but the claims that
+  it fixed a crash or a miscompilation were false and are withdrawn.
+
 No golden vector moved at any point in this session. Every fix that
 touched behavior (B1, B2, A5-A9, the `--about` implementation, and Part
-D's two LuaJIT-bug fixes) was verified via a failing-before/passing-after
+D's LuaJIT pin itself) was verified via a failing-before/passing-after
 test, mutation-tested 10/10 in both directions where a code-level
 mutation was applicable, or (Part D) verified via an independent
 differential (JIT-on vs JIT-off, old LuaJIT vs new LuaJIT) plus golden
-vector reproduction under both toolchains.
+vector reproduction under both toolchains — including a re-verification
+pass after the §2/§3 retraction.

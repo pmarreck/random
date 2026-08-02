@@ -39,15 +39,21 @@
       `flake.nix` now pins LuaJIT commit `28084004` (the `v2.1`-branch
       merge of the actual #1499 fix, `5ed524c` -- see
       `docs/luajit-1499-pin-investigation.md` for why the bare fix commit
-      hash doesn't work: wrong branch, wrong version string) plus two
-      SEPARATE, independently-discovered LuaJIT trace-compiler bugs this
-      exposed and fixed in `bin/random`'s PCG32 code (a removed
-      undocumented 64-bit-cdata `bit.*` extension, and a genuine
-      version-independent `ffi.cast` sign-reinterpretation
-      miscompilation). Measured recovered speed: 5.31x +/- 0.28x
-      (hyperfine, `--log-normal -c 20000`). Golden vectors unmoved
-      throughout, verified under both the pinned and system LuaJIT. Full
-      report: `docs/codex-audit-fix-report.md` (2026-08-02 EST)
+      hash doesn't work: wrong branch, wrong version string). `bin/random`'s
+      PCG32 code was also rewritten (`xor64`/`u32()`, portability-motivated:
+      avoids an undocumented LuaJIT extension rather than a confirmed
+      defect) -- an initial version of this work claimed two confirmed
+      LuaJIT bugs motivated the rewrite; both were challenged by the
+      coordinator, independently re-investigated, and RETRACTED (one was
+      diagnosed against a since-superseded commit and never re-checked
+      against the actual pin; the other's evidence was contaminated by a
+      test-harness bug printing cdata pointer addresses instead of
+      values). See `docs/luajit-1499-pin-investigation.md`'s "RETRACTED"
+      sections for the full account. Measured recovered speed: 5.31x
+      +/- 0.28x (hyperfine, `--log-normal -c 20000`). Golden vectors
+      unmoved throughout, verified under both the pinned and system
+      LuaJIT, re-verified again after the retraction. Full report:
+      `docs/codex-audit-fix-report.md` (2026-08-02 EST)
 
 ## Next: Zig port (separate plan)
 - [ ] `src/fixed.zig` mirroring `lib/fixed.lua`, verified against the same `bc` sweep
