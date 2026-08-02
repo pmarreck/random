@@ -274,7 +274,7 @@ function M.norm(m, e)
 	local u = ffi.cast(u64, neg and -m or m)
 	while u < TWO62 do u = u * 2ULL; e = e - 1 end
 	while u >= 0x8000000000000000ULL do u = u / 2ULL; e = e + 1 end
-	assert(e >= -2147483648 and e <= 2147483647, "fixed.norm: exponent outside i32")
+	assert(e >= -2147483648 and e <= 2147483647 and e % 1 == 0, "fixed.norm: exponent outside i32")
 	local r = ffi.cast(i64, u)
 	if neg then r = -r end
 	return r, e
@@ -337,7 +337,7 @@ function M.mul(m1, e1, m2, e2)
 		m = hi * 4ULL + lo / TWO62
 		e = e1 + e2
 	end
-	assert(e >= -2147483648 and e <= 2147483647, "fixed.mul: exponent outside i32")
+	assert(e >= -2147483648 and e <= 2147483647 and e % 1 == 0, "fixed.mul: exponent outside i32")
 	local r = ffi.cast(i64, m)
 	if neg then r = -r end
 	return r, e

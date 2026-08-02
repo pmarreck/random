@@ -89,6 +89,35 @@ ok(norm_ok3, "norm: exponent AT the i32 max (2147483647) does not raise (boundar
 local norm_ok4 = pcall(fx.norm, 0x4000000000000000LL, -2147483648)
 ok(norm_ok4, "norm: exponent AT the i32 min (-2147483648) does not raise (boundary, not off-by-one)")
 
+-- The i32 assert above checked RANGE but not INTEGRALITY: a fractional
+-- exponent is not representable in Zig's i32 either (same
+-- reference/port divergence class M.mul's own e1+e2-overflow assert
+-- exists to prevent, see below), but was silently ACCEPTED and
+-- propagated -- confirmed directly: fx.norm(0x4000000000000000LL, 0.5)
+-- returned (m, 0.5) with no error, and a downstream fx.ln of that
+-- result silently returned 0 instead of raising or computing
+-- ln(sqrt(2)). rejects_norm's exact-message check doubles as the
+-- integrality check here (a wrong `e % 1 == 0` mutant that instead
+-- checked, say, `e == e` would still raise SOME assert but not
+-- necessarily THIS one -- the message match rules that out).
+local norm_r5, norm_why5 = rejects_norm(0x4000000000000000LL, 0.5, "fixed.norm: exponent outside i32")
+ok(norm_r5, "norm: fractional exponent (0.5) asserts, not silently accepted", norm_why5)
+local norm_r6, norm_why6 = rejects_norm(0x4000000000000000LL, -0.5, "fixed.norm: exponent outside i32")
+ok(norm_r6, "norm: fractional exponent (-0.5) asserts", norm_why6)
+local norm_r7, norm_why7 = rejects_norm(0x4000000000000000LL, 1.999999, "fixed.norm: exponent outside i32")
+ok(norm_r7, "norm: fractional exponent (1.999999, integer-adjacent) asserts", norm_why7)
+
+-- The finding's own concrete repro: norm's assert firing on the
+-- fractional exponent means M.ln never even gets a chance to silently
+-- return the wrong answer for it -- the bad value cannot escape norm.
+local ln_propagation_ok, ln_propagation_err = pcall(function()
+	local bad_m, bad_e = fx.norm(0x4000000000000000LL, 0.5)
+	return fx.ln(bad_m, bad_e)
+end)
+ok((not ln_propagation_ok) and tostring(ln_propagation_err):find("fixed.norm: exponent outside i32", 1, true) ~= nil,
+   "norm+ln: a fractional exponent is rejected before it can reach ln and silently return 0",
+   tostring(ln_propagation_err))
+
 -- zero is canonical
 local zm, ze = fx.from_int(0)
 ok(zm == 0LL and ze == 0, "zero is canonical (m=0, e=0)")
@@ -132,6 +161,16 @@ local mul_r2, mul_why2 = rejects_mul(0x4000000000000000LL, -2000000000, 0x400000
    "fixed.mul: exponent outside i32")
 ok(mul_r2, "mul: two in-contract exponents (-2000000000 each) whose sum underflows past i32 min", mul_why2)
 
+-- M.mul computes e = e1+e2[+1] directly rather than routing through
+-- M.norm (see its own doc comment), so it needs its OWN integrality
+-- check -- M.norm's fix alone would not catch this. A caller handing in
+-- a fractional e1 (itself only reachable if something upstream already
+-- violated the contract, but exactly the kind of silent propagation
+-- this file's exponent-contract discipline exists to stop at the first
+-- opportunity, not the last).
+local mul_r3, mul_why3 = rejects_mul(0x4000000000000000LL, 0.5, 0x4000000000000000LL, 0,
+   "fixed.mul: exponent outside i32")
+ok(mul_r3, "mul: fractional input exponent (0.5) asserts, not silently propagated", mul_why3)
 -- sign handling across all four quadrants
 local cases = {{2,3,6},{-2,3,-6},{2,-3,-6},{-2,-3,6}}
 local sign_ok = true
