@@ -1582,6 +1582,48 @@ ok(fx.tostring(n7m, n7e, 3) == "-7.000", "tostring(-7, 3) == '-7.000'")
 ok(fx.tostring(halfm, halfe, 6) == "0.500000", "tostring(1/2, 6) == '0.500000'",
    "got " .. fx.tostring(halfm, halfe, 6))
 
+-- === tostring must not hang on a legal-but-absurd exponent (2026-08-02 ===
+-- === Codex review, finding #6). ============================================
+-- The i32 exponent CONTRACT permits an exponent as large as 2147483647,
+-- but decimal_shift_left's cost is O(sh * digit_count) -- at that
+-- exponent (sh ~= 2147483585) it implies roughly 646 MILLION decimal
+-- digits, not a rendering job. Confirmed directly: fx.tostring(2^62,
+-- 2147483647, 0) did not return within 5s before this guard existed.
+-- Bounded the same way M.exp's own unbounded correction loop is bounded
+-- (see correction_guard above): a loud, immediate error once the bound
+-- is exceeded, using the SAME MAX_INT_PART_DIGITS limit M.parse's
+-- bignum fallback enforces (see that function's own tests), so the two
+-- functions cannot disagree about what's renderable vs parseable.
+local TWO62_M = 0x4000000000000000LL
+local function rejects_tostring_hang(mm, ee, want_msg)
+	local okc, err = pcall(fx.tostring, mm, ee, 0)
+	if okc then return false, "did not raise" end
+	if not tostring(err):find(want_msg, 1, true) then
+		return false, "wrong error: " .. tostring(err)
+	end
+	return true
+end
+local ts_hang_ok, ts_hang_why = rejects_tostring_hang(TWO62_M, 2147483647, "fixed.tostring")
+ok(ts_hang_ok, "tostring: the maximum legal i32 exponent (2147483647) raises instead of hanging", ts_hang_why)
+
+-- Boundary pins (verified directly, not assumed): i64_to_decimal(am) is
+-- ALWAYS 19 characters for a normalized mantissa, so 19 + sh ==
+-- MAX_INT_PART_DIGITS is the exact edge. e = 62 + sh, so sh = 1981
+-- (e=2043) must NOT raise and sh = 1982 (e=2044) must raise -- pinning
+-- this exactly, not just "somewhere large", catches a >= vs > or an
+-- off-by-one on the new check itself.
+local ts_boundary_ok = pcall(fx.tostring, TWO62_M, 2043, 0)
+ok(ts_boundary_ok, "tostring: exponent implying EXACTLY MAX_INT_PART_DIGITS (2000) digits does not raise (boundary, not off-by-one)")
+local ts_over_ok, ts_over_why = rejects_tostring_hang(TWO62_M, 2044, "fixed.tostring")
+ok(ts_over_ok, "tostring: exponent implying MAX_INT_PART_DIGITS + 1 digits raises", ts_over_why)
+
+-- Specificity: a large-but-under-the-limit exponent still renders (this
+-- guard must not become an accidental blanket rejection of every large
+-- exponent, only genuinely absurd ones).
+local ts_large_ok, ts_large_result = pcall(fx.tostring, TWO62_M, 2000, 0)
+ok(ts_large_ok and #ts_large_result == 603,
+   "tostring: exponent implying ~600 digits (well under the limit) still renders in full",
+   tostring(ts_large_result and #ts_large_result))
 -- === parse_int: baseline cases (from the task brief) ======================
 ok(fx.parse_int("42") == 42, "parse_int('42') == 42")
 ok(fx.parse_int("-9") == -9, "parse_int('-9') == -9")
@@ -1623,20 +1665,61 @@ local p30m, p30e = fx.parse("0." .. frac18 .. string.rep("9", 12))  -- 30 digits
 ok(fx.cmp(p30m, p30e, p18m, p18e) == 0,
    "parse: digits past the 18th are still dropped cleanly even at 30 total (no corruption)")
 
--- Integer part: exactly int64 max (19 digits) parses exactly; any
--- 19-digit value past int64 max is REJECTED, not silently wrapped. The
--- brief's own "digits > 18" check let 19-digit inputs through with no
--- magnitude check at all -- confirmed directly that parsing 19 nines
--- under the brief's literal, unchecked accumulation
--- (`int_part * 10LL + d`) wraps to -8446744073709551616: A NEGATIVE
--- MANTISSA FOR A STRING WITH NO MINUS SIGN ANYWHERE IN IT.
+-- Integer part: exactly int64 max (19 digits) parses exactly. A 19-digit
+-- value PAST int64 max used to be rejected outright (nil) -- as of the
+-- 2026-08-02 Codex review fix (finding #5) it instead extends into
+-- M.parse's soft-float bignum fallback, the SAME path that lets
+-- M.parse read back M.tostring's own output past int64 magnitude (see
+-- the round-trip block below). This is a DELIBERATE behavior change,
+-- re-blessed here rather than left silently broken: the two assertions
+-- below used to require `== nil`; they now require a NON-nil result
+-- that matches an INDEPENDENT reconstruction built without calling
+-- fx.parse at all (same "not simply checking parse against itself"
+-- discipline as the 18-digit fraction check above), so the CHECK still
+-- protects what it always protected -- [MUTATION TARGET B] guards
+-- accumulate_digits' overflow check not silently wrapping into a WRONG
+-- value: the brief's own literal, unchecked accumulation
+-- (`int_part * 10LL + d`) wraps 19 nines to -8446744073709551616: A
+-- NEGATIVE MANTISSA FOR A STRING WITH NO MINUS SIGN ANYWHERE IN IT. If
+-- that guard were ever removed, int_v would come back non-nil (the
+-- wrapped garbage), M.parse would take the FAST path instead of the
+-- bignum fallback, and the result would no longer match the
+-- independent reconstruction -- still caught, just via a different
+-- assertion shape than a bare nil check.
+local function independent_bignum_int(digit_str)
+	local m, e = 0LL, 0
+	for i = 1, #digit_str do
+		m, e = fx.mul(m, e, fx.from_int(10))
+		m, e = fx.add(m, e, fx.from_int(digit_str:byte(i) - 48))
+	end
+	return m, e
+end
 local imaxm, imaxe = fx.parse("9223372036854775807")
 ok(fx.cmp(imaxm, imaxe, fx.from_int(9223372036854775807LL)) == 0,
    "parse: int64-max integer part (19 digits) parses exactly")
-ok(fx.parse("9999999999999999999") == nil,
-   "parse: 19-digit integer part past int64 max is rejected, not silently wrapped [MUTATION TARGET B]")
-ok(fx.parse("99999999999999999999999") == nil,
-   "parse: a grossly-overflowing integer part (23 digits) is rejected")
+
+local nines19 = "9999999999999999999"
+local p19m, p19e = fx.parse(nines19)
+local ref19m, ref19e = independent_bignum_int(nines19)
+ok(p19m ~= nil and fx.cmp(p19m, p19e, ref19m, ref19e) == 0,
+   "parse: 19-digit integer part past int64 max now parses via the bignum " ..
+   "fallback, matching an independent reconstruction exactly [MUTATION TARGET B]",
+   ("got m=%s e=%s"):format(tostring(p19m), tostring(p19e)))
+
+local nines23 = "99999999999999999999999"
+local p23m, p23e = fx.parse(nines23)
+local ref23m, ref23e = independent_bignum_int(nines23)
+ok(p23m ~= nil and fx.cmp(p23m, p23e, ref23m, ref23e) == 0,
+   "parse: a 23-digit integer part also parses via the bignum fallback " ..
+   "(well under MAX_INT_PART_DIGITS), matching an independent reconstruction exactly",
+   ("got m=%s e=%s"):format(tostring(p23m), tostring(p23e)))
+
+-- The bignum fallback is bounded, not unlimited: MAX_INT_PART_DIGITS is a
+-- hard cap, shared with M.tostring's own shift guard (see that function).
+ok(fx.parse(string.rep("9", fx.MAX_INT_PART_DIGITS + 1)) == nil,
+   "parse: an integer part one digit past MAX_INT_PART_DIGITS is rejected, not hung or truncated")
+ok(fx.parse(string.rep("9", fx.MAX_INT_PART_DIGITS)) ~= nil,
+   "parse: an integer part exactly AT MAX_INT_PART_DIGITS is accepted (boundary, not off-by-one)")
 
 -- === Verification item 2: tostring must not produce a wrong digit ========
 -- Truncation toward zero, unconditionally: -0.5 formats as "-0.500000",
@@ -1730,17 +1813,24 @@ ok(coll_s2 == "9223372036854775806.000000",
 -- 19-digit integers (55 and 60 deliberately land past to_int_trunc's
 -- documented 2^53 clamp at e~53; 62 lands exactly on its hard collapse to
 -- a single constant -- see kernel_bc_sweep.lua's TOSTRING_EXPS comment
--- for the concrete repro this is the round-trip-style twin of). Stops at
--- 62, not 70 like TOSTRING_EXPS: this sweep round-trips through
--- fx.parse(fx.tostring(...)), and fx.parse's own integer-part parsing
--- deliberately caps at int64 magnitude (see M.parse_int's doc comment --
--- "nothing currently in this file needs the full int64 range"), a
--- SEPARATE, pre-existing, documented limitation unrelated to the
--- tostring defect this sweep targets. e=62 is the largest exponent
--- guaranteed to stay within that cap: the mantissa invariant already
+-- for the concrete repro this is the round-trip-style twin of). Stopped at
+-- 62, not 70 like TOSTRING_EXPS, for a reason that no longer holds as of
+-- the 2026-08-02 Codex review fix (finding #5): fx.parse's own
+-- integer-part parsing USED TO cap at int64 magnitude (see
+-- M.parse_int's doc comment -- "nothing currently in this file needs
+-- the full int64 range" -- which is still true of M.parse_int itself,
+-- just no longer of M.parse). It now extends past int64 via a bignum
+-- fallback (see the dedicated "beyond int64" sweep just below this
+-- one), so 62 is kept here only as the ORIGINAL boundary this sweep's
+-- tolerance model was tuned against, not because parse can't go
+-- further -- widening THIS sweep and adding a separate one covers the
+-- same ground with less risk of silently changing what THIS sweep's
+-- tolerance numbers mean. e=62 is the largest exponent guaranteed to
+-- stay within the OLD int64 cap: the mantissa invariant already
 -- bounds |m| < 2^63 = INT64_MAX_MAG + 1, so at e=62 (sh=0, the exact
 -- integer IS the mantissa) it can never overflow; one exponent higher
 -- and a left-shifted mantissa sometimes would. TOSTRING_EXPS's bc-based
+-- sweep (kernel_bc_sweep.lua) does not round-trip through fx.parse and
 -- sweep (kernel_bc_sweep.lua) does not round-trip through fx.parse and
 -- so already covers 70 and beyond without this constraint.
 -- Spans the realistic domain this kernel's own top-of-file comment
@@ -1814,6 +1904,61 @@ ok(rt_fail_count == 0,
       format(RT_PLACES, rt_count),
    ("worst case used %.4fx of its allowed tolerance, at %s"):format(rt_worst_ratio, tostring(rt_worst_ratio_label)))
 
+-- === Verification item 3b: parse must handle M.tostring's own output =====
+-- === beyond int64 magnitude (2026-08-02 Codex review, finding #5). =======
+-- M.tostring can legitimately need to render an integer part past int64
+-- magnitude (log-normal's exp() is "effectively unbounded", per this
+-- file's top-of-file note; M.tostring already handles it via
+-- decimal_shift_left's exact bignum-doubling path). M.parse used to cap
+-- at int64 magnitude (see the comment on RT_EXPS stopping at e=62,
+-- above) -- confirmed directly: fx.parse(fx.tostring(
+-- 0x4000000000000000LL, 63, 6)) -- i.e. round-tripping exactly 2^63 --
+-- returned nil. Same sweep machinery as Verification item 3 (reusing
+-- rt_next_mantissa/rt_tolerance/true_fixed_absdiff), just at exponents
+-- that sweep deliberately stayed below.
+local BEYOND_INT64_EXPS = {63, 64, 70, 100, 200, 500}
+local beyond_fail_count, beyond_worst_ratio, beyond_worst_label = 0, 0, nil
+for _, e in ipairs(BEYOND_INT64_EXPS) do
+	for i = 1, 4 do
+		local mag = rt_next_mantissa()
+		local m = ffi.cast("int64_t", mag)
+		if i % 2 == 0 then m = -m end   -- alternate sign
+		local s = fx.tostring(m, e, RT_PLACES)
+		local pm, pe = fx.parse(s)
+		if pm == nil then
+			beyond_fail_count = beyond_fail_count + 1
+			beyond_worst_label = ("e=%d i=%d: parse returned nil for a %d-char string"):format(e, i, #s)
+		else
+			local absdiff = true_fixed_absdiff(pm, pe, m, e)
+			local tol = rt_tolerance(m, e)
+			if absdiff > tol then beyond_fail_count = beyond_fail_count + 1 end
+			local ratio = absdiff / tol
+			if ratio > beyond_worst_ratio then
+				beyond_worst_ratio, beyond_worst_label =
+					ratio, ("e=%d i=%d absdiff=%.3e tol=%.3e"):format(e, i, absdiff, tol)
+			end
+		end
+	end
+end
+ok(beyond_fail_count == 0,
+   ("parse(tostring(x, %d)) round-trips past int64 magnitude too, over exponents {%s}"):
+      format(RT_PLACES, table.concat(BEYOND_INT64_EXPS, ", ")),
+   ("worst case used %.4fx of its allowed tolerance, at %s"):format(beyond_worst_ratio, tostring(beyond_worst_label)))
+
+-- The finding's own concrete repro, pinned directly (not just swept):
+-- exactly 2^63 is a single set bit, so unlike the sweep above (which
+-- only needs to land within this kernel's ~2^-62 relative precision
+-- floor) this one round-trips EXACTLY -- if it didn't, that would be
+-- a stronger signal than the sweep's tolerance check could give.
+local repro_s = fx.tostring(0x4000000000000000LL, 63, 6)
+ok(repro_s == "9223372036854775808.000000",
+   "tostring(2^63) renders the expected exact string", repro_s)
+local repro_pm, repro_pe = fx.parse(repro_s)
+ok(repro_pm ~= nil, "parse(tostring(2^63)) no longer returns nil")
+if repro_pm ~= nil then
+	ok(fx.cmp(repro_pm, repro_pe, 0x4000000000000000LL, 63) == 0,
+	   "parse(tostring(2^63)) recovers exactly 2^63 (bit-exact, not just within tolerance)")
+end
 -- === Verification item 4: parse_int must reject what it should ===========
 ok(fx.parse_int("") == nil, "parse_int('') is nil (empty string)")
 ok(fx.parse_int("   ") == nil, "parse_int('   ') is nil (whitespace-only)")

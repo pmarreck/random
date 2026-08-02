@@ -1321,6 +1321,27 @@ end
 --- (CLI counts, range bounds) needs that one extra representable value.
 local INT64_MAX_MAG = 0x7FFFFFFFFFFFFFFFLL
 
+--- Shared magnitude limit for the integer PART of a parsed or rendered
+--- decimal string, in decimal digits. Read by both M.parse's bignum
+--- fallback (below) and M.tostring's shift guard (near the bottom of
+--- this file) -- the SAME constant, not two independently-chosen ones,
+--- so the two functions cannot silently disagree about what's
+--- parseable vs renderable (the exact defect a hostile review found:
+--- M.tostring could render a value M.parse then refused to read back).
+--- 2000 decimal digits is a value up to roughly 10^2000 ~= 2^6644 --
+--- deliberately far beyond anything this program's real domain needs
+--- (log-normal's exp() is "effectively unbounded" per this file's
+--- top-of-file note, but no realistic --mean/--stddev combination asks
+--- for a 2000-digit integer part) while remaining small enough that
+--- rendering or parsing at the limit finishes in well under a second
+--- (decimal_shift_left's own doc comment already calls "tens to low
+--- thousands" of digits realistic for this program). Also bounds the
+--- OTHER real defect found alongside the disagreement: M.tostring's
+--- shift count is only capped by the i32 exponent contract, which
+--- permits shifts implying on the order of 646 MILLION digits --
+--- confirmed directly to hang, not just run slowly.
+local MAX_INT_PART_DIGITS = 2000
+M.MAX_INT_PART_DIGITS = MAX_INT_PART_DIGITS
 --- Accumulate consecutive ASCII decimal digits from byte index i of s into
 --- an unsigned magnitude held in an int64 (v is 0LL, count is 0 if none are
 --- present), stopping at the first non-digit byte or end of string.
@@ -1390,9 +1411,47 @@ function M.parse(s)
 	local sign, i = 1, 1
 	local c = s:sub(1, 1)
 	if c == "-" then sign = -1; i = 2 elseif c == "+" then i = 2 end
+	local int_start = i
 	local int_v, int_digits
-	int_v, int_digits, i = accumulate_digits(s, i)
-	if int_v == nil then return nil end   -- integer part overflows int64
+	int_v, int_digits, i = accumulate_digits(s, int_start)
+	local int_m, int_e
+	if int_v == nil then
+		-- Integer part overflows int64 -- NOT automatically malformed:
+		-- M.tostring's own output can legitimately need more than int64
+		-- magnitude (log-normal's exp() is "effectively unbounded", see
+		-- this file's top-of-file note), and M.tostring already renders
+		-- such values via decimal_shift_left's bignum path. Confirmed
+		-- directly: fx.parse(fx.tostring(0x4000000000000000LL, 63, 6))
+		-- -- i.e. round-tripping exactly 2^63 -- returned nil before
+		-- this fallback existed. Rebuild the integer part directly as a
+		-- soft-float via repeated multiply-by-10-add-digit (M.mul/
+		-- M.add are both in FINAL argument position below, so their
+		-- multi-return expands in full -- see M.parse's own doc comment,
+		-- defect 1, for why a NON-final chain would silently drop the
+		-- exponent instead), bounded by MAX_INT_PART_DIGITS -- the SAME
+		-- documented limit M.tostring's own shift guard enforces, so
+		-- the two functions cannot disagree about what's parseable vs
+		-- renderable. Precision beyond this kernel's own ~62-bit
+		-- mantissa is not preserved (nothing in this file's
+		-- representation can preserve more), matching every other
+		-- round-trip guarantee this file makes.
+		int_m, int_e = 0LL, 0
+		local digits_seen = 0
+		local j = int_start
+		while j <= #s do
+			local ch = s:byte(j)
+			if ch < 48 or ch > 57 then break end
+			digits_seen = digits_seen + 1
+			if digits_seen > MAX_INT_PART_DIGITS then return nil end
+			int_m, int_e = M.mul(int_m, int_e, M.from_int(10))
+			int_m, int_e = M.add(int_m, int_e, M.from_int(ch - 48))
+			j = j + 1
+		end
+		int_digits = digits_seen
+		i = j
+	else
+		int_m, int_e = M.from_int(int_v)
+	end
 	local frac_v, frac_digits = 0LL, 0
 	if i <= #s and s:byte(i) == 46 then    -- '.'
 		i = i + 1
@@ -1414,7 +1473,7 @@ function M.parse(s)
 	end
 	if i <= #s then return nil end          -- trailing garbage, e.g. a 2nd '.'
 	if int_digits == 0 and frac_digits == 0 then return nil end
-	local m, e = M.from_int(int_v)
+	local m, e = int_m, int_e
 	if frac_digits > 0 then
 		local den = 1LL
 		for _ = 1, frac_digits do den = den * 10LL end
@@ -1547,6 +1606,29 @@ function M.tostring(m, e, places)
 	local sh = ae - 62
 	local ip_str, fm, fe
 	if sh >= 0 then
+		-- i64_to_decimal(am) is ALWAYS exactly 19 characters: am is
+		-- normalized (2^62 <= am < 2^63), and both bounds of that range
+		-- are 19-digit decimal numbers. decimal_shift_left can grow the
+		-- digit count by AT MOST 1 per doubling (doubling x can only
+		-- ever push floor(log10(x))+1 up by 0 or 1: 2x < 10x always),
+		-- so 19 + sh is a safe, exact upper bound on the final digit
+		-- count -- checked BEFORE calling decimal_shift_left, not
+		-- after, since the whole point is to never run its O(sh *
+		-- digit_count) doubling loop at all for a legal-but-absurd sh.
+		-- The i32 exponent CONTRACT permits sh up to roughly 2^31,
+		-- which would ask for ~646 MILLION digits -- confirmed directly
+		-- to hang, not just run slowly: fx.tostring(2^62, 2147483647,
+		-- 0) did not return within 5s before this guard existed.
+		-- MAX_INT_PART_DIGITS is the SAME shared limit M.parse's own
+		-- bignum fallback enforces (see that function), so the two
+		-- functions cannot disagree about what's renderable vs
+		-- parseable.
+		if sh > MAX_INT_PART_DIGITS - 19 then
+			error(("fixed.tostring: integer part would need more than %d decimal " ..
+				"digits (exponent %d implies a %d-digit shift) -- refusing to " ..
+				"render rather than producing an absurdly large string")
+				:format(MAX_INT_PART_DIGITS, e, sh))
+		end
 		ip_str = decimal_shift_left(i64_to_decimal(am), sh)
 		fm, fe = 0LL, 0
 	else
