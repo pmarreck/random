@@ -65,11 +65,23 @@ test_random() {
 	about_a_output=$(random -a 2>/dev/null)
 	local about_lines
 	about_lines=$(printf '%s\n' "$about_output" | wc -l | tr -d ' ')
+	# Per this fleet's mandatory CLI convention (CROSS_PROJECT_CLAUDE.md):
+	# --about must show a one-line description, VERSION, and platform/arch
+	# -- not just prose. Check dynamically against luajit's own jit.os/
+	# jit.arch (this test's `random` invocation and this check run under
+	# the same interpreter), not a hardcoded "Linux"/"x64", so this stays
+	# correct cross-platform (Mac aarch64, Linux aarch64/x86_64, Windows).
+	local about_os about_arch
+	about_os=$(luajit -e 'io.write(jit.os)')
+	about_arch=$(luajit -e 'io.write(jit.arch)')
 
-	if [ -n "$about_output" ] && [ "$about_lines" -eq 1 ] && [ "$about_a_output" = "$about_output" ]; then
-		echo "✓ About flag test passed"
+	if [ -n "$about_output" ] && [ "$about_lines" -eq 1 ] && [ "$about_a_output" = "$about_output" ] && \
+	   [[ "$about_output" == *"$about_os"* ]] && [[ "$about_output" == *"$about_arch"* ]] && \
+	   [[ "$about_output" =~ v[0-9]+\.[0-9]+ ]]; then
+		echo "✓ About flag test passed (got: $about_output)"
 	else
-		echo "✗ About flag test failed: --about='$about_output' (lines: $about_lines) -a='$about_a_output'" >&2
+		echo "✗ About flag test failed: --about='$about_output' (lines: $about_lines) -a='$about_a_output' " \
+			"(expected os=$about_os arch=$about_arch and a vN.N version)" >&2
 		(( fails++ ))
 	fi
 

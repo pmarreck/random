@@ -321,12 +321,20 @@ local HALF_M, HALF_E = fx.div(ONE_M, ONE_E, TWO_M, TWO_E)
 -- round-half-away-from-zero ONLY for a non-negative input; for a negative
 -- one it rounds one unit too HIGH (toward zero) instead, e.g.
 -- -2.4 + 0.5 = -1.9, trunc = -1, not the correct -2 -- and even an exact
--- negative integer gets bumped: -50 + 0.5 = -49.5, trunc = -49. The old,
--- pre-kernel code used math.floor(v + 0.5), which is correct in both
--- directions; this is the truncation-only equivalent. Subtracting 1/2
--- for negative inputs before truncating fixes it: -2.4 - 0.5 = -2.9,
--- trunc = -2 (correct); -50 - 0.5 = -50.5, trunc = -50 (correct, exact
--- integers pass through unchanged either way).
+-- negative integer gets bumped: -50 + 0.5 = -49.5, trunc = -49.
+--
+-- The old, pre-kernel code used math.floor(v + 0.5) -- NOT actually
+-- correct in both directions either, despite an earlier version of this
+-- comment claiming so: math.floor rounds ties toward +infinity
+-- unconditionally, which coincides with "away from zero" only for
+-- non-negative v. For a negative tie it rounds one unit too HIGH (toward
+-- zero), the identical direction of error the truncate-based formula
+-- above has, just reached via a different mechanism: math.floor(-2.5 +
+-- 0.5) == math.floor(-2.0) == -2, not the correct ties-away-from-zero -3.
+-- Subtracting 1/2 for negative inputs before truncating fixes it: -2.4 -
+-- 0.5 = -2.9, trunc = -2 (correct); -50 - 0.5 = -50.5, trunc = -50
+-- (correct, exact integers pass through unchanged either way); -2.5 -
+-- 0.5 = -3.0, trunc = -3 (correct tie-away-from-zero, unlike math.floor).
 local function round_to_int(m, e)
 	if m < 0 then
 		m, e = fx.sub(m, e, HALF_M, HALF_E)
@@ -507,14 +515,31 @@ local function get_invocation_name()
 end
 
 -- ===== Help and about =====
+-- Keep in sync with flake.nix's `version = "0.1.0"` -- there is no single
+-- source of truth shared between the two today (a Lua script has no build
+-- step to inject a version at); this is the same manual-sync tradeoff
+-- LUAJIT_1499_FIXED_IN already carries elsewhere in this project, recorded
+-- rather than silently risked.
+local VERSION = "0.1.0"
+
+-- Per this fleet's mandatory CLI convention: --about must show a one-line
+-- description, the app's version, and the platform/chip architecture --
+-- not bare prose (that was this exact finding: an audit caught --about
+-- printing only a description sentence, with no version or platform/arch
+-- at all). `jit.os`/`jit.arch` report the interpreter's OWN current
+-- platform -- the closest equivalent a non-compiled LuaJIT script has to
+-- "the platform and architecture it was compiled for", since there is no
+-- separate compile step to fix that information at build time.
 local function print_about(invocation)
+	local desc
 	if invocation == "nrandom" then
-		print("Normally distributed random integer between bounds via Box-Muller sampling")
+		desc = "Normally distributed random integer between bounds via Box-Muller sampling"
 	elseif invocation == "drandom" then
-		print("Deterministic PCG32-based RNG with optional seeding for reproducible numbers")
+		desc = "Deterministic PCG32-based RNG with optional seeding for reproducible numbers"
 	else
-		print("Unified random number generator: multiple distributions, stdin ops, output formats")
+		desc = "Unified random number generator: multiple distributions, stdin ops, output formats"
 	end
+	print(("%s v%s (%s/%s): %s"):format(invocation, VERSION, jit.os, jit.arch, desc))
 end
 
 local function print_help(invocation)
