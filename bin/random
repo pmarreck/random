@@ -747,6 +747,10 @@ local function parse_args()
 				stderr_write("Error: --stddev value must be a number\n")
 				os.exit(1)
 			end
+			if sm <= 0 then
+				stderr_write("Error: --stddev must be positive\n")
+				os.exit(1)
+			end
 			options.stddev = { sm, se }
 		elseif arg_val == "--alpha" then
 			i = i + 1
@@ -759,6 +763,10 @@ local function parse_args()
 				stderr_write("Error: --alpha value must be a number\n")
 				os.exit(1)
 			end
+			if am <= 0 then
+				stderr_write("Error: --alpha must be positive\n")
+				os.exit(1)
+			end
 			options.alpha = { am, ae }
 		elseif arg_val == "--beta-param" then
 			i = i + 1
@@ -769,6 +777,10 @@ local function parse_args()
 			local bm, be = fx.parse(argv[i])
 			if not bm then
 				stderr_write("Error: --beta-param value must be a number\n")
+				os.exit(1)
+			end
+			if bm <= 0 then
+				stderr_write("Error: --beta-param must be positive\n")
 				os.exit(1)
 			end
 			options.beta_param = { bm, be }
@@ -803,6 +815,20 @@ local function parse_args()
 	if options.beta then dist_count = dist_count + 1 end
 	if dist_count > 1 then
 		stderr_write("Error: only one distribution type can be specified\n")
+		os.exit(1)
+	end
+
+	-- --mean is the poisson rate parameter (lambda), undefined at <= 0 --
+	-- but shared with --normalized/--log-normal, where negative and zero
+	-- ARE valid means (see tests/random_test's negative-mean coverage),
+	-- so this check has to be conditional on the ACTIVE distribution
+	-- rather than a blanket rule on --mean itself. mean is a soft-float,
+	-- not a Lua number, so this is a direct mantissa-sign check (the
+	-- same convention used at every --alpha/--beta-param/--stddev check
+	-- above and at MIN_UNIFORM's zero-draw substitution near the top of
+	-- this file), not fx.cmp against a constructed zero.
+	if options.poisson and options.mean and options.mean[1] <= 0 then
+		stderr_write("Error: --mean must be positive for --poisson (it is the rate parameter)\n")
 		os.exit(1)
 	end
 

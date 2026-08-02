@@ -1159,7 +1159,95 @@ verycommon:100"
 		(( fails++ ))
 	fi
 
-	# Test 45: no floating-point math remains on the deterministic path
+	# ===== SECTION 12: Distribution parameter validation =====
+	# Regression coverage for the final whole-branch review's LOW finding:
+	# `random --beta --alpha 0` used to exit with a raw Lua traceback
+	# (fixed.div: division by zero, from gamma_random) instead of a normal
+	# "Error: ..." CLI message. Each case below must exit non-zero with an
+	# "Error:" line on stderr, matching the style of every other CLI
+	# argument error in this file, and must NOT print a Lua stack
+	# traceback (the concrete symptom of the original bug).
+	echo ""
+	echo "--- Section 12: Distribution parameter validation ---"
+
+	# Helper: assert `random <args...>` fails cleanly (non-zero exit, an
+	# "Error:" line on stderr, no raw Lua traceback) rather than crashing.
+	assert_clean_cli_error() {
+		local label="$1"; shift
+		local out status
+		out=$("$@" 2>&1)
+		status=$?
+		if [ "$status" -ne 0 ] && echo "$out" | grep -qi "^Error:" && ! echo "$out" | grep -qi "stack traceback"; then
+			echo "✓ $label"
+			return 0
+		else
+			echo "✗ $label failed (status=$status): $out" >&2
+			return 1
+		fi
+	}
+
+	# Test 45: --alpha must be positive
+	(( tests++ ))
+	echo "Testing --beta --alpha 0 is rejected cleanly..."
+	assert_clean_cli_error "--alpha 0 rejected cleanly" \
+		random --beta --alpha 0 --beta-param 5 -c 1 || (( fails++ ))
+
+	# Test 46: --alpha negative is rejected the same way
+	(( tests++ ))
+	echo "Testing --beta --alpha -1 is rejected cleanly..."
+	assert_clean_cli_error "--alpha -1 rejected cleanly" \
+		random --beta --alpha -1 --beta-param 5 -c 1 || (( fails++ ))
+
+	# Test 47: --beta-param must be positive
+	(( tests++ ))
+	echo "Testing --beta --beta-param 0 is rejected cleanly..."
+	assert_clean_cli_error "--beta-param 0 rejected cleanly" \
+		random --beta --alpha 2 --beta-param 0 -c 1 || (( fails++ ))
+
+	# Test 48: --stddev must be positive (shared by --normalized and
+	# --log-normal; zero or negative doesn't crash today -- it silently
+	# produces a degenerate or sign-mirrored result instead, which is its
+	# own kind of wrong for a parameter that is, by definition, a
+	# non-negative spread).
+	(( tests++ ))
+	echo "Testing --stddev 0 is rejected cleanly..."
+	assert_clean_cli_error "--stddev 0 rejected cleanly" \
+		random -n --mean 5 --stddev 0 -c 1 || (( fails++ ))
+
+	(( tests++ ))
+	echo "Testing --stddev -1 is rejected cleanly..."
+	assert_clean_cli_error "--stddev -1 rejected cleanly" \
+		random -n --mean 5 --stddev -1 -c 1 || (( fails++ ))
+
+	# Test 49: --poisson --mean must be positive (mean IS the poisson rate
+	# parameter lambda, which is undefined at <= 0) -- but --mean is
+	# shared with --normalized and --log-normal, where negative and zero
+	# ARE valid (see Section 10's negative-mean tests above), so this
+	# check is necessarily distribution-conditional, not a blanket
+	# --mean rule.
+	(( tests++ ))
+	echo "Testing --poisson --mean 0 is rejected cleanly..."
+	assert_clean_cli_error "--poisson --mean 0 rejected cleanly" \
+		random --poisson --mean 0 -c 1 || (( fails++ ))
+
+	(( tests++ ))
+	echo "Testing --poisson --mean -5 is rejected cleanly..."
+	assert_clean_cli_error "--poisson --mean -5 rejected cleanly" \
+		random --poisson --mean -5 -c 1 || (( fails++ ))
+
+	# Test 50: negative --mean is still accepted for --normalized (the
+	# distribution-conditional check above must not become a blanket
+	# rejection of negative --mean).
+	(( tests++ ))
+	echo "Testing --normalized --mean -5 is still accepted..."
+	if random -n --mean -5 --stddev 1 -c 1 >/dev/null 2>&1; then
+		echo "✓ --normalized --mean -5 still accepted"
+	else
+		echo "✗ --normalized --mean -5 was wrongly rejected" >&2
+		(( fails++ ))
+	fi
+
+	# Test 51: no floating-point math remains on the deterministic path
 	(( tests++ ))
 	echo "Testing bin/random contains no libm calls..."
 
