@@ -781,6 +781,21 @@ local tostr_bad, tostr_seen = 0, 0
 local tostr_mismatches = {}   -- capped list of "label: got vs want" for the fail report
 local skipped = 0
 local seen = 0
+-- Every add_*_case function pushes its label into the shared `labels`
+-- table UNCONDITIONALLY, independent of whether it also pushed a bc_lines
+-- entry -- so `labels` is the ground truth for what this file INTENDED to
+-- measure, and does not silently shrink if a case's bc_lines push is ever
+-- dropped (as it was when add_sqrt_case's `bc_lines[#bc_lines+1] = expr`
+-- line was deleted: sqrt_case_count and `labels` stayed at their full
+-- count, only bc's actual output -- and hence `seen` -- silently
+-- undercounted, worst_sqrt_rel stayed at its initial 0 with a nil label,
+-- sqrt_bad stayed 0 because there was nothing to compare against SQRT_RTOL,
+-- and the whole run reported PASSED with 0 sqrt cases actually checked).
+-- `observed` records every label this loop actually saw an outcome for
+-- (measured, SKIPped, or -- for tostring -- string-compared) so that can
+-- be caught directly, not inferred from a downstream side effect like a
+-- suspiciously round `seen` count.
+local observed = {}
 for line in out:gmatch("[^\n]+") do
 	local label, rest = line:match("^(%S+)%s+(.*)$")
 	if label and label:match("^tostr_") then
@@ -791,6 +806,7 @@ for line in out:gmatch("[^\n]+") do
 		-- swallowed by that parse failing to match and falling through
 		-- unnoticed.
 		tostr_seen = tostr_seen + 1
+		observed[label] = true
 		local tt = rest:gsub("%s+$", "")
 		local case = tostr_cases[label]
 		local want = expected_tostring_str(tt, case.neg)
@@ -803,11 +819,13 @@ for line in out:gmatch("[^\n]+") do
 		end
 	elseif label and rest == "SKIP" then
 		skipped = skipped + 1
+		observed[label] = true
 	elseif label then
 		local relstr, absstr = rest:match("^(%S+)%s+(%S+)$")
 		local relerr, absdiff = tonumber(relstr), tonumber(absstr)
 		if relerr and absdiff then
 			seen = seen + 1
+			observed[label] = true
 			local arel = relerr < 0 and -relerr or relerr
 			local aabs = absdiff < 0 and -absdiff or absdiff
 			if label:match("^div_") then
@@ -848,6 +866,22 @@ for line in out:gmatch("[^\n]+") do
 	end
 end
 
+-- Coverage check, independent of every per-function tolerance below: every
+-- label this file GENERATED (`labels`, populated unconditionally by every
+-- add_*_case call) must have produced SOME observed outcome from bc
+-- (`observed`, populated in all three branches of the parse loop above).
+-- A label present in `labels` but absent from `observed` means its
+-- bc_lines push silently never happened (or bc's own output silently
+-- dropped it) -- exactly the hole that let the whole sqrt sweep vanish
+-- while still reporting PASSED (see the `observed` declaration comment
+-- above). Capped list, same pattern as tostr_mismatches below.
+local missing_labels = {}
+for _, label in ipairs(labels) do
+	if not observed[label] then
+		missing_labels[#missing_labels + 1] = label
+	end
+end
+
 local expected = div_pair_count + ln_case_count + expfn_r_count + expfn_x_count + cos_case_count +
 	sqrt_case_count + pow_case_count
 print(("bc sweep: %d/%d cases measured (%d skipped as ref==0)"):format(seen, expected, skipped))
@@ -874,6 +908,44 @@ print(("worst sqrt relative error: %.6e (%s)"):format(worst_sqrt_rel, tostring(w
 print(("worst pow  relative error: %.6e (%s)"):format(worst_pow_rel, tostring(worst_pow_rel_label)))
 
 local fails = 0
+if #missing_labels > 0 then
+	local shown = #missing_labels
+	if shown > 10 then shown = 10 end
+	io.stderr:write(("kernel_bc_sweep FAILED: %d generated case(s) produced no observed bc outcome " ..
+		"(measured, SKIPped, or tostring-compared) -- a case that never even ran cannot possibly " ..
+		"have been checked against its tolerance:\n"):format(#missing_labels))
+	for i = 1, shown do
+		io.stderr:write("  " .. missing_labels[i] .. "\n")
+	end
+	if #missing_labels > shown then
+		io.stderr:write(("  ... and %d more\n"):format(#missing_labels - shown))
+	end
+	fails = fails + 1
+end
+-- Belt-and-suspenders on top of the missing-label check above: each
+-- function category that generated at least one case must have recorded a
+-- non-nil worst-error label. This is implied by the missing-label check
+-- when EVERY case in a category vanishes (the sqrt-deletion mutant), but
+-- guards independently against a narrower failure mode where SOME cases
+-- in a category are observed (so `labels` coverage looks complete) yet the
+-- worst-tracking variables themselves were never wired up for that
+-- category (e.g. a copy-paste bug always updating the wrong worst_*_rel
+-- variable).
+local function require_worst(count, label_val, name)
+	if count > 0 and label_val == nil then
+		io.stderr:write(("kernel_bc_sweep FAILED: %d %s case(s) generated but worst-error label is nil " ..
+			"-- this function's cases were never actually compared against an oracle result\n"):format(
+			count, name))
+		fails = fails + 1
+	end
+end
+require_worst(div_pair_count, worst_div_label, "div")
+require_worst(ln_case_count, worst_ln_rel_label, "ln")
+require_worst(expfn_r_count, worst_expfn_r_label, "exp r-domain")
+require_worst(expfn_x_count, worst_expfn_x_label, "exp x-domain")
+require_worst(cos_case_count, worst_cos_rel_label, "cos")
+require_worst(sqrt_case_count, worst_sqrt_rel_label, "sqrt")
+require_worst(pow_case_count, worst_pow_rel_label, "pow")
 if seen == 0 then
 	io.stderr:write("kernel_bc_sweep FAILED: no cases were actually measured\n")
 	fails = fails + 1
