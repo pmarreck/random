@@ -19,6 +19,33 @@ filter="${1-}"
 failed=0
 ran=0
 
+# Required-suite manifest: the glob below is convenient for DISCOVERING
+# suites, but a glob only ever reports what's still executable -- it has
+# no concept of what SHOULD be there. `chmod -x tests/fixed_test
+# tests/kernel_bc_sweep` demonstrated the gap directly: the glob (plus
+# `[ -x "$suite" ] || continue` skipping non-executables) silently ran the
+# remaining 4 suites and printed "All 4 suite(s) passed", exit 0 -- fewer
+# tests ran, but nothing said so. Every suite name this project ships is
+# listed here explicitly; missing OR non-executable is now a hard,
+# named failure, not a quietly smaller passing count.
+REQUIRED_SUITES=(fixed_test golden_test random_test random_jit_diff_test kernel_bc_sweep kernel_jit_diff)
+missing=0
+for name in "${REQUIRED_SUITES[@]}"; do
+	suite="$here/tests/$name"
+	if [ ! -e "$suite" ]; then
+		echo "REQUIRED SUITE MISSING: $name (expected at $suite)" >&2
+		missing=$((missing + 1))
+	elif [ ! -x "$suite" ]; then
+		echo "REQUIRED SUITE NOT EXECUTABLE: $name ($suite) -- chmod +x it" >&2
+		missing=$((missing + 1))
+	fi
+done
+if [ "$missing" -gt 0 ] && [ -z "$filter" ]; then
+	echo "" >&2
+	echo "$missing required suite(s) missing or non-executable -- refusing to report a passing run with fewer suites than expected" >&2
+	exit "$missing"
+fi
+
 # Every suite runs under `timeout` -- a real, ordinary-arithmetic-reachable
 # bug (M.exp's unbounded correction loop before it was bounded; see
 # task-7-report.md's fix-up appendix) hung a suite forever with zero
