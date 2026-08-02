@@ -1262,7 +1262,20 @@ function M.sqrt(m, e)
 	for _ = 1, SQRT_REFINE do
 		local qm, qe = M.div(m, e, ym, ye)
 		local sm, se = M.add(ym, ye, qm, qe)
-		ym, ye = sm, se - 1
+		-- Route through M.norm rather than assigning (sm, se - 1) directly.
+		-- sm is already normalized (M.add's own contract), so this costs
+		-- nothing beyond the i32 assert itself -- M.norm's shift loops see
+		-- an already-in-range mantissa and do zero iterations. Without
+		-- this, se - 1 was the ONLY exponent construction in this file
+		-- returned without passing through M.norm's i32 assert -- every
+		-- other one does. Unreachable today (Newton's sqrt halves the
+		-- exponent each step, so se can never approach i32 min even
+		-- starting from the smallest legal input exponent), but in a Zig
+		-- port `se - 1` at i32 min panics where Lua silently returns an
+		-- out-of-contract double -- exactly the reference/port divergence
+		-- this kernel's whole exponent-contract discipline exists to
+		-- prevent (see M.norm's own EXPONENT CONTRACT doc comment).
+		ym, ye = M.norm(sm, se - 1)
 	end
 	return ym, ye
 end

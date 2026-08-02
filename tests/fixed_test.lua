@@ -15,7 +15,7 @@ end
 
 -- relative difference between two soft-floats, as a Lua number.
 -- Test-only convenience; uses floats deliberately, and only to score error.
-function math_abs_rel(m1, e1, m2, e2)
+local function math_abs_rel(m1, e1, m2, e2)
 	local function tofloat(m, e)
 		if m == 0 then return 0.0 end
 		return tonumber(m) * 2 ^ (e - 62)
@@ -581,11 +581,17 @@ local function check_1499_mitigation(target_fn, warmup_fn, label)
 		ok(not traced,
 			label .. " is never trace-compiled (the JIT mitigation for LuaJIT/LuaJIT#1499 is in effect)")
 	else
+		-- No meaningful assertion belongs here: this branch only runs when
+		-- fx._needs_1499_mitigation_for_tests is already false (that is
+		-- the `if` condition above), so `fx._needs_1499_mitigation_for_tests
+		-- == false` was unconditionally true every time this branch could
+		-- possibly execute -- a vacuous check, found during the final
+		-- whole-branch review. Real protection against a broken predicate
+		-- (e.g. an inverted fail-safe) lives in the dedicated
+		-- synthetic-string check further below, which is what can
+		-- actually fail; this branch stays an informational notice only.
 		print(("  (%s trace-compilation check SKIPPED -- mitigation inactive on %s)")
 			:format(label, tostring(jit.version)))
-		ok(fx._needs_1499_mitigation_for_tests == false,
-			label .. "'s #1499 mitigation is correctly INACTIVE on this LuaJIT (" ..
-				tostring(jit.version) .. ") -- upstream fix present, trace-compilation check does not apply")
 	end
 end
 

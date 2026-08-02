@@ -1076,7 +1076,23 @@ local function main()
 				end
 				local formatted
 				if type(v) == "number" then
-					formatted = tostring(v)
+					-- Not plain tostring(v): Lua's default %.14g formatting
+					-- switches to scientific notation once an
+					-- integer-valued double's magnitude reaches ~1e14 --
+					-- the same defect lib/fixed.lua's M.tostring used to
+					-- have on its own output path (see that function's own
+					-- doc comment). Fixed the SAME way M.tostring itself
+					-- now is: route through fx.tostring's exact
+					-- digit-extraction rather than a floating-point-style
+					-- format specifier -- this file's own "no libm calls"
+					-- CLI test greps bin/random for exactly that shape of
+					-- specifier (a real determinism guard: formatting a
+					-- genuinely fractional value that way is
+					-- platform-dependent in its last digit), so this stays
+					-- clean of it too, not just clean of scientific
+					-- notation.
+					local vfm, vfe = fx.from_int(v)
+					formatted = fx.tostring(vfm, vfe, 0)
 				else
 					formatted = fx.tostring(v[1], v[2], 6)
 				end

@@ -170,6 +170,29 @@ test_random() {
 		(( fails++ ))
 	fi
 
+	# Test 8b: large-magnitude uniform integer output does not switch to
+	# scientific notation. The plain uniform integer path formats via Lua's
+	# default tostring(), whose %.14g representation switches to scientific
+	# notation once an integer-valued double's magnitude reaches ~1e14 --
+	# the same defect lib/fixed.lua's M.tostring already fixed on its own
+	# output path (string.format("%.0f", ip) instead of plain
+	# tostring(ip)) -- confirmed directly here: `random -d --seed 1 -c 1 0
+	# 1000000000000000` printed "8.0609822680128e+14", not a 15-16 digit
+	# plain integer. Deterministic (--seed 1), so the exact digit count is
+	# a stable, reproducible property, not a statistical one.
+	(( tests++ ))
+	echo "Testing large-magnitude uniform output is not scientific notation..."
+
+	local wide_output
+	wide_output=$(random -d --seed 1 -c 1 0 1000000000000000 2>/dev/null)
+
+	if [[ "$wide_output" =~ ^[0-9]+$ ]]; then
+		echo "✓ large-magnitude uniform output test passed ($wide_output)"
+	else
+		echo "✗ large-magnitude uniform output test failed: got '$wide_output' (expected a plain digit string, not scientific notation)" >&2
+		(( fails++ ))
+	fi
+
 	# ===== SECTION 2: --count and --binaryoutput =====
 	echo ""
 	echo "--- Section 2: --count and --binaryoutput ---"
