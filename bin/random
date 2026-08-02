@@ -167,14 +167,74 @@ local pcg_state = ffi.new(u64, 0)
 local pcg_inc = ffi.new(u64, 1442695040888963407ULL)
 local pcg_mult = ffi.new(u64, 6364136223846793005ULL)
 
+-- Reinterpret a SIGNED int32-range Lua number (as returned by any bit.*
+-- library function) as its UNSIGNED value, via pure arithmetic rather than
+-- ffi.cast("uint32_t", v). This matters, confirmed by a second, INDEPENDENT
+-- miscompilation discovered while pinning the #1499 fix commit (see
+-- xor64's own doc comment below for the first): a minimal, isolated
+-- million-iteration hot loop doing nothing but
+-- `ffi.cast(ffi.typeof("uint32_t"), some_negative_int32_lua_number)`
+-- produces a DIFFERENT output stream under `luajit` (JIT-on) than under
+-- `luajit -joff` (interpreted) -- on BOTH this project's currently-pinned
+-- pre-#1499-fix build (2.1.1774638290) AND the post-fix build
+-- (2.1.1785606157) this flake now also pins. A genuine LOGIC bug would
+-- make JIT-on and JIT-off agree with each other (both wrong the same
+-- way); disagreement between them is the signature of a trace-compiler
+-- MISCOMPILATION, not a logic error -- and this one is apparently
+-- version-independent (unlike #1499 itself), so avoiding the pattern
+-- entirely is the only reliable fix, not a version gate. The result
+-- (magnitude < 2^32) is exactly representable as a Lua double (the exact
+-- range is far under the 2^53 boundary), so this needs no cdata at all.
+local function u32(v)
+	if v < 0 then return v + 4294967296 end
+	return v
+end
+
+-- Cross-LuaJIT-version-portable 64-bit XOR. `bit.*` library functions are
+-- OFFICIALLY documented as 32-bit-only; some LuaJIT builds additionally
+-- accepted a 64-bit int64_t/uint64_t cdata operand via an internal
+-- extension (lj_carith_check64/lj_carith_shift64 in lj_carith.c) that
+-- widened the whole operation to 64 bits. That extension was REMOVED on
+-- the specific commit this project's flake.nix now pins for the #1499
+-- fix -- confirmed directly by diffing lj_carith.c between the two source
+-- trees, not assumed: `bit.bxor(some_u64_cdata, some_u64_cdata)` raises
+-- "bad argument #1 to 'bxor' (number expected, got cdata)" there, while
+-- pcg32_random's PREVIOUS implementation (which passed pcg_state, a
+-- uint64_t cdata, directly to bit.rshift/bit.bxor) relied on exactly
+-- that removed extension and crashed the moment this project's flake.nix
+-- was pointed at the fixed commit.
+--
+-- Splits each 64-bit operand into hi/lo 32-bit halves (via u64 division/
+-- modulo, portable cdata arithmetic unrelated to the bit library), XORs
+-- each half with the OFFICIALLY-supported 32-bit bit.bxor, reinterprets
+-- via u32() (NOT ffi.cast -- see u32's own doc comment for why), and
+-- recombines via plain u64 multiply-add (a Lua number times a ULL cdata
+-- promotes correctly with no explicit cast needed). Verified two
+-- independent ways: (1) against the removed cdata-bxor extension as an
+-- oracle -- 200,000 random u64 pairs plus adversarial edge cases
+-- (all-zero, all-one, MSB-only, mixed high/low patterns), 0 mismatches;
+-- (2) JIT-on vs JIT-off agree bit-for-bit over 200,000+ iterations on
+-- BOTH the pre- and post-#1499-fix builds (ruling out the u32()
+-- miscompilation above).
+local function xor64(a, b)
+	local rhi = u32(bit.bxor(tonumber(a / 4294967296ULL), tonumber(b / 4294967296ULL)))
+	local rlo = u32(bit.bxor(tonumber(a % 4294967296ULL), tonumber(b % 4294967296ULL)))
+	return rhi * 4294967296ULL + rlo
+end
+
 local function pcg32_random()
 	local old = pcg_state
 	pcg_state = old * pcg_mult + pcg_inc
-	local xorshifted = bit.rshift(bit.bxor(bit.rshift(old, 18), old), 27)
-	local rot = tonumber(bit.rshift(old, 59))
-	local x = tonumber(ffi.cast("uint32_t", xorshifted))
-	local res = bit.bor(bit.rshift(x, rot), bit.lshift(x, bit.band(-rot, 31)))
-	return tonumber(ffi.cast("uint32_t", res))
+	-- 64-bit right-shifts via UNSIGNED u64 division (old is genuinely
+	-- ffi.new(u64, ...), so division by a power of two is exactly a
+	-- logical right shift -- the same technique lib/fixed.lua's own
+	-- M.norm shift loops use) rather than bit.rshift, which cannot take
+	-- a cdata operand portably -- see xor64's own doc comment above.
+	local xorshifted64 = xor64(old / 262144ULL, old) / 134217728ULL   -- (old>>18 ^ old) >> 27
+	local xorshifted = tonumber(xorshifted64 % 4294967296ULL)
+	local rot = tonumber(old / 576460752303423488ULL)                -- old >> 59; result in [0,31]
+	local x = xorshifted
+	return u32(bit.bor(bit.rshift(x, rot), bit.lshift(x, bit.band(-rot, 31))))
 end
 
 local function pcg32_seed(seed)

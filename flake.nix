@@ -11,8 +11,63 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
+        # LuaJIT/LuaJIT#1499 (https://github.com/LuaJIT/LuaJIT/issues/1499):
+        # nixpkgs-unstable's own pkgs.luajit still pins a pre-fix commit
+        # (fbb36bb6, reporting "LuaJIT 2.1.1774638290"), which is why
+        # lib/fixed.lua carries jit.off(div_signed)/jit.off(M.norm) --
+        # ~5.7x slower on the soft-float distributions, measured via
+        # hyperfine (see lib/fixed.lua's own doc comments). Override just
+        # `version`/`src` on top of nixpkgs' existing luajit derivation (no
+        # patches to carry forward -- confirmed via `nix eval
+        # nixpkgs#luajit.patches`, empty list -- so every other build
+        # attribute nixpkgs already tuned stays exactly as-is) so this
+        # flake's own build gets the fix NOW, without waiting for nixpkgs
+        # to catch up.
+        #
+        # This does NOT let the runtime version gate
+        # (NEEDS_1499_MITIGATION, computed from `jit.version` at
+        # lib/fixed.lua load time) go away: a user running bin/random
+        # against their OWN system LuaJIT (outside this flake's package
+        # output) may still be on a pre-fix build, so the mitigation stays
+        # conditional on the ACTUAL running interpreter's version, not on
+        # what this flake happens to pin.
+        #
+        # DROP THIS OVERRIDE once nixpkgs-unstable's own pkgs.luajit picks
+        # up a post-#1499-fix commit -- see PLAN.md.
+        #
+        # NOTE on the exact commit pinned here, empirically determined,
+        # NOT the bare fix commit's own hash -- see docs/luajit-1499-pin-
+        # investigation.md for the full investigation, including two
+        # SEPARATE LuaJIT bugs this pin exposed in bin/random's PCG32 code
+        # and how they were isolated and fixed. Short version: Mike Pall's
+        # actual #1499 fix is commit 5ed524c09fec64bed46b4bf74fa03be9083b0963
+        # ("Don't fold -a / -b for unsigned operands"), but it lives on
+        # LuaJIT's `master` branch, whose Makefile reports MAJVER=2
+        # MINVER=0 -- a bare build of it reports itself as
+        # "LuaJIT 2.0.1785605975", which `needs_1499_mitigation`'s
+        # "2%.1%.(%d+)" pattern does not match at all, so the fail-safe
+        # branch would keep the mitigation ON regardless of the roll
+        # number. `28084004ee68d576f3f0c9ea61ea448fe3e10f07` ("Merge
+        # branch 'master' into v2.1") is the commit that actually merges
+        # 5ed524c's fix into the `v2.1` branch -- confirmed an ancestor-
+        # inclusive merge via `git merge-base --is-ancestor`, and its
+        # Makefile reports MAJVER=2 MINVER=1, matching the "2.1.x" format
+        # every consumer of this project (and LUAJIT_1499_FIXED_IN)
+        # expects. Its roll number, 1785606157, is exactly what
+        # lib/fixed.lua's LUAJIT_1499_FIXED_IN already used -- no change
+        # needed there.
+        luajitFixed = pkgs.luajit.overrideAttrs (old: {
+          version = "2.1.1785606157";
+          src = pkgs.fetchFromGitHub {
+            owner = "LuaJIT";
+            repo = "LuaJIT";
+            rev = "28084004ee68d576f3f0c9ea61ea448fe3e10f07";
+            hash = "sha256-S0D5YMHDFHUpct8H4U58zFHhAAsnPRR1jUR6JmAIfdg=";
+          };
+        });
+
         # LuaJIT is the only runtime dependency (ffi + bit are built in).
-        runtimeTools = [ pkgs.luajit ];
+        runtimeTools = [ luajitFixed ];
         # External tools the executable shells out to / the test suite needs.
         testTools = with pkgs; [ bashInteractive coreutils gnugrep gawk bc xxd ];
 

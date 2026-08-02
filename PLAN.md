@@ -31,6 +31,23 @@
       report with before/after evidence and mutation-test results:
       `docs/codex-fix-report.md`. Golden vectors unmoved throughout
       (2026-08-02 EST)
+- [x] Hostile audit (round 2) fixes: 9 vacuous/weak test controls (Part A,
+      mutation-verified 10/10 both directions each), the i32 exponent
+      contract validated on inputs not just outputs + `to_int_trunc`'s
+      silent-round-not-clamp defect (Part B), ~15 false/stale claims across
+      PLAN.md/README/lib/fixed.lua/the design spec (Part C), and
+      `flake.nix` now pins LuaJIT commit `28084004` (the `v2.1`-branch
+      merge of the actual #1499 fix, `5ed524c` -- see
+      `docs/luajit-1499-pin-investigation.md` for why the bare fix commit
+      hash doesn't work: wrong branch, wrong version string) plus two
+      SEPARATE, independently-discovered LuaJIT trace-compiler bugs this
+      exposed and fixed in `bin/random`'s PCG32 code (a removed
+      undocumented 64-bit-cdata `bit.*` extension, and a genuine
+      version-independent `ffi.cast` sign-reinterpretation
+      miscompilation). Measured recovered speed: 5.31x +/- 0.28x
+      (hyperfine, `--log-normal -c 20000`). Golden vectors unmoved
+      throughout, verified under both the pinned and system LuaJIT. Full
+      report: `docs/codex-audit-fix-report.md` (2026-08-02 EST)
 
 ## Next: Zig port (separate plan)
 - [ ] `src/fixed.zig` mirroring `lib/fixed.lua`, verified against the same `bc` sweep
@@ -48,11 +65,22 @@
       benchmark must record which LuaJIT it ran under.
 - [ ] Mechatron Prime CI via the `mechatron-ci` skill
 
+## TODO
+- [ ] Drop `flake.nix`'s `luajitFixed` override (and its `28084004` pin) once
+      nixpkgs-unstable's own `pkgs.luajit` picks up a commit at or past the
+      real #1499 fix (roll number >= 1785606157, branch `v2.1`) — check via
+      `nix eval nixpkgs#luajit.version`. Once dropped, revert `runtimeTools`
+      back to `[ pkgs.luajit ]` directly.
+
 ## Deferred (recorded, deliberately not fixed)
 - `LUAJIT_1499_FIXED_IN` in `lib/fixed.lua` (currently `1785606157`) is a magic
-  constant with no automated link to `flake.nix`'s pinned LuaJIT toolchain. A
-  manual bump of either side (the constant, or the nixpkgs LuaJIT pin) could
-  drift silently — e.g. pinning a LuaJIT built after the real #1499 fix but
+  constant with no AUTOMATED link to `flake.nix`'s pinned LuaJIT toolchain --
+  MANUALLY verified aligned as of 2026-08-02 (`flake.nix`'s `luajitFixed`
+  override pins exactly the commit whose roll number is this constant; see
+  `docs/luajit-1499-pin-investigation.md`), but nothing enforces that
+  alignment going forward. A manual bump of either side (the constant, or
+  the nixpkgs LuaJIT pin once the override above is dropped) could drift
+  silently — e.g. pinning a LuaJIT built after the real #1499 fix but
   forgetting to lower the constant just wastes the ~5.7x mitigation cost
   forever; getting it backwards (raising the constant past a build that still
   has the bug) would silently reintroduce the miscompilation. No test
