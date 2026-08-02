@@ -889,15 +889,17 @@ end
 -- (its smallest representable step) exceeds 1 once magnitude passes 2^53:
 -- at k ~= 2^55, the ULP is 8, so `k + 1` rounds right back to `k` --
 -- CONFIRMED DIRECTLY: `(51978566788454384 + 1) == 51978566788454384` is
--- `true` in this exact runtime. Two distinct things can then go wrong, and
--- EITHER one on its own is enough to break the termination proof:
---   (a) to_int_trunc's own sh>=0 branch (see its doc comment) explicitly
---       CLAMPS to +/-2^53 once |x/ln2| >= 2^62, rather than truncating;
---   (b) even OUTSIDE that clamp branch (sh<0, i.e. to_int_trunc still
---       truncates a real value), the truncated k can itself already
---       exceed 2^53 in magnitude -- to_int_trunc's `tonumber()` return
---       does not clamp there, it just silently hands back a k the
---       correction loop can no longer nudge.
+-- `true` in this exact runtime. Either of to_int_trunc's two branches gets
+-- k there and breaks the termination proof the same way:
+--   (a) the sh>=0 branch (see its doc comment) explicitly CLAMPS to
+--       +/-2^53 once |x/ln2| >= 2^62, rather than truncating;
+--   (b) the sh<0 branch (to_int_trunc still truncates a real quotient)
+--       ALSO clamps to +/-2^53 once that quotient's own magnitude
+--       exceeds 2^53 (see to_int_trunc's own doc comment for the fix --
+--       this branch used to silently ROUND instead of clamping there, a
+--       since-fixed defect unrelated to M.exp's own correction-loop
+--       hazard here: either way, k lands at a magnitude the correction
+--       loop can no longer nudge).
 -- Whichever mechanism applies, once a correction is actually needed and
 -- `k +/- 1` is a no-op, `r` never changes, so the loop's own naive
 -- termination condition never changes truth value either.
@@ -913,17 +915,19 @@ end
 -- run after run, exactly as the frozen-`k` analysis above predicts.
 -- exp(2^61)/exp(2^62)/exp(2^70) (mechanism (a), the explicit clamp) hang
 -- under the JIT too -- there is no lucky JIT-artifact escape for those.
--- M.exp has NO live callers in this program as of this writing --
--- bin/random still calls math.exp directly for --exponential/--poisson/
--- --log-normal, and is scheduled to switch to this kernel in Task 12, not
--- before. So there is no currently-enforced argument bound to cite here:
--- the design spec allows --mean "up to +/-1000 and beyond", and
--- bin/random performs NO numeric range validation on --mean at all. Do
--- not read anything below as a guarantee that large arguments won't
--- happen -- they might, once a caller exists. What IS true regardless of
--- what a future caller passes: raising loudly here is strictly safer than
--- either of the two failure modes this fix replaces (silently hanging
--- forever, or silently returning a JIT-artifact-dependent wrong answer).
+-- UPDATE (post-Task-12): M.exp now DOES have live callers -- bin/random's
+-- exponential_random/poisson_random/lognormal_random all call fx.exp (not
+-- math.exp; the math.exp call site this comment originally described was
+-- replaced, not merely scheduled for replacement). There is still no
+-- CURRENTLY-ENFORCED argument bound to cite here, though: the design spec
+-- allows --mean "up to +/-1000 and beyond", and bin/random performs NO
+-- numeric range validation on --mean at all -- that half of the original
+-- claim remains true. Do not read anything below as a guarantee that
+-- large arguments won't happen through a real call site -- they can, via
+-- an extreme --mean. What IS true regardless of what a caller passes:
+-- raising loudly here is strictly safer than either of the two failure
+-- modes this fix replaces (silently hanging forever, or silently
+-- returning a JIT-artifact-dependent wrong answer).
 --
 -- FIX: bound the loop instead of trying to make it converge for arguments
 -- this large. The IDEALIZED proof this file used to rely on ("at most 1
@@ -1018,11 +1022,12 @@ M._correction_guard_for_tests = correction_guard
 --- termination independent of what the final exponent check does with
 --- whatever the loop produces.
 ---
---- M.exp has no live callers in this program as of this writing (see
+--- M.exp DOES have live callers as of Task 12 (bin/random's
+--- exponential_random/poisson_random/lognormal_random -- see
 --- correction_guard's comment above) -- raising loudly rather than
 --- hanging or returning a wrong answer is the safety property that
---- matters here, independent of what any future caller's argument range
---- turns out to be.
+--- matters here, independent of what any caller's argument range turns
+--- out to be, current or future.
 function M.exp(m, e)
 	if m == 0 then return M.from_int(1) end
 	-- k = round(x / ln2): truncate first, then nudge by a small number of
@@ -1388,10 +1393,11 @@ end
 --- (x = 2^-32, ln(x) = -22.1807...), M.pow first raises at y = 2^57
 --- (alpha = 2^-57), succeeding for every y = 2^40..2^56 tried below that.
 --- alpha = 2^-57 is pathological, not a realistic sampler input (even
---- alpha = 1e-10 gives y ~ 2^33, twenty-four orders of magnitude below
---- this boundary), but M.pow does not clamp or special-case it: it raises
---- the same loud error M.exp would, rather than silently returning a
---- wrong answer. See task-9-report.md for the full sweep.
+--- alpha = 1e-10 gives y ~ 2^33, twenty-four BITS below this boundary --
+--- 2^57 / 2^33 = 2^24, about 7.2 DECIMAL orders of magnitude, not
+--- twenty-four of them as an earlier version of this comment claimed),
+--- but M.pow does not clamp or special-case it: it raises the same loud
+--- error M.exp would, rather than silently returning a wrong answer.
 function M.pow(bm, be, ym, ye)
 	assert(bm > 0, "fixed.pow: base must be positive")
 	local lm, le = M.ln(bm, be)

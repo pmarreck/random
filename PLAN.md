@@ -43,13 +43,13 @@
       in either is visible. Per the fleet convention: ndjson log per machine-id,
       committed, two-sided tolerance (a surprise speedup may mean lost work),
       CPU time for single-threaded kernels, ReleaseFast only. Note the existing
-      measured figure to beat: the `#1499` mitigation costs ~5.5x on the float
+      measured figure to beat: the `#1499` mitigation costs ~5.7x on the float
       distributions on pre-fix LuaJIT and nothing on fixed builds, so the
       benchmark must record which LuaJIT it ran under.
 - [ ] Mechatron Prime CI via the `mechatron-ci` skill
 
 ## Deferred (recorded, deliberately not fixed)
-- `LUAJIT_1499_FIXED_IN` in `lib/fixed.lua` (currently `1785577137`) is a magic
+- `LUAJIT_1499_FIXED_IN` in `lib/fixed.lua` (currently `1785606157`) is a magic
   constant with no automated link to `flake.nix`'s pinned LuaJIT toolchain. A
   manual bump of either side (the constant, or the nixpkgs LuaJIT pin) could
   drift silently — e.g. pinning a LuaJIT built after the real #1499 fix but
@@ -61,7 +61,10 @@
   `pkgs.luajit` and asserts `jit.version`'s roll number against the constant
   in both directions.
 - `./test`'s exit code is the raw suite-failure count, unclamped — wraps
-  modulo 256 past 255 failing suites. With 5 suites total today this is
+  modulo 256 past 255 failing suites. With 6 suites total today (fixed_test,
+  golden_test, random_test, random_jit_diff_test, kernel_bc_sweep,
+  kernel_jit_diff — plus, as of this audit round, a required-suite manifest
+  that fails loudly if any of the 6 goes missing or non-executable) this is
   unreachable in practice; not worth guarding until the suite count grows by
   two orders of magnitude.
 - `./test`'s `for suite in ... ; do [ -x "$suite" ] || continue; ...` glob

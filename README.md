@@ -116,7 +116,10 @@ A dev shell with LuaJIT and the test tooling is provided:
 direnv allow      # or: nix develop
 ./test            # FAST mode (quick, quiet on success)
 FAST= ./test      # full statistical run
-nix flake check   # hermetic CI check (runs the full ./test suite)
+nix flake check   # hermetic CI check (runs all 6 suites, but FORCES FAST=1 --
+                   # kernel_jit_diff's 60000-iteration deep JIT differential
+                   # is deep-mode-only by design and is SKIPPED here, not run;
+                   # run `FAST= ./test` locally for the full non-FAST suite)
 ```
 
 `./test` runs every suite under `tests/` (CLI behavior, kernel unit tests, golden
