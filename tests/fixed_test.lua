@@ -677,9 +677,16 @@ do
 	ok(fn("garbage") == true, "needs_1499_mitigation('garbage'): fail-safe assumes mitigation IS needed")
 	ok(fn("LuaJIT 2.0.5") == true, "needs_1499_mitigation('LuaJIT 2.0.5'): unrecognized branch, fail-safe assumes needed")
 	ok(fn("LuaJIT 2.1.1774638290") == true, "needs_1499_mitigation: pinned toolchain's actual version needs the mitigation")
-	ok(fn("LuaJIT 2.1.1785606157") == false, "needs_1499_mitigation: the verified upstream-fixed build does not need it")
-	ok(fn("LuaJIT 2.1.1785577137") == false, "needs_1499_mitigation: exactly at the fix threshold does not need it (boundary, not off-by-one)")
-	ok(fn("LuaJIT 2.1.1785577136") == true, "needs_1499_mitigation: one roll below the fix threshold still needs it (boundary, not off-by-one)")
+	ok(fn("LuaJIT 2.1.1785606157") == false, "needs_1499_mitigation: the verified upstream-fixed build (commit 5ed524c) does not need it (exact threshold)")
+	ok(fn("LuaJIT 2.1.1785606156") == true, "needs_1499_mitigation: one roll below the fix threshold still needs it (boundary, not off-by-one)")
+	-- This exact version string is upstream commit 4886b676 -- docs/luajit-
+	-- bug-report.md:39-40 reports it as "LuaJIT 2.1.1785577137" and confirms
+	-- BY DIRECT BUILD AND TEST that this commit still reproduces the bug.
+	-- It sits BELOW the real fix threshold (1785606157, commit 5ed524c) --
+	-- a previous version of LUAJIT_1499_FIXED_IN used this same number AS
+	-- the threshold, which silently treated this confirmed-broken build as
+	-- already fixed (mitigation disabled, failing OPEN on a buggy runtime).
+	ok(fn("LuaJIT 2.1.1785577137") == true, "needs_1499_mitigation: the confirmed-still-broken build from docs/luajit-bug-report.md must need the mitigation")
 end
 
 end

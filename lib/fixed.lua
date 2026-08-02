@@ -81,7 +81,9 @@ M.POW2 = POW2
 M.ZERO_M, M.ZERO_E = 0LL, 0
 
 -- LuaJIT/LuaJIT#1499 ("Don't fold -a / -b for unsigned operands", fixed
--- upstream in commit 5ed524c, first released as 2.1.1785577137)
+-- upstream in commit 5ed524c, first released as 2.1.1785606157 -- see the
+-- LUAJIT_1499_FIXED_IN comment below for why this exact number matters and
+-- how it was confirmed, not assumed)
 -- miscompiles this kernel's unsigned negate-then-branch shape -- see
 -- jit.off(div_signed) and jit.off(M.norm) below for the two confirmed
 -- instances (the second found and verified during Task 12; see
@@ -118,7 +120,22 @@ M.ZERO_M, M.ZERO_E = 0LL, 0
 -- call sites, for exactly that reason: tests/fixed_test.lua needs to
 -- exercise the parsing/fail-safe logic directly against strings that
 -- were never real jit.version output.
-local LUAJIT_1499_FIXED_IN = 1785577137
+--
+-- THIS EXACT NUMBER MATTERS -- confirmed by building and testing the
+-- specific upstream commit it names, not inferred from a commit message.
+-- 1785606157 is the rolling build timestamp of Mike Pall's actual #1499
+-- fix, commit 5ed524c (see the CONFIRMED BY DIRECT REPRODUCTION comment
+-- on jit.off(M.norm) below for the build-and-test transcript). A previous
+-- version of this constant used 1785577137 instead -- the rolling
+-- timestamp of upstream commit 4886b676, an EARLIER commit that
+-- docs/luajit-bug-report.md:39-40 built and confirmed STILL reproduces
+-- the bug ("reporting `LuaJIT 2.1.1785577137`. Tested ... crashes"). That
+-- older value made needs_1499_mitigation() return `false` -- mitigation
+-- NOT needed -- for a build independently confirmed broken, failing OPEN
+-- in exactly the direction the FAIL SAFE comment above says must never
+-- happen. Do not lower this constant without building and testing the
+-- specific commit it would newly exempt.
+local LUAJIT_1499_FIXED_IN = 1785606157
 local function needs_1499_mitigation(version_string)
 	local roll = tonumber(tostring(version_string):match("2%.1%.(%d+)"))
 	if roll == nil then return true end   -- FAIL SAFE: unparseable => needed
