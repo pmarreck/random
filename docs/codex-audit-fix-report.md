@@ -420,9 +420,8 @@ All of the above was re-run and re-confirmed after the #2/#3 retraction
 below (the comment rewrite touches text directly adjacent to live code
 in `bin/random`, so this was checked rather than assumed safe).
 
-Commits: `2fbae65` (original pin + rewrite), `<retraction commit>`
-(retraction of #2/#3, comment rewrite, this report update — see
-`git log` for the actual hash)
+Commits: `2fbae65` (original pin + rewrite), `1b165fb` (retraction of
+#2/#3, comment rewrite, this report update)
 
 ---
 
