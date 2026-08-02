@@ -1447,25 +1447,81 @@ function M.parse_int(s)
 	return sign * tonumber(v)
 end
 
+--- Exact decimal string of a nonnegative int64 cdata magnitude, via
+--- LuaJIT's own cdata tostring() -- confirmed exact across the FULL int64
+--- range, unlike tonumber() which silently rounds through a 53-bit
+--- double once the magnitude passes 2^53 (the exact trap M.tostring
+--- itself used to fall into -- see that function's own doc comment).
+--- tests/kernel_bc_sweep.lua's i64dec carries the identical
+--- confirmed-exact justification for the same technique ("MUST go
+--- through tostring(), never tonumber()"). Strips the "LL" cdata suffix
+--- LuaJIT's tostring() appends to a signed int64_t.
+local function i64_to_decimal(v)
+	return (tostring(v):gsub("LL$", ""))
+end
+
+--- Doubles a decimal digit string exactly `n` times via digit-array long
+--- multiplication (base 10, LSB->MSB carry propagation, plain Lua integer
+--- arithmetic on individual 0-9 digit values -- no float, no math.*, no
+--- tonumber on the VALUE, same convention M.tostring's own fractional-
+--- digit loop below already uses). This is the bignum step M.tostring
+--- needs once a soft-float's integer part has outgrown int64: sh = e - 62
+--- > 0 means the true value is m << sh, exact but possibly wider than 64
+--- bits -- exactly the case M.to_int_trunc's OWN documented contract
+--- intentionally clamps away (its 2^53 clamp exists for ITS callers,
+--- which want a bounded Lua integer; M.tostring is not one of them).
+--- O(n * digits) -- fine for this program's realistic range (n counted
+--- in the tens to low thousands; the tostring/round-trip sweeps in
+--- kernel_bc_sweep.lua and fixed_test.lua exercise up to n=8) and
+--- degrades gracefully (slow, not wrong) for pathologically large n.
+local function decimal_shift_left(digits, n)
+	if n <= 0 then return digits end
+	local d = {}
+	for i = 1, #digits do d[i] = digits:byte(i) - 48 end
+	for _ = 1, n do
+		local carry = 0
+		for i = #d, 1, -1 do
+			local v = d[i] * 2 + carry
+			if v >= 10 then d[i], carry = v - 10, 1 else d[i], carry = v, 0 end
+		end
+		if carry > 0 then table.insert(d, 1, carry) end
+	end
+	local out = {}
+	for i = 1, #d do out[i] = string.char(48 + d[i]) end
+	return table.concat(out)
+end
+
 --- Render a soft-float as a fixed-point decimal string with `places`
---- digits. Integer-only: the fraction is advanced by repeated
---- multiply-by-ten, never by string.format("%f") -- see this file's
---- top-of-file comment for why that boundary matters as much as the one
---- M.parse closes on the way in.
+--- digits. Integer-only throughout: the fraction is advanced by repeated
+--- multiply-by-ten (never string.format("%f")), and -- unlike an earlier
+--- version of this function -- the INTEGER part never round-trips
+--- through a Lua double either.
 ---
---- A real defect found while verifying this function, independent of
---- anything the brief called out: the integer part was originally
---- rendered via plain Lua `tostring(ip)`. LuaJIT's default number
---- formatting (`%.14g`) switches to scientific notation once an
---- integer-valued double's magnitude reaches roughly 1e14 -- confirmed
---- directly, `tostring(1000000000000000)` prints "1e+15", not the 16-digit
---- literal -- which would have spliced something like "1e+15.001922"
---- into this function's output for any value with a 15+ digit integer
---- part, well inside this kernel's realistic range (this program's own
---- log-normal --mean/--stddev outputs are documented as "effectively
---- unbounded") and well below to_int_trunc's own unrelated 2^53 clamp.
---- Fixed by using string.format("%.0f", ip) instead, which always renders
---- a whole-number double in plain decimal regardless of magnitude.
+--- Two real defects found verifying this function, independent of
+--- anything the brief called out:
+---
+--- 1. `tostring(ip)` (plain Lua, `%.14g`) switches to scientific notation
+---    past ~1e14 -- confirmed directly, `tostring(1000000000000000)`
+---    prints "1e+15", not the 16-digit literal -- which would have
+---    spliced garbage like "1e+15.001922" into this function's output
+---    for any value with a 15+ digit integer part. Fixed by rendering
+---    the integer part as an exact digit STRING (see below), never by
+---    formatting a Lua number.
+---
+--- 2. WORSE, found during the final whole-branch review: routing the
+---    integer part through M.to_int_trunc (which returns a Lua double,
+---    and whose documented contract hard-clamps at e>=62 to the single
+---    constant 9007199254740992) collapsed EVERY value with magnitude
+---    >= 2^62 (~4.6e18) to that identical wrong string. Confirmed
+---    directly: `random -d --seed 3 --log-normal --mean 43.5 --stddev
+---    0.01 -c 3` printed "9007199254740992.999999" for three distinct
+---    draws (true value ~7.79e18). Fixed below by extracting the integer
+---    part's exact decimal digits directly from the soft-float's own
+---    (m, e) -- via i64_to_decimal when it fits in int64 (e < 62), via
+---    decimal_shift_left's bignum doubling when it doesn't (e >= 62, a
+---    case with NO fractional part at all: once e >= 62 every
+---    representable increment is already an integer, so the fraction is
+---    always exactly zero and no fractional-digit loop is needed).
 function M.tostring(m, e, places)
 	places = places or 6
 	if m == 0 then
@@ -1475,8 +1531,18 @@ function M.tostring(m, e, places)
 	local neg = m < 0
 	local am, ae = m, e
 	if neg then am, ae = M.neg(m, e) end
-	local ip = M.to_int_trunc(am, ae)
-	local fm, fe = M.sub(am, ae, M.from_int(ip))
+	local sh = ae - 62
+	local ip_str, fm, fe
+	if sh >= 0 then
+		ip_str = decimal_shift_left(i64_to_decimal(am), sh)
+		fm, fe = 0LL, 0
+	else
+		local s = -sh
+		local ipv = (s > 62) and 0LL or (am / POW2[s])   -- exact int64 division
+		ip_str = i64_to_decimal(ipv)
+		local ipm, ipe = M.from_int(ipv)
+		fm, fe = M.sub(am, ae, ipm, ipe)
+	end
 	local out = {}
 	for _ = 1, places do
 		fm, fe = M.mul(fm, fe, M.from_int(10))
@@ -1492,7 +1558,7 @@ function M.tostring(m, e, places)
 		out[#out + 1] = tostring(d)
 		fm, fe = M.sub(fm, fe, M.from_int(d))
 	end
-	local s = string.format("%.0f", ip)
+	local s = ip_str
 	if places > 0 then s = s .. "." .. table.concat(out) end
 	if neg then s = "-" .. s end
 	return s

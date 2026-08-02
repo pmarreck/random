@@ -562,13 +562,22 @@ end
 -- exercises the negative-truncation path exactly as often as positive.
 local TOSTRING_MANTISSA_COUNT = fast and 15 or 45
 local tostrset = mantissa_set(TOSTRING_MANTISSA_COUNT)
--- Exponents from ~1e-18 magnitude through ~1e15 -- the low end deep in
+-- Exponents from ~1e-18 magnitude through ~2e21 -- the low end deep in
 -- "all requested places are leading zeros" territory (a real property of
 -- fixed-point formatting, not a bug -- see fixed_test.lua's round-trip
 -- tolerance comment for the same finding measured a different way), the
--- high end past the ~1e14 scientific-notation threshold M.tostring's own
--- fix (string.format("%.0f", ip) instead of plain tostring(ip)) targets.
-local TOSTRING_EXPS = {-60, -40, -20, -10, -5, -1, 0, 1, 5, 10, 20, 40, 50}
+-- high end past BOTH the ~1e14 scientific-notation threshold M.tostring's
+-- string.format("%.0f", ip) fix targets AND, at e=55/60/70, past
+-- to_int_trunc's OWN documented 2^53 clamp (~9.007e15) and its hard
+-- collapse at e>=62 (M.tostring routed the integer part through
+-- to_int_trunc, which returns a Lua double -- at e=62 EVERY value
+-- collapsed to the identical constant 9007199254740992, confirmed
+-- directly: `random -d --seed 3 --log-normal --mean 43.5 --stddev 0.01`
+-- printed the same "9007199254740992.999999" for 3 distinct draws). This
+-- sweep is the exact oracle that catches it: an earlier version of this
+-- table stopped at 50 (just under the 2^53 threshold), so 55/60/70 --
+-- all past it -- never ran here at all.
+local TOSTRING_EXPS = {-60, -40, -20, -10, -5, -1, 0, 1, 5, 10, 20, 40, 50, 55, 60, 70}
 local tostring_case_count = 0
 for i = 1, #tostrset do
 	local sign = ((i - 1) % 2 == 0) and 1 or -1

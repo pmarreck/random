@@ -1649,18 +1649,58 @@ ok(fx.tostring(bigm, bige, 2) == "123456789012345.00",
    "tostring of a 15-digit integer part prints plain digits, not scientific notation",
    "got " .. fx.tostring(bigm, bige, 2))
 
+-- Large magnitude PAST to_int_trunc's 2^53 clamp: a SEPARATE, more severe
+-- defect than the scientific-notation one above, found during the final
+-- whole-branch review. M.tostring routed the integer part through
+-- to_int_trunc, whose own documented contract hard-clamps at e>=62
+-- (magnitude >= 2^62 ~= 4.6e18) to the single constant 9007199254740992,
+-- returned as a Lua double -- collapsing EVERY value in that range to the
+-- SAME printed string, not just losing a few digits of precision.
+-- Confirmed directly, not hypothetically: `random -d --seed 3
+-- --log-normal --mean 43.5 --stddev 0.01 -c 3` printed
+-- "9007199254740992.999999" for three genuinely different draws (true
+-- value e(43.5) ~= 7.79e18, three orders of magnitude off). Reproduced
+-- here with two DISTINCT mantissas at the same e=62 -- both must print
+-- their own exact integer, not collapse to the same wrong constant.
+local coll_e = 62
+local coll_m1 = 0x4000000000000001LL   -- 2^62 + 1, minimum normalized mantissa + 1
+local coll_m2 = 0x7FFFFFFFFFFFFFFELL   -- 2^63 - 2, near the maximum normalized mantissa
+local coll_s1 = fx.tostring(coll_m1, coll_e, 6)
+local coll_s2 = fx.tostring(coll_m2, coll_e, 6)
+ok(coll_s1 ~= coll_s2,
+   "tostring at e=62 does not collapse distinct mantissas to the same string",
+   ("got %q and %q"):format(coll_s1, coll_s2))
+ok(coll_s1 == "4611686018427387905.000000",
+   "tostring at e=62 prints the exact integer for m=2^62+1, not to_int_trunc's 2^53-clamped double",
+   "got " .. coll_s1)
+ok(coll_s2 == "9223372036854775806.000000",
+   "tostring at e=62 prints the exact integer for m=2^63-2 too",
+   "got " .. coll_s2)
 -- === Verification item 3: round-trip, worst case over a sweep, not 3 =====
 -- === sample values, per instruction ("measure the worst case rather    ===
 -- === than sampling three values").                                     ===
 -- Deterministic LCG (same multiplier family as tests/kernel_bc_sweep.lua),
 -- fixed seed, reproducible across machines and runs. Generates raw
--- (m, e) pairs at exponents from -40 to 50 -- small fractions through
--- 15-digit integers (the largest exponent deliberately lands past the
--- ~1e14 scientific-notation threshold fixed above, so this sweep also
--- exercises that fix, not just typical-magnitude values), spanning the
--- realistic domain this kernel's own top-of-file comment documents (ln
--- down to -22, variates to +/-6.6, mean into the thousands, log-normal
--- "effectively unbounded").
+-- (m, e) pairs at exponents from -40 to 62 -- small fractions through
+-- 19-digit integers (55 and 60 deliberately land past to_int_trunc's
+-- documented 2^53 clamp at e~53; 62 lands exactly on its hard collapse to
+-- a single constant -- see kernel_bc_sweep.lua's TOSTRING_EXPS comment
+-- for the concrete repro this is the round-trip-style twin of). Stops at
+-- 62, not 70 like TOSTRING_EXPS: this sweep round-trips through
+-- fx.parse(fx.tostring(...)), and fx.parse's own integer-part parsing
+-- deliberately caps at int64 magnitude (see M.parse_int's doc comment --
+-- "nothing currently in this file needs the full int64 range"), a
+-- SEPARATE, pre-existing, documented limitation unrelated to the
+-- tostring defect this sweep targets. e=62 is the largest exponent
+-- guaranteed to stay within that cap: the mantissa invariant already
+-- bounds |m| < 2^63 = INT64_MAX_MAG + 1, so at e=62 (sh=0, the exact
+-- integer IS the mantissa) it can never overflow; one exponent higher
+-- and a left-shifted mantissa sometimes would. TOSTRING_EXPS's bc-based
+-- sweep (kernel_bc_sweep.lua) does not round-trip through fx.parse and
+-- so already covers 70 and beyond without this constraint.
+-- Spans the realistic domain this kernel's own top-of-file comment
+-- documents (ln down to -22, variates to +/-6.6, mean into the
+-- thousands, log-normal "effectively unbounded").
 local RT_TWO62 = 0x4000000000000000ULL
 local rt_lcg = 0xA24BAED4963EE407ULL
 local function rt_next_mantissa()
@@ -1668,7 +1708,7 @@ local function rt_next_mantissa()
 	local high = rt_lcg / 4ULL
 	return RT_TWO62 + (high % RT_TWO62)
 end
-local RT_EXPS = {-40, -20, -10, -5, -1, 0, 1, 5, 10, 20, 40, 50}
+local RT_EXPS = {-40, -20, -10, -5, -1, 0, 1, 5, 10, 20, 40, 50, 55, 60, 62}
 local RT_PLACES = 15
 -- Per-case tolerance, not one flat number for the whole sweep -- TWO
 -- earlier, flawed versions of this check are recorded here rather than
