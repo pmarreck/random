@@ -685,6 +685,31 @@ test_random() {
 		(( fails++ ))
 	fi
 
+	# Test 25b: DRANDOM_SEED alone (no -d, not invoked as drandom) implies
+	# deterministic mode, matching -h's own documented contract
+	# ("DRANDOM_SEED  Seed value (overrides state file, implies -d)").
+	# Confirmed directly before this fix: `DRANDOM_SEED=42 random -c 3`
+	# drew from /dev/urandom and differed on every run -- the env var was
+	# only ever read INSIDE the already-deterministic branch, so setting
+	# it alone had no effect at all on plain `random` (Test 25 above
+	# only ever exercised this via the `drandom` symlink, which already
+	# forces deterministic mode by invocation name regardless of
+	# DRANDOM_SEED, so it could not have caught this).
+	(( tests++ ))
+	echo "Testing DRANDOM_SEED alone implies deterministic mode..."
+
+	local envseed_seq1 envseed_seq2 explicit_seq
+	envseed_seq1=$(DRANDOM_SEED=424242 random -c 3 2>/dev/null | tr '\n' ' ')
+	envseed_seq2=$(DRANDOM_SEED=424242 random -c 3 2>/dev/null | tr '\n' ' ')
+	explicit_seq=$(random -d --seed 424242 -c 3 2>/dev/null | tr '\n' ' ')
+
+	if [ -n "$envseed_seq1" ] && [ "$envseed_seq1" = "$envseed_seq2" ] && [ "$envseed_seq1" = "$explicit_seq" ]; then
+		echo "✓ DRANDOM_SEED alone implies deterministic mode"
+	else
+		echo "✗ DRANDOM_SEED alone did not imply deterministic mode: run1='$envseed_seq1' run2='$envseed_seq2' explicit='$explicit_seq'" >&2
+		(( fails++ ))
+	fi
+
 	# ===== SECTION 7: Binary output with modes =====
 	echo ""
 	echo "--- Section 7: Binary output with modes ---"

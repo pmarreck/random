@@ -860,6 +860,23 @@ local function parse_args()
 		options.delimiter = "\n"
 	end
 
+	-- DRANDOM_SEED implies deterministic mode, matching --seed's own
+	-- behavior and the documented `-h` contract ("DRANDOM_SEED  Seed
+	-- value (overrides state file, implies -d)"). Previously this env
+	-- var was only ever read INSIDE the already-deterministic branch of
+	-- main(), so setting it alone (no -d, not invoked as drandom) had NO
+	-- effect at all -- every draw still came from /dev/urandom. Confirmed
+	-- directly: `DRANDOM_SEED=42 random -c 3` produced different output
+	-- every run before this fix. Only flips the mode on here; the actual
+	-- seed VALUE is still read from the env var later in main(), where
+	-- the deterministic branch already lives.
+	if not options.deterministic then
+		local env_seed_raw = os.getenv("DRANDOM_SEED")
+		if env_seed_raw and env_seed_raw ~= "" then
+			options.deterministic = true
+		end
+	end
+
 	return options, positionals, invocation
 end
 
