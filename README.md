@@ -1,5 +1,7 @@
 # random
 
+[![Mechatron Prime CI](https://img.shields.io/endpoint?url=https%3A%2F%2Fthelio-nixos.tail66c90.ts.net%2Fbadges%2Frandom.json&style=for-the-badge)](https://thelio-nixos.tail66c90.ts.net/mechatron-prime/)
+
 A unified command-line random number generator, written in [LuaJIT](https://luajit.org/).
 One small program that covers the cases you usually reach for several tools to do:
 multiple statistical distributions, both **true** randomness (`/dev/urandom`) and

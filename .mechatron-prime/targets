@@ -1,0 +1,13 @@
+# Mechatron Prime CI targets for pmarreck/random.
+# One flake attribute per line; the worker fetches this file from the exact
+# pushed SHA.
+#
+# checks.x86_64-linux.random-test runs `FAST=1 bash ./test`, which executes all
+# suites except kernel_jit_diff (deep-mode only by design -- it is 30s of a 42s
+# run, and the mitigation it guards is already covered deterministically in the
+# default run by fixed_test's jit.attach check).
+checks.x86_64-linux.random-test
+
+# The packaged CLI: proves bin/ + lib/ install together and the binary can find
+# the integer kernel at runtime.
+packages.x86_64-linux.default
