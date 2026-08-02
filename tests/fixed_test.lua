@@ -1994,6 +1994,57 @@ ok(fx.parse_int("-9223372036854775808") == nil,
    "parse_int: true INT64_MIN's magnitude (2^63) is rejected -- the deliberate symmetric-range " ..
    "simplification documented on accumulate_digits")
 
+-- === parse_int_safe: rejects what M.parse_int silently rounds =============
+-- === (2026-08-02 Codex review, finding #3). ================================
+-- M.parse_int's own documented contract is fine for --count (a plain
+-- Lua-number return that double-rounds past 2^53 -- see its own doc
+-- comment -- nobody sanely loops quadrillions of times). It is NOT fine
+-- for a range BOUND: the bound a caller asked for must be the bound
+-- actually used, not the nearest double. Confirmed directly against
+-- bin/random before this function existed: `random --seed 1
+-- 9007199254740993 9007199254740993 -c 1` printed 9007199254740992 (a
+-- SILENTLY DIFFERENT bound, 2^53+1 collapsed to 2^53), and `random
+-- --seed 1 9223372036854775807 9223372036854775807 -c 1` printed
+-- -9223372036854775808 (a NEGATIVE bound for a string with no minus
+-- sign anywhere in it, via a double-to-int64 wraparound one level up).
+-- 2^53 is the standard "safe integer" boundary (matching JS's
+-- Number.MAX_SAFE_INTEGER + 1): every integer magnitude up to and
+-- including 2^53 round-trips through a Lua double exactly; 2^53+1 does
+-- not (ties-to-even rounds it back down to 2^53, the exact defect
+-- above). Silent corruption is the one outcome that is not acceptable,
+-- so this rejects rather than rounds -- matching the finding's own
+-- explicitly offered choice ("reject bounds whose magnitude exceeds
+-- 2^53 with a clear error if keeping them exactly is impractical").
+ok(fx.parse_int_safe("0") == 0, "parse_int_safe('0') == 0")
+ok(fx.parse_int_safe("42") == 42, "parse_int_safe('42') == 42")
+ok(fx.parse_int_safe("-9") == -9, "parse_int_safe('-9') == -9")
+ok(fx.parse_int_safe("+5") == 5,
+   "parse_int_safe('+5') == 5 (same leading-+ convention as parse_int)")
+
+local SAFE_INT_MAG_TEST = 9007199254740992   -- 2^53, exactly representable
+ok(fx.parse_int_safe("9007199254740992") == SAFE_INT_MAG_TEST,
+   "parse_int_safe: exactly 2^53 (the safe-integer boundary) is accepted, not rejected early")
+ok(fx.parse_int_safe("-9007199254740992") == -SAFE_INT_MAG_TEST,
+   "parse_int_safe: exactly -2^53 is accepted")
+ok(fx.parse_int_safe("9007199254740993") == nil,
+   "parse_int_safe: 2^53+1 is REJECTED, not silently rounded down to 2^53 [MUTATION TARGET C]")
+ok(fx.parse_int_safe("-9007199254740993") == nil,
+   "parse_int_safe: -(2^53+1) is REJECTED")
+ok(fx.parse_int_safe("9223372036854775807") == nil,
+   "parse_int_safe: int64 max is REJECTED (far past 2^53), not silently wrapped negative one level up")
+ok(fx.parse_int_safe(string.rep("7", 25)) == nil,
+   "parse_int_safe: 25-digit input overflowing int64 is rejected (inherits accumulate_digits' guard)")
+
+-- Same malformed-input classifier M.parse_int already covers -- this
+-- is a specificity check, so the new magnitude guard cannot be
+-- satisfied by accidentally rejecting everything.
+ok(fx.parse_int_safe("") == nil, "parse_int_safe('') is nil (empty string)")
+ok(fx.parse_int_safe("   ") == nil, "parse_int_safe('   ') is nil (whitespace-only)")
+ok(fx.parse_int_safe("-") == nil, "parse_int_safe('-') is nil (bare sign)")
+ok(fx.parse_int_safe("+") == nil, "parse_int_safe('+') is nil (bare sign)")
+ok(fx.parse_int_safe("++5") == nil, "parse_int_safe('++5') is nil (a second sign is not a digit)")
+ok(fx.parse_int_safe("1.5") == nil, "parse_int_safe('1.5') is nil (fractional bound rejected)")
+ok(fx.parse_int_safe("12a34") == nil, "parse_int_safe('12a34') is nil (embedded letters)")
 end
 
 print("")

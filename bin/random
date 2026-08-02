@@ -834,16 +834,26 @@ local function parse_args()
 
 	-- Parse positional arguments
 	if #positionals >= 1 then
-		options.start_val = fx.parse_int(positionals[1])
+		-- fx.parse_int_safe, not fx.parse_int: the latter's documented
+		-- contract silently double-rounds any magnitude past 2^53 --
+		-- fine for --count (a loop bound), NOT fine for a range bound,
+		-- where the value used must be the value asked for. Confirmed
+		-- directly: `random --seed 1 9007199254740993 9007199254740993
+		-- -c 1` used to print 9007199254740992 (2^53+1 silently
+		-- collapsed to 2^53) with fx.parse_int here. See
+		-- fx.parse_int_safe's own doc comment in lib/fixed.lua for the
+		-- full rationale, including why full int64-exact bounds were
+		-- deliberately not chosen instead.
+		options.start_val = fx.parse_int_safe(positionals[1])
 		if not options.start_val then
-			stderr_write("Error: start value must be a whole number\n")
+			stderr_write("Error: start value must be a whole number no larger than 2^53 (9007199254740992) in magnitude\n")
 			os.exit(1)
 		end
 	end
 	if #positionals >= 2 then
-		options.end_val = fx.parse_int(positionals[2])
+		options.end_val = fx.parse_int_safe(positionals[2])
 		if not options.end_val then
-			stderr_write("Error: end value must be a whole number\n")
+			stderr_write("Error: end value must be a whole number no larger than 2^53 (9007199254740992) in magnitude\n")
 			os.exit(1)
 		end
 	end
@@ -1014,7 +1024,24 @@ local function main()
 				stderr_write("Error: weighted item must be in format 'value:weight', got: " .. item .. "\n")
 				os.exit(1)
 			end
-			weight = tonumber(weight)
+			-- fx.parse_int_safe, not tonumber: the regex above only lets
+			-- through unsigned digit strings, but tonumber() on a long
+			-- enough one still silently loses precision (or, past
+			-- double's own range, returns inf) rather than rejecting --
+			-- confirmed directly: a 28-digit weight fed into
+			-- pcg32_range as total_weight produced undefined downstream
+			-- behavior (observed as both an infinite hang and silent
+			-- wrong output, depending on how the FFI double-to-u64 cast
+			-- in pcg32_range's wide path happened to land). Same fix,
+			-- same rationale, as the range-bound fix this call site's
+			-- comment neighbors (see fx.parse_int_safe's own doc
+			-- comment in lib/fixed.lua).
+			weight = fx.parse_int_safe(weight)
+			if weight == nil then
+				stderr_write("Error: weighted item weight is out of range (must be a " ..
+					"whole number no larger than 2^53): " .. item .. "\n")
+				os.exit(1)
+			end
 			table.insert(weighted_items, {value = value, weight = weight})
 			total_weight = total_weight + weight
 		end

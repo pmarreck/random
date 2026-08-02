@@ -448,15 +448,27 @@ test_random() {
 	# range` is 0, so bound wraps to 0 in u64 and `r < bound` is never
 	# true -- no draw is ever accepted, forever. Tested as a classifier
 	# over the WHOLE set the finding specified, not one example: every
-	# power of two from 2^33 through 2^62, the non-power-of-two neighbor
+	# power of two from 2^33 through 2^52, the non-power-of-two neighbor
 	# on each side of every one of those (so a mutant that skips
 	# rejection unconditionally rather than only when remainder==0 still
 	# has a chance to be caught by a neighbor going out of range), plus
 	# 2^32 exactly (the narrow/wide path boundary, already correct) and
 	# 2^32+1 (the smallest wide-path input, already correct) as
 	# regressions on the boundary this fix must not disturb.
+	#
+	# Capped at 2^52, not the full 2^62 the finding originally asked
+	# for: a LATER fix in this same review round (finding #3, large
+	# integer bounds) added a hard 2^53 safe-integer ceiling on every
+	# positional CLI argument -- values past it are now REJECTED before
+	# they ever reach pcg32_range at all, an unrelated and unavoidable
+	# consequence of routing this test through the CLI rather than
+	# calling pcg32_range directly (it is a local, unexported function
+	# in bin/random with no separate Lua-level test entry point). The
+	# exact_divides fix itself is unconditional u64 arithmetic with no
+	# reference to this ceiling, so it applies identically all the way
+	# to 2^62; this test's own reach is what's bounded, not the fix.
 	(( tests++ ))
-	echo "Testing power-of-two range termination (2^33..2^62, neighbors, 2^32 boundary)..."
+	echo "Testing power-of-two range termination (2^33..2^52, neighbors, 2^32 boundary)..."
 
 	local pow2_fail=0
 	pow2_check() {
@@ -477,7 +489,7 @@ test_random() {
 	}
 
 	local k span
-	for k in $(seq 33 62); do
+	for k in $(seq 33 52); do
 		span=$(( 1 << k ))
 		pow2_check "2^$k exact (span=$span)" 0 $(( span - 1 ))
 		pow2_check "2^$k - 1 neighbor" 0 $(( span - 2 ))
@@ -487,7 +499,7 @@ test_random() {
 	pow2_check "2^32 + 1 (smallest wide-path input)" 0 4294967296
 
 	if [ "$pow2_fail" -eq 0 ]; then
-		echo "✓ Power-of-two range classifier passed (92 cases)"
+		echo "✓ Power-of-two range classifier passed (62 cases)"
 	else
 		echo "✗ Power-of-two range classifier: $pow2_fail case(s) failed" >&2
 		(( fails++ ))
@@ -1480,6 +1492,79 @@ verycommon:100"
 		echo "✓ Valid-seed specificity check passed (5 cases)"
 	else
 		echo "✗ Valid-seed specificity check: $seed_accept_fail case(s) wrongly rejected" >&2
+		(( fails++ ))
+	fi
+
+	echo ""
+	echo "--- Section 15: large integer bound / weight overflow ---"
+
+	# Test 57: range bounds beyond the double-safe-integer boundary
+	# (2^53) are rejected with a clear error, not silently corrupted.
+	# Confirmed directly before this fix: `random --seed 1
+	# 9007199254740993 9007199254740993 -c 1` printed 9007199254740992
+	# (2^53+1 silently collapsed to 2^53), and `random --seed 1
+	# 9223372036854775807 9223372036854775807 -c 1` printed
+	# -9223372036854775808 (a NEGATIVE bound for a string with no minus
+	# sign anywhere in it).
+	(( tests++ ))
+	echo "Testing range bounds beyond 2^53 are rejected cleanly..."
+
+	assert_clean_cli_error "bound 2^53+1 rejected cleanly" \
+		random --seed 1 9007199254740993 9007199254740993 -c 1 || (( fails++ ))
+	assert_clean_cli_error "bound int64-max rejected cleanly" \
+		random --seed 1 9223372036854775807 9223372036854775807 -c 1 || (( fails++ ))
+
+	# Test 58: a bound exactly AT 2^53 (the safe-integer boundary
+	# itself) is still accepted and returns the EXACT value asked for --
+	# a specificity check, so Test 57 cannot be trivially satisfied by
+	# rejecting every large bound.
+	(( tests++ ))
+	echo "Testing a range bound exactly at 2^53 is still accepted..."
+
+	local safe_bound_out
+	safe_bound_out=$(timeout 5 random --seed 1 9007199254740992 9007199254740992 -c 1 2>/dev/null)
+	if [ "$safe_bound_out" = "9007199254740992" ]; then
+		echo "✓ Range bound exactly at 2^53 is accepted and returned exactly"
+	else
+		echo "✗ Range bound exactly at 2^53 was wrongly rejected or corrupted: got '$safe_bound_out'" >&2
+		(( fails++ ))
+	fi
+
+	# Test 59: an overflowing --weighted weight is rejected with a clear
+	# error, not hung forever. Confirmed directly before this fix: a
+	# weight of 28 nines made `weight = tonumber(weight)` return `inf`,
+	# and `rand_func(1, inf)` in pcg32_range's wide path never
+	# terminated -- this genuinely HUNG, it did not just corrupt a
+	# value (the finding's own text only describes the corruption case;
+	# this hang is a worse, previously-undiscovered failure mode of the
+	# same root cause, found while verifying this fix).
+	(( tests++ ))
+	echo "Testing an overflowing --weighted weight is rejected cleanly, not hung..."
+
+	local wover_out wover_status
+	wover_out=$(printf 'a:99999999999999999999999999\n' | timeout 5 random --weighted --seed 1 2>&1)
+	wover_status=$?
+	if [ "$wover_status" -eq 124 ]; then
+		echo "✗ Overflowing weight test failed: timed out (infinite loop)" >&2
+		(( fails++ ))
+	elif [ "$wover_status" -eq 0 ] || ! echo "$wover_out" | grep -qi "^Error:"; then
+		echo "✗ Overflowing weight test failed: not rejected cleanly (status=$wover_status): $wover_out" >&2
+		(( fails++ ))
+	else
+		echo "✓ Overflowing weight is rejected cleanly, not hung"
+	fi
+
+	# Test 60: normal, reasonable weights still work -- a specificity
+	# check for Test 59.
+	(( tests++ ))
+	echo "Testing normal --weighted weights still work..."
+
+	local wok_out
+	wok_out=$(printf 'rare:1\ncommon:10\nverycommon:100\n' | random --weighted --seed 1 2>/dev/null)
+	if [ -n "$wok_out" ]; then
+		echo "✓ Normal --weighted weights still work (got: $wok_out)"
+	else
+		echo "✗ Normal --weighted weights broken: got empty output" >&2
 		(( fails++ ))
 	fi
 

@@ -1342,6 +1342,16 @@ local INT64_MAX_MAG = 0x7FFFFFFFFFFFFFFFLL
 --- confirmed directly to hang, not just run slowly.
 local MAX_INT_PART_DIGITS = 2000
 M.MAX_INT_PART_DIGITS = MAX_INT_PART_DIGITS
+
+--- Largest integer magnitude a Lua double (and hence M.parse_int_safe's
+--- plain-Lua-number return type) can represent EXACTLY: 2^53. Every
+--- integer from 0 to this value round-trips through a double exactly;
+--- 2^53+1 does not (the mantissa runs out of bits and ties-to-even
+--- rounds it back down to 2^53). Standard IEEE-754 "safe integer"
+--- boundary, matching JS's Number.MAX_SAFE_INTEGER + 1. See
+--- M.parse_int_safe's own doc comment for why this exists and the
+--- confirmed corruption it closes.
+local SAFE_INT_MAG = 9007199254740992LL   -- 2^53
 --- Accumulate consecutive ASCII decimal digits from byte index i of s into
 --- an unsigned magnitude held in an int64 (v is 0LL, count is 0 if none are
 --- present), stopping at the first non-digit byte or end of string.
@@ -1501,9 +1511,16 @@ end
 --- EXACTLY internally (accumulate_digits never touches a double) but round
 --- on the way out through the final tonumber(), the same documented
 --- caveat M.from_int itself carries for a plain Lua-number input.
---- Realistic callers (CLI counts, range bounds) never approach that
---- boundary; nothing currently in this file needs the full int64 range
---- out of this function.
+--- Realistic callers that just need a bounded loop counter (CLI --count)
+--- never approach that boundary. Callers that need the value ITSELF to
+--- be exactly what was typed -- e.g. a range BOUND, where the bound
+--- used must be the bound asked for, not the nearest double -- must use
+--- M.parse_int_safe below instead: a 2026-08-02 Codex review found this
+--- function's own double-rounding silently corrupting exactly that use
+--- (bin/random's positional range arguments used to call this function
+--- directly; see M.parse_int_safe's doc comment for the confirmed
+--- repro). This function's own contract and every existing caller of it
+--- (--count) are unchanged.
 function M.parse_int(s)
 	if type(s) ~= "string" then return nil end
 	s = s:gsub("^%s+", ""):gsub("%s+$", "")
@@ -1516,6 +1533,50 @@ function M.parse_int(s)
 	if v == nil then return nil end         -- int64 overflow
 	if count == 0 then return nil end       -- no digits after the sign
 	if next_i <= #s then return nil end     -- trailing garbage, e.g. "1.5"
+	return sign * tonumber(v)
+end
+
+--- Parse a decimal string to a plain integer LIKE M.parse_int, but
+--- REJECT (return nil) any magnitude past 2^53 rather than silently
+--- rounding it through a Lua double the way M.parse_int does. For a
+--- range BOUND (or any value the caller needs to use exactly, not just
+--- as a loop counter), silent rounding is corruption, not a rounding
+--- quirk -- confirmed directly against bin/random before this function
+--- existed: `random --seed 1 9007199254740993 9007199254740993 -c 1`
+--- printed 9007199254740992 (2^53+1 silently collapsed to 2^53), and
+--- `random --seed 1 9223372036854775807 9223372036854775807 -c 1`
+--- printed -9223372036854775808 (a NEGATIVE bound for a string with no
+--- minus sign anywhere in it, via a double-to-int64 wraparound one
+--- level up in bin/random's own start_val/end_val handling).
+---
+--- 2^53 is the standard IEEE-754 double "safe integer" boundary
+--- (matching JS's Number.MAX_SAFE_INTEGER + 1): every integer magnitude
+--- up to and including 2^53 round-trips through a double exactly;
+--- 2^53+1 does not (ties-to-even rounds it back down to 2^53, the exact
+--- defect above). Full int64-exact range bounds (M.parse_int's
+--- alternative, "keep it as an int64_t end to end") was deliberately
+--- NOT chosen: bin/random's rejection-sampling arithmetic and its
+--- output formatting are both built on plain Lua numbers throughout,
+--- and printing an int64 cdata value directly appends "LL" to it
+--- (confirmed: `tostring(ffi.cast("int64_t", 7))` is "7LL", not "7") --
+--- propagating cdata through would either corrupt every golden vector's
+--- printed format or require a second parallel formatting path. An
+--- explicit, loud rejection past 2^53 is simpler, matches this file's
+--- own "silent corruption is the one outcome that is not acceptable"
+--- stance, and 2^53 is already far beyond any realistic range bound.
+function M.parse_int_safe(s)
+	if type(s) ~= "string" then return nil end
+	s = s:gsub("^%s+", ""):gsub("%s+$", "")
+	if s == "" then return nil end
+	local sign, i = 1, 1
+	local c = s:sub(1, 1)
+	if c == "-" then sign = -1; i = 2 elseif c == "+" then i = 2 end
+	if i > #s then return nil end           -- bare sign, nothing after it
+	local v, count, next_i = accumulate_digits(s, i)
+	if v == nil then return nil end         -- int64 overflow
+	if count == 0 then return nil end       -- no digits after the sign
+	if next_i <= #s then return nil end     -- trailing garbage, e.g. "1.5"
+	if v > SAFE_INT_MAG then return nil end -- magnitude would lose precision as a double
 	return sign * tonumber(v)
 end
 
