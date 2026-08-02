@@ -22,6 +22,15 @@
       magnitude, not just the integer part (2026-08-01 EST)
 - [x] Spec status line: steps 1-4 implemented, step 5 (Zig port) pending
       (2026-08-01 EST)
+- [x] Codex hostile-review fixes, all 8 findings: `pcg32_range` power-of-two
+      hang, `$IFS`-independent default delimiter, `DRANDOM_SEED` implies
+      `-d`, malformed-seed grammar (nil-check + u64 overflow guard), large
+      integer bounds/weights past 2^53 (`M.parse_int_safe`), `M.norm`/
+      `M.mul` integer-exponent asserts, `M.parse` bignum fallback past
+      int64 + `M.tostring` shift guard (shared `MAX_INT_PART_DIGITS`). Full
+      report with before/after evidence and mutation-test results:
+      `docs/codex-fix-report.md`. Golden vectors unmoved throughout
+      (2026-08-02 EST)
 
 ## Next: Zig port (separate plan)
 - [ ] `src/fixed.zig` mirroring `lib/fixed.lua`, verified against the same `bc` sweep
@@ -60,3 +69,13 @@
   confusingly when `timeout` execs it). No directory named `*_test` (or
   `kernel_bc_sweep`/`kernel_jit_diff`) exists under `tests/` today; low risk,
   not fixed.
+- `tests/random_test`'s power-of-two range classifier (Test 20d) sweeps
+  2^33..2^52, not the full 2^33..2^62 the original finding specified.
+  `M.parse_int_safe`'s later 2^53 CLI ceiling (finding #3 in
+  `docs/codex-fix-report.md`) makes spans above 2^53 unreachable through
+  positional CLI arguments at all -- not a weakening of the `pcg32_range`
+  fix itself, which is unconditional u64 arithmetic with no reference to
+  that ceiling. Recovering full coverage to 2^62 would need a Lua-level
+  test entry point into `pcg32_range` (currently a local, unexported
+  function in `bin/random`); not worth the refactor for a range no CLI
+  invocation can produce.
