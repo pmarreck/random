@@ -137,25 +137,33 @@
           };
         };
       in {
-        packages.default = random;
-        packages.random = random;
+        # The conditional attribute is merged INSIDE `packages`, not by `//`-ing
+        # a second `{ packages.crossToolchains = ...; }` onto the outputs set.
+        # `//` is a SHALLOW merge, so that form silently replaced the whole
+        # `packages` attribute -- default, random and luajitPinned all vanished
+        # and only crossToolchains survived. `nix flake check` did not catch it
+        # (it exercised `checks.*`, which was untouched); Mechatron Prime did,
+        # with "target failed: packages.x86_64-linux.default".
+        packages = {
+          default = random;
+          random = random;
 
-        # Exposed so a machine of ANY architecture can build the exact
-        # interpreter tests/cross_arch_diff pins, without also needing the
-        # cross-compilation machinery. That is what lets the native
-        # aarch64-darwin leg of the cross-architecture evidence be gathered on
-        # real hardware rather than under emulation -- with LuaJIT source held
-        # constant, so architecture and libc remain the only variables.
-        packages.luajitPinned = luajitFixed;
+          # Exposed so a machine of ANY architecture can build the exact
+          # interpreter tests/cross_arch_diff pins, without also needing the
+          # cross-compilation machinery. That is what lets the native
+          # aarch64-darwin leg of the cross-architecture evidence be gathered on
+          # real hardware rather than under emulation -- with LuaJIT source held
+          # constant, so architecture and libc remain the only variables.
+          luajitPinned = luajitFixed;
         # `nixpkgs.lib`, NOT `pkgs.lib`: deciding this attrset's NAMES must not
         # force `pkgs`. eachDefaultSystem still enumerates x86_64-darwin, which
         # nixpkgs 26.11 has dropped -- forcing `pkgs` for that system throws at
         # evaluation time and takes the whole flake down, including on Linux.
-      } // nixpkgs.lib.optionalAttrs crossSupported {
-        # Only meaningful on x86_64-linux: pkgsCross/pkgsMusl and qemu-user are
-        # what make the aarch64 and musl legs buildable from this host at all.
-        packages.crossToolchains = crossToolchains;
-      } // {
+        } // nixpkgs.lib.optionalAttrs crossSupported {
+          # Only meaningful on x86_64-linux: pkgsCross/pkgsMusl and qemu-user are
+          # what make the aarch64 and musl legs buildable from this host at all.
+          crossToolchains = crossToolchains;
+        };
 
         # Hermetic CI check: runs the FULL suite runner (./test), not just
         # tests/random_test, so fixed_test/golden_test/kernel_bc_sweep are
