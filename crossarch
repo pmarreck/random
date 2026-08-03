@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Run the cross-architecture differential control.
+#
+# Deliberately NOT part of ./test: it builds three LuaJIT toolchains through
+# nix (compiling one of them for aarch64) and runs a leg under qemu, none of
+# which works inside the nix sandbox that ./test's own CI check runs in.
+# Same reasoning as ./bm and ./fuzz -- a heavy, special-toolchain suite gets
+# its own top-level verb rather than slowing every routine run.
+#
+# Usage:
+#   ./crossarch                              three local legs (one emulated)
+#   FAST= ./crossarch                        deep mode, larger sweeps
+#   CROSS_ARCH_REMOTE=some-host ./crossarch  adds a native-hardware leg
+#
+# See tests/cross_arch_diff's header for what is compared and why the
+# self-controls are not optional, and docs/cross-architecture-evidence.md for
+# the recorded results.
+set -u
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$here/tests/cross_arch_diff" "$@"

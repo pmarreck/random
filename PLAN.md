@@ -55,12 +55,32 @@
       LuaJIT, re-verified again after the retraction. Full report:
       `docs/codex-audit-fix-report.md` (2026-08-02 EST)
 
+- [x] **Cross-architecture determinism VERIFIED** — the README's headline claim
+      was an argument (the kernel is integer-only) with zero non-x86_64
+      measurements behind it. Now measured: `./crossarch`
+      (`tests/cross_arch_diff`) compares the kernel sweep, the decimal I/O
+      paths and `bin/random` itself across four platforms built from one
+      pinned LuaJIT source — x86_64-glibc, x86_64-musl, aarch64-Linux (qemu),
+      and **native aarch64-macOS on an M4 Max** — and all payloads are
+      byte-identical. Two positive controls establish the comparison could
+      have failed: libm splits three ways (libc axis), out-of-range
+      double→int splits two ways along architecture (arch axis); neither
+      alone covers both. qemu fidelity established rather than assumed (its
+      float→int digest equals native Darwin's). All four controls
+      mutation-verified. Full results, caveats and two corrected mistakes:
+      `docs/cross-architecture-evidence.md` (2026-08-02 EDT)
+
 ## Next: Zig port (separate plan)
 - [ ] `src/fixed.zig` mirroring `lib/fixed.lua`, verified against the same `bc` sweep
 - [ ] Zig core (pure, no I/O) + `include/randomz.h` C FFI
 - [ ] `randomz` C CLI + `drandomz`/`nrandomz` symlinks, argv[0] dispatch
 - [ ] Differential harness: `randomz` vs `bin/random` over a seed x flag matrix
-- [ ] Cross-target digest control: x86_64 / aarch64 / musl must agree
+- [ ] Cross-target digest control: x86_64 / aarch64 / musl must agree — EXTEND
+      `tests/cross_arch_diff` rather than writing a second one; it already has
+      the legs, the sensitivity controls and the native-hardware path. Add
+      `randomz` as a payload alongside `bin/random`. Note the mutation finding:
+      a CLI-level differential alone is too coarse to catch a 1-ulp kernel
+      perturbation, so the Zig port needs a kernel-level digest payload too.
 - [ ] `./bm` benchmark suite covering **both** implementations — LuaJIT and Zig —
       so the port's speedup is measured rather than assumed, and so a regression
       in either is visible. Per the fleet convention: ndjson log per machine-id,

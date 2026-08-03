@@ -18,7 +18,7 @@ the invocation name selects the mode (`nrandom` ⇒ normalized, `drandom` ⇒ de
 - **Stdin ops:** `--choose` one item, `--shuffle` all items, `--weighted` (`value:weight`)
 - **Output formats:** decimal, `--hex`, `--base64`, raw `--binaryoutput`
 - **Reproducible sessions:** deterministic state persists per session so sequences continue across calls
-- **Reproducible across platforms:** seeded streams are bit-identical across machines, operating systems and CPU architectures, because all math runs on an integer-only kernel instead of the platform's libm — see [Determinism](#determinism) below
+- **Reproducible across platforms:** seeded streams are bit-identical across machines, operating systems and CPU architectures — verified on x86_64-glibc, x86_64-musl, aarch64-Linux and native aarch64-macOS — because all math runs on an integer-only kernel instead of the platform's libm — see [Determinism](#determinism) below
 - **Zero heavy deps:** just LuaJIT (FFI + bit are built in)
 
 ### Determinism
@@ -35,6 +35,16 @@ the same source at the same seed.
 The algorithm is PCG32 (XSH-RR 64/32), multiplier `6364136223846793005`,
 increment `1442695040888963407`, seeded by `state = 0; advance; state += seed;
 advance`. A stream is reproducible from that description alone.
+
+That portability claim is measured, not argued. `./crossarch`
+(`tests/cross_arch_diff`) runs the kernel, the decimal I/O paths and `bin/random`
+itself on four platforms built from one pinned LuaJIT source — x86_64-glibc,
+x86_64-musl, aarch64-Linux, and native aarch64-macOS on Apple silicon — and
+requires byte-identical output from all of them. It also runs two deliberately
+fragile controls that *must* diverge (platform libm across libcs, out-of-range
+`double`→int conversion across architectures), because an "identical" verdict
+from a comparison that could not have detected a difference proves nothing.
+Results and caveats: [`docs/cross-architecture-evidence.md`](docs/cross-architecture-evidence.md).
 
 While building this kernel we found and filed
 [LuaJIT/LuaJIT#1499](https://github.com/LuaJIT/LuaJIT/issues/1499), an
@@ -140,6 +150,10 @@ tests/fixed_test    unit tests for lib/fixed.lua (bash)
 tests/golden_test   verifies committed golden vectors still reproduce
 tests/kernel_bc_sweep sweeps the kernel against `bc -l` as an independent oracle
 tests/kernel_jit_diff JIT-vs-interpreter differential control (deep mode only)
+crossarch           runs the cross-architecture differential (not part of ./test)
+tests/cross_arch_diff  cross-arch/libc differential + its sensitivity controls
+tests/cross_arch_decimal.lua  payload: parse/tostring/int paths across platforms
+tests/cross_arch_controls.lua positive controls that MUST diverge
 tests/bless-goldens run deliberately to regenerate golden vectors; never from ./test
 tests/golden/       committed golden vectors (integer.txt, dist.txt)
 alternates/         earlier reference implementations (nrandombash, nrandomlua)

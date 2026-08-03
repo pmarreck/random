@@ -1,0 +1,431 @@
+#!/usr/bin/env bash
+# Cross-architecture differential control.
+#
+# WHAT THIS EXISTS TO SETTLE
+# README's headline claim is that a seeded stream is bit-identical across
+# architectures, operating systems and libcs. Until this suite existed that was
+# an ARGUMENT -- the kernel is integer-only, and integer arithmetic is fully
+# pinned by the language where transcendental float math is not -- but it was
+# never EVIDENCE, because no non-x86_64 run had ever been compared. The
+# handoff called it "the single most valuable outstanding check".
+#
+# WHAT IT COMPARES
+# Three interpreters, all built from the IDENTICAL pinned LuaJIT source
+# (flake.nix's pinLuajit), so exactly one variable moves per pair:
+#   x86_64-glibc    baseline
+#   x86_64-musl     libc differs,         architecture held fixed
+#   aarch64-glibc   architecture differs, libc family held fixed
+# over three payloads:
+#   kernel   tests/kernel_jit_diff.lua      (div/mul/add/sub/norm/ln/exp/
+#                                            cos_turns/sqrt/pow, ~720k values)
+#   decimal  tests/cross_arch_decimal.lua   (parse/tostring/parse_int/from_int/
+#                                            to_int_trunc/frac/cmp/mul128)
+#   cli      bin/random end to end          (byte-exact stdout over a seed x
+#                                            flag matrix)
+# The kernel payload is reused verbatim from the JIT differential rather than
+# written for this suite. That is deliberate: it is code that was not authored
+# to make this test pass, so it cannot have been tuned to.
+#
+# WHY THE CONTROLS ARE NOT OPTIONAL
+# The real assertion here is a NEGATIVE one -- "these outputs are identical" --
+# and a negative assertion is unfalsifiable without evidence that the
+# comparison could have come out the other way. This project has already
+# shipped the exact failure mode: a differential that passed because BOTH
+# invocations failed and both digests were of empty stdout. So before comparing
+# anything, this suite proves three things about itself:
+#   LIVENESS      every run exits 0 and writes non-empty stdout
+#   REFLEXIVITY   the same interpreter run twice agrees with itself (catches
+#                 ASLR/PID/clock contamination -- an early draft of the
+#                 float2int control hashed boxed cdata POINTERS and reported a
+#                 confident DIFFER that was pure address noise)
+#   SENSITIVITY   two constructs known to diverge actually DO diverge across
+#                 the two axes under test (see cross_arch_controls.lua)
+# If any of those fails, the suite fails, and no "identical" verdict is
+# reported -- because it would not have been earned.
+#
+# CAVEAT, STATED PLAINLY: the aarch64 leg runs under qemu-aarch64 user-mode
+# emulation, not on aarch64 silicon. Emulation is weaker evidence than
+# hardware. It is not vacuous evidence -- the float2int sensitivity control
+# detects the genuine x86_64/aarch64 conversion difference THROUGH qemu, which
+# demonstrates the emulation reproduces architecture-visible semantics rather
+# than the host's. Native-hardware confirmation is tracked in PLAN.md.
+#
+# NOTE: no `set -e` -- see ./test's own comment. Suites here deliberately
+# exercise non-zero exit paths and errexit would abort on the first one.
+set -u
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$here/.." && pwd)"
+
+fast="${FAST-1}"
+[ -z "$fast" ] && fast=""
+
+fails=0
+note() { printf '%s\n' "$*"; }
+ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
+bad()  { printf '  \033[31m✗\033[0m %s\n' "$*" >&2; fails=$((fails + 1)); }
+
+# --- toolchains -------------------------------------------------------------
+# CROSS_TOOLCHAINS lets a caller point at a prebuilt farm (CI, or a repeat run)
+# instead of paying nix evaluation every time.
+tc="${CROSS_TOOLCHAINS-}"
+if [ -z "$tc" ]; then
+	if ! command -v nix >/dev/null 2>&1; then
+		echo "cross_arch_diff: FAIL -- nix not found and CROSS_TOOLCHAINS unset." >&2
+		echo "  This suite cannot silently skip: skipping would report success for" >&2
+		echo "  a cross-architecture claim that was never actually checked." >&2
+		exit 1
+	fi
+	note "Building pinned cross toolchains (first run compiles LuaJIT three ways)..."
+	tc="$(cd "$root" && nix build --no-link --print-out-paths '.#crossToolchains' 2>/dev/null)"
+	if [ -z "$tc" ] || [ ! -d "$tc/bin" ]; then
+		echo "cross_arch_diff: FAIL -- could not build .#crossToolchains" >&2
+		exit 1
+	fi
+fi
+
+QEMU="$tc/bin/qemu-aarch64"
+LEG_NAMES=(x86_64-glibc x86_64-musl aarch64-glibc)
+# Runner prefix per leg. The aarch64 binary's ELF interpreter is an absolute
+# /nix/store path, so `-L /` resolves it without a staged sysroot.
+leg_cmd() {
+	case "$1" in
+		x86_64-glibc)  printf '%s' "$tc/bin/luajit-x86_64-glibc" ;;
+		x86_64-musl)   printf '%s' "$tc/bin/luajit-x86_64-musl" ;;
+		aarch64-glibc) printf '%s' "$QEMU -L / $tc/bin/luajit-aarch64-glibc" ;;
+	esac
+}
+
+for leg in "${LEG_NAMES[@]}"; do
+	read -r -a probe <<<"$(leg_cmd "$leg")"
+	if ! "${probe[@]}" -e 'os.exit(0)' >/dev/null 2>&1; then
+		echo "cross_arch_diff: FAIL -- leg '$leg' is not runnable: $(leg_cmd "$leg")" >&2
+		exit 1
+	fi
+done
+
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/xarch.XXXXXX")"
+trap 'rm -rf "$tmp"' EXIT
+
+note ""
+note "Cross-architecture differential (FAST=${fast:-0})"
+note "  toolchains: $tc"
+note "============================================"
+
+# run_payload <leg> <outfile> <script> [args...]
+# Returns non-zero on a dead run (bad exit or empty stdout) -- the liveness
+# control. Captures stderr separately so payload progress notes never pollute
+# the compared bytes.
+run_payload() {
+	local leg="$1" out="$2"; shift 2
+	local -a cmd
+	read -r -a cmd <<<"$(leg_cmd "$leg")"
+	FAST="$fast" "${cmd[@]}" "$@" >"$out" 2>"$out.err"
+	local rc=$?
+	if [ "$rc" -ne 0 ]; then
+		bad "$leg: exit $rc running $(basename "$1")"
+		sed 's/^/      /' <"$out.err" >&2
+		return 1
+	fi
+	if [ ! -s "$out" ]; then
+		bad "$leg: EMPTY stdout from $(basename "$1") -- a digest of nothing compares equal to a digest of nothing"
+		return 1
+	fi
+	return 0
+}
+
+# =============================================================================
+# CONTROL 1 -- LIVENESS + REFLEXIVITY
+# =============================================================================
+note ""
+note "CONTROL 1: liveness and reflexivity (a run must agree with itself)"
+for leg in "${LEG_NAMES[@]}"; do
+	run_payload "$leg" "$tmp/refl.$leg.a" "$here/cross_arch_decimal.lua" || continue
+	run_payload "$leg" "$tmp/refl.$leg.b" "$here/cross_arch_decimal.lua" || continue
+	if cmp -s "$tmp/refl.$leg.a" "$tmp/refl.$leg.b"; then
+		ok "$leg reproduces itself"
+	else
+		bad "$leg is NOT self-reproducible -- output depends on something other than input (ASLR? clock? pid?). Every comparison below would be meaningless."
+	fi
+done
+
+# =============================================================================
+# CONTROL 2 -- SENSITIVITY. These MUST differ, or the harness is blind.
+# =============================================================================
+note ""
+note "CONTROL 2: sensitivity (constructs known to diverge must be SEEN to diverge)"
+
+for leg in "${LEG_NAMES[@]}"; do
+	run_payload "$leg" "$tmp/libm.$leg"  "$here/cross_arch_controls.lua" libm
+	run_payload "$leg" "$tmp/f2i.$leg"   "$here/cross_arch_controls.lua" float2int
+done
+
+# libc axis: glibc vs musl transcendentals must differ.
+if [ -s "$tmp/libm.x86_64-glibc" ] && [ -s "$tmp/libm.x86_64-musl" ]; then
+	if cmp -s "$tmp/libm.x86_64-glibc" "$tmp/libm.x86_64-musl"; then
+		bad "SENSITIVITY LOST (libc axis): glibc and musl libm agreed. They are known to differ (log 0.006%, cos 3.06%, exp 8.85% of inputs). The harness can no longer observe a libc-induced difference, so an 'identical' verdict below would be unfalsifiable."
+	else
+		ok "libc axis live: glibc vs musl libm DIFFER, as they must"
+	fi
+fi
+
+# architecture axis: x86_64 vs aarch64 float->int conversion must differ.
+if [ -s "$tmp/f2i.x86_64-glibc" ] && [ -s "$tmp/f2i.aarch64-glibc" ]; then
+	if cmp -s "$tmp/f2i.x86_64-glibc" "$tmp/f2i.aarch64-glibc"; then
+		bad "SENSITIVITY LOST (architecture axis): x86_64 and aarch64 out-of-range float->int conversion agreed. x86_64 yields INT64_MIN, aarch64 saturates and maps NaN to 0. Either the aarch64 leg is not really running aarch64 semantics, or the probe broke -- either way the cross-ARCH verdict below would be unfalsifiable."
+	else
+		ok "architecture axis live: x86_64 vs aarch64 float->int DIFFER, as they must"
+	fi
+fi
+
+# Orthogonality: each control should be blind to the OTHER axis. Not a hard
+# failure (it is a property of the platforms, not of this code) but a silent
+# change here means the controls stopped covering separate ground.
+if [ -s "$tmp/f2i.x86_64-glibc" ] && [ -s "$tmp/f2i.x86_64-musl" ]; then
+	cmp -s "$tmp/f2i.x86_64-glibc" "$tmp/f2i.x86_64-musl" \
+		&& ok "float2int is libc-independent (expected: it is architecture-defined)" \
+		|| note "  ! note: float2int now varies with libc too -- unexpected, worth a look"
+fi
+
+# =============================================================================
+# THE ACTUAL TEST -- kernel and decimal payloads must be IDENTICAL everywhere
+# =============================================================================
+compare_payload() {
+	local label="$1"; shift
+	note ""
+	note "PAYLOAD: $label"
+	local base="${LEG_NAMES[0]}" leg
+	for leg in "${LEG_NAMES[@]}"; do
+		run_payload "$leg" "$tmp/$label.$leg" "$@" || return 1
+	done
+	for leg in "${LEG_NAMES[@]}"; do
+		[ "$leg" = "$base" ] && continue
+		if cmp -s "$tmp/$label.$base" "$tmp/$label.$leg"; then
+			ok "$base == $leg"
+		else
+			bad "$base != $leg  -- DETERMINISM CLAIM VIOLATED"
+			diff "$tmp/$label.$base" "$tmp/$label.$leg" | head -20 | sed 's/^/      /' >&2
+		fi
+	done
+}
+
+compare_payload kernel  "$here/kernel_jit_diff.lua"
+compare_payload decimal "$here/cross_arch_decimal.lua"
+
+# =============================================================================
+# CLI LEVEL -- byte-exact stdout from bin/random itself
+# =============================================================================
+# Chosen so the compared bytes are NOT quantized. bin/random's default 0..99
+# range rounds every draw into 100 buckets, which would hide exactly the
+# last-ulp divergence this project exists to eliminate -- an early manual check
+# in this session compared --normalized at 0..99, got "identical" on all three
+# legs, and had proven almost nothing. So: raw binary (full 32 bits per draw),
+# wide integer ranges (12+ significant digits through pcg32_range), and the
+# distributions that actually print fractions (exponential / log-normal / beta
+# emit 6 decimal places, exercising ln, exp, pow, sqrt and tostring end to end).
+CLI_CASES=(
+	"-b -c 512"
+	"--hex -c 200 0 4294967295"
+	"-c 200 0 1000000000000"
+	"-c 200 -1000000000000 1000000000000"
+	"--exponential -c 200"
+	"--log-normal -c 200 --stddev 2"
+	"--beta --alpha 2 --beta-param 5 -c 200"
+	"--poisson --mean 40 -c 200"
+	"--normalized --mean 1000000 --stddev 250000 -c 200"
+	"--normalized -c 200 0 1000000000000"
+	"--exponential -c 200 --delimiter ,"
+)
+CLI_STDIN_CASES=(
+	"--shuffle"
+	"--choose -c 50"
+	"--weighted -c 50 --delimiter ,"
+)
+STDIN_SHUF="$(seq 1 200 | tr '\n' ' ' | sed 's/ $//' | tr ' ' '\n')"
+STDIN_WEIGHTED="alpha:1,beta:10,gamma:100,delta:1000"
+
+note ""
+note "PAYLOAD: cli (bin/random end to end, byte-exact stdout)"
+cli_fail=0
+case_no=0
+for spec in "${CLI_CASES[@]}" "@stdin:${CLI_STDIN_CASES[0]}" "@stdin:${CLI_STDIN_CASES[1]}" "@weighted:${CLI_STDIN_CASES[2]}"; do
+	for seed in 1 42 987654321; do
+		case_no=$((case_no + 1))
+		stdin_data=""
+		args="$spec"
+		case "$spec" in
+			"@stdin:"*)    stdin_data="$STDIN_SHUF";     args="${spec#@stdin:}" ;;
+			"@weighted:"*) stdin_data="$STDIN_WEIGHTED"; args="${spec#@weighted:}" ;;
+		esac
+		read -r -a argv <<<"$args"
+		for leg in "${LEG_NAMES[@]}"; do
+			read -r -a cmd <<<"$(leg_cmd "$leg")"
+			sd="$tmp/state.$case_no.$seed.$leg"; mkdir -p "$sd"
+			# DRANDOM_STATE_HOME and DRANDOM_CONTEXT are pinned per invocation:
+			# deterministic mode persists state per session keyed on
+			# DRANDOM_CONTEXT (default: parent PID), so without this the legs
+			# would resume from different saved states and diverge for a reason
+			# that has nothing to do with architecture.
+			if [ -n "$stdin_data" ]; then
+				printf '%s\n' "$stdin_data" | DRANDOM_STATE_HOME="$sd" DRANDOM_CONTEXT=xarch \
+					"${cmd[@]}" "$root/bin/random" --seed "$seed" "${argv[@]}" \
+					>"$tmp/cli.$case_no.$seed.$leg" 2>/dev/null
+			else
+				DRANDOM_STATE_HOME="$sd" DRANDOM_CONTEXT=xarch \
+					"${cmd[@]}" "$root/bin/random" --seed "$seed" "${argv[@]}" \
+					>"$tmp/cli.$case_no.$seed.$leg" 2>/dev/null
+			fi
+			rc=$?
+			if [ "$rc" -ne 0 ] || [ ! -s "$tmp/cli.$case_no.$seed.$leg" ]; then
+				bad "cli case '$args' seed $seed on $leg: exit $rc, $(wc -c <"$tmp/cli.$case_no.$seed.$leg") bytes"
+				cli_fail=$((cli_fail + 1))
+			fi
+		done
+		base="${LEG_NAMES[0]}"
+		for leg in "${LEG_NAMES[@]}"; do
+			[ "$leg" = "$base" ] && continue
+			if ! cmp -s "$tmp/cli.$case_no.$seed.$base" "$tmp/cli.$case_no.$seed.$leg"; then
+				bad "cli '$args' seed $seed: $base != $leg"
+				diff <(xxd "$tmp/cli.$case_no.$seed.$base") \
+				     <(xxd "$tmp/cli.$case_no.$seed.$leg") | head -8 | sed 's/^/      /' >&2
+				cli_fail=$((cli_fail + 1))
+			fi
+		done
+	done
+done
+if [ "$cli_fail" -eq 0 ]; then
+	ok "$case_no invocations x ${#LEG_NAMES[@]} legs byte-identical"
+fi
+
+# =============================================================================
+# OPTIONAL NATIVE-HARDWARE LEG
+# =============================================================================
+# The three legs above are all hosted on this machine, and the aarch64 one is
+# emulated. Pointing CROSS_ARCH_REMOTE at a genuinely different machine
+# (CROSS_ARCH_REMOTE=some-host, anything ssh can reach) adds a leg running on
+# real silicon. It builds `.#luajitPinned` there, so LuaJIT source is still held
+# constant and architecture/OS/libc remain the only variables.
+#
+# This exists because the strongest evidence this project has -- a native
+# aarch64-darwin run agreeing byte-for-byte with x86_64-linux-glibc -- was
+# first gathered by hand, and evidence that cannot be re-run is not a control.
+# See docs/cross-architecture-evidence.md for the recorded results.
+if [ -n "${CROSS_ARCH_REMOTE-}" ]; then
+	note ""
+	note "NATIVE-HARDWARE LEG: $CROSS_ARCH_REMOTE"
+	rd="/tmp/random-xarch-$$"
+	rfail=0
+	if ! ssh -o BatchMode=yes "$CROSS_ARCH_REMOTE" "mkdir -p $rd" 2>/dev/null; then
+		bad "cannot reach $CROSS_ARCH_REMOTE over ssh"
+		rfail=1
+	fi
+	if [ "$rfail" -eq 0 ]; then
+		rsync -az "$root/lib" "$root/tests" "$root/bin" "$root/flake.nix" "$root/flake.lock" \
+			"$CROSS_ARCH_REMOTE:$rd/" >/dev/null 2>&1 || { bad "rsync to $CROSS_ARCH_REMOTE failed"; rfail=1; }
+	fi
+	rlj=""
+	if [ "$rfail" -eq 0 ]; then
+		note "  building pinned LuaJIT on the remote (first run compiles it)..."
+		rlj="$(ssh -o BatchMode=yes "$CROSS_ARCH_REMOTE" \
+			"cd $rd && nix build 'path:.#luajitPinned' --no-link --print-out-paths" 2>/dev/null | tail -1)"
+		[ -n "$rlj" ] || { bad "could not build .#luajitPinned on $CROSS_ARCH_REMOTE"; rfail=1; }
+		# --print-out-paths yields the store DIRECTORY, not the executable.
+		rlj="$rlj/bin/luajit"
+	fi
+
+	if [ "$rfail" -eq 0 ]; then
+		note "  remote arch: $(ssh -o BatchMode=yes "$CROSS_ARCH_REMOTE" 'uname -sm' 2>/dev/null)"
+		# fetch <tag> <payload-args...> -> writes remote stdout to $tmp/remote.<tag>
+		#
+		# `ssh -n` matters: without it ssh inherits and consumes this script's
+		# stdin, and five sequential fetches then race for it.
+		# Remote stderr is captured to a file rather than /dev/null -- an
+		# earlier version discarded it, and when the fetches came back empty
+		# there was nothing to diagnose from. Payload progress notes go to
+		# stderr, so this also keeps them out of the compared bytes.
+		rfetch() {
+			local tag="$1"; shift
+			ssh -n -o BatchMode=yes "$CROSS_ARCH_REMOTE" \
+				"cd $rd && FAST='$fast' $rlj $*" \
+				>"$tmp/remote.$tag" 2>"$tmp/remote.$tag.err"
+			local rc=$?
+			if [ "$rc" -ne 0 ]; then
+				bad "remote payload '$tag' exited $rc"
+				sed 's/^/      /' <"$tmp/remote.$tag.err" >&2
+			fi
+			return "$rc"
+		}
+		rfetch kernel_a tests/kernel_jit_diff.lua
+		rfetch kernel_b tests/kernel_jit_diff.lua
+		rfetch decimal  tests/cross_arch_decimal.lua
+		rfetch libm     tests/cross_arch_controls.lua libm
+		rfetch f2i      tests/cross_arch_controls.lua float2int
+
+		for t in kernel_a decimal libm f2i; do
+			[ -s "$tmp/remote.$t" ] || bad "remote payload '$t' produced EMPTY output"
+		done
+
+		# The `-s` guards are load-bearing, not belt-and-braces: `cmp -s` on two
+		# EMPTY files reports equal, so without them a remote that produced
+		# nothing at all would score a cheerful "reproduces itself". That is
+		# exactly the vacuous-comparison failure this suite exists to prevent,
+		# and this code committed it on its first run.
+		if [ -s "$tmp/remote.kernel_a" ] && [ -s "$tmp/remote.kernel_b" ] \
+			&& cmp -s "$tmp/remote.kernel_a" "$tmp/remote.kernel_b"; then
+			ok "remote reproduces itself"
+		else
+			bad "remote is NOT self-reproducible (or produced nothing) -- its comparisons below are meaningless"
+		fi
+
+		# Sensitivity for THIS pair. If neither control differs, the remote is
+		# effectively the same platform as the baseline and contributes no
+		# cross-platform evidence at all -- which must be said out loud rather
+		# than banked as a green.
+		#
+		# Same trap as above, opposite direction: an EMPTY remote control file
+		# differs from a populated local one, so without the -s guards a dead
+		# remote would report "sensitivity live" -- a difference caused purely
+		# by its own failure to run.
+		libm_diff=1; f2i_diff=1
+		if [ ! -s "$tmp/remote.libm" ] || [ ! -s "$tmp/remote.f2i" ]; then
+			bad "remote sensitivity controls produced no output -- cannot establish that this pair could have been seen to differ"
+			libm_diff=0; f2i_diff=0
+		fi
+		cmp -s "$tmp/libm.x86_64-glibc" "$tmp/remote.libm" && libm_diff=0
+		cmp -s "$tmp/f2i.x86_64-glibc"  "$tmp/remote.f2i"  && f2i_diff=0
+		if [ "$libm_diff" -eq 0 ] && [ "$f2i_diff" -eq 0 ]; then
+			bad "remote leg adds NO evidence: both sensitivity controls agree with the local baseline, i.e. this host is not meaningfully a different platform"
+		else
+			ok "remote sensitivity live (libm differs: $([ $libm_diff -eq 1 ] && echo yes || echo no), float->int differs: $([ $f2i_diff -eq 1 ] && echo yes || echo no))"
+		fi
+
+		# Emulation fidelity: if the remote is aarch64, its float->int behaviour
+		# should match the qemu aarch64 leg exactly. That is what upgrades the
+		# emulated leg from "probably faithful" to "demonstrated faithful".
+		if [ -s "$tmp/f2i.aarch64-glibc" ] && cmp -s "$tmp/f2i.aarch64-glibc" "$tmp/remote.f2i"; then
+			ok "emulation fidelity: qemu aarch64 float->int == native remote, byte for byte"
+		fi
+
+		for t in kernel decimal; do
+			src="$tmp/remote.$t"; [ "$t" = kernel ] && src="$tmp/remote.kernel_a"
+			if cmp -s "$tmp/$t.x86_64-glibc" "$src"; then
+				ok "$t: x86_64-glibc == $CROSS_ARCH_REMOTE (native hardware)"
+			else
+				bad "$t: x86_64-glibc != $CROSS_ARCH_REMOTE -- DETERMINISM CLAIM VIOLATED on real hardware"
+				diff "$tmp/$t.x86_64-glibc" "$src" | head -12 | sed 's/^/      /' >&2
+			fi
+		done
+	fi
+	ssh -o BatchMode=yes "$CROSS_ARCH_REMOTE" "rm -rf $rd" >/dev/null 2>&1
+fi
+
+note ""
+note "============================================"
+if [ "$fails" -gt 0 ]; then
+	printf '\033[31mcross_arch_diff: %d check(s) FAILED\033[0m\n' "$fails" >&2
+	exit 1
+fi
+printf '\033[32mcross_arch_diff: all checks passed\033[0m\n'
+note "  Verified across: ${LEG_NAMES[*]}"
+note "  aarch64 leg is qemu user-mode emulation -- see this file's header."
+exit 0

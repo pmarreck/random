@@ -56,7 +56,14 @@
         # expects. Its roll number, 1785606157, is exactly what
         # lib/fixed.lua's LUAJIT_1499_FIXED_IN already used -- no change
         # needed there.
-        luajitFixed = pkgs.luajit.overrideAttrs (old: {
+        # Factored into a function (rather than a one-off overrideAttrs) purely
+        # so the cross-architecture toolchains below can apply the IDENTICAL
+        # pin. If the musl and aarch64 interpreters were built from a different
+        # LuaJIT revision than the native one, a digest mismatch in
+        # tests/cross_arch_diff could not distinguish "the arithmetic diverges
+        # across architectures" (the thing under test) from "these are
+        # different LuaJIT versions" (an uncontrolled variable).
+        pinLuajit = lj: lj.overrideAttrs (old: {
           version = "2.1.1785606157";
           src = pkgs.fetchFromGitHub {
             owner = "LuaJIT";
@@ -65,6 +72,33 @@
             hash = "sha256-S0D5YMHDFHUpct8H4U58zFHhAAsnPRR1jUR6JmAIfdg=";
           };
         });
+
+        luajitFixed = pinLuajit pkgs.luajit;
+
+        # --- Cross-architecture differential toolchains ---------------------
+        # README's headline claim is that seeded streams are bit-identical
+        # across architectures. Until tests/cross_arch_diff existed that was an
+        # ARGUMENT (the kernel is integer-only, and integer arithmetic is fully
+        # pinned by the language) rather than EVIDENCE -- no non-x86_64 run had
+        # ever been compared. These are the exact interpreters that control
+        # compares. Two variables move, one at a time:
+        #   luajit-x86_64-glibc  baseline
+        #   luajit-x86_64-musl   libc differs, architecture held fixed
+        #   luajit-aarch64-glibc architecture differs, libc family held fixed
+        # qemu-aarch64 runs the last one in user-mode emulation. Emulation is a
+        # real caveat and is stated as one in the runner's output -- but it does
+        # faithfully reproduce the architecture-visible semantics that matter
+        # here: the float->int saturation control in cross_arch_controls.lua
+        # detects the genuine x86_64/aarch64 difference through it.
+        crossSupported = system == "x86_64-linux";
+        crossToolchains = pkgs.runCommand "random-cross-toolchains" { } ''
+          mkdir -p $out/bin
+          ln -s ${luajitFixed}/bin/luajit $out/bin/luajit-x86_64-glibc
+          ln -s ${pinLuajit pkgs.pkgsMusl.luajit}/bin/luajit $out/bin/luajit-x86_64-musl
+          ln -s ${pinLuajit pkgs.pkgsCross.aarch64-multiplatform.luajit}/bin/luajit \
+                $out/bin/luajit-aarch64-glibc
+          ln -s ${pkgs.qemu-user}/bin/qemu-aarch64 $out/bin/qemu-aarch64
+        '';
 
         # LuaJIT is the only runtime dependency (ffi + bit are built in).
         runtimeTools = [ luajitFixed ];
@@ -105,6 +139,23 @@
       in {
         packages.default = random;
         packages.random = random;
+
+        # Exposed so a machine of ANY architecture can build the exact
+        # interpreter tests/cross_arch_diff pins, without also needing the
+        # cross-compilation machinery. That is what lets the native
+        # aarch64-darwin leg of the cross-architecture evidence be gathered on
+        # real hardware rather than under emulation -- with LuaJIT source held
+        # constant, so architecture and libc remain the only variables.
+        packages.luajitPinned = luajitFixed;
+        # `nixpkgs.lib`, NOT `pkgs.lib`: deciding this attrset's NAMES must not
+        # force `pkgs`. eachDefaultSystem still enumerates x86_64-darwin, which
+        # nixpkgs 26.11 has dropped -- forcing `pkgs` for that system throws at
+        # evaluation time and takes the whole flake down, including on Linux.
+      } // nixpkgs.lib.optionalAttrs crossSupported {
+        # Only meaningful on x86_64-linux: pkgsCross/pkgsMusl and qemu-user are
+        # what make the aarch64 and musl legs buildable from this host at all.
+        packages.crossToolchains = crossToolchains;
+      } // {
 
         # Hermetic CI check: runs the FULL suite runner (./test), not just
         # tests/random_test, so fixed_test/golden_test/kernel_bc_sweep are
