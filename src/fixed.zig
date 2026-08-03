@@ -38,9 +38,9 @@
 //! here), so a shipped artifact that trusts its own callers is the right
 //! trade; a contract violation is a bug in this repository, not a user error.
 //!
-//! Port status: Tasks 1–3 of docs/plans/2026-08-02-zig-port.md. `norm`,
+//! Port status: Tasks 1–4 of docs/plans/2026-08-02-zig-port.md. `norm`,
 //! `fromInt`, `mul128`, `mul`, `toIntTrunc`, `add`, `sub`, `neg`, `cmp`,
-//! `frac`. The rest arrives in Tasks 4–7, each verified against
+//! `frac`, `div`. The rest arrives in Tasks 5–7, each verified against
 //! `lib/fixed.lua` by tests/zig_differential as it lands.
 
 const std = @import("std");
@@ -299,6 +299,104 @@ pub fn frac(x: Fixed) Fixed {
     const ip = toIntTrunc(x);
     if (ip == 0) return x;
     return sub(x, fromInt(ip));
+}
+
+/// Bit-serial magnitude division: floor((a/b) · 2^62) for normalized u64
+/// magnitudes. Mirrors `lib/fixed.lua`'s `divmag` exactly: one integer
+/// quotient bit (a/b lies in [1/2, 2) for normalized operands, so q0 is 0 or
+/// 1), then 62 restoring-division rounds producing one fraction bit each.
+/// The magnitude is FLOORED here; the caller reapplies the sign afterwards,
+/// which makes the overall rounding truncation toward zero.
+///
+/// No step can overflow u64: rem < b < 2^63 so rem*2 < 2^64, frac gains at
+/// most one bit per round for 62 rounds, and q0·2^62 + frac < 2^63.
+fn divmag(a: u64, b: u64) u64 {
+    const q0 = a / b;
+    var rem = a % b;
+    var fbits: u64 = 0;
+    for (0..62) |_| {
+        rem *= 2;
+        fbits *= 2;
+        if (rem >= b) {
+            rem -= b;
+            fbits += 1;
+        }
+    }
+    return q0 * TWO62 + fbits;
+}
+
+/// Divides two normalized soft-floats, truncating toward zero. Mirrors
+/// `lib/fixed.lua`'s `M.div`/`div_signed` pair — with one structural
+/// difference, deliberate and documented: the reference splits into a
+/// positive-only fast path and a sign-handling cold path purely as a
+/// LuaJIT#1499 trace-compiler mitigation (the conditional unsigned-negation
+/// branch followed by a loop was what the trace compiler miscompiled). The
+/// ARITHMETIC on both paths is identical, and Zig has no trace compiler to
+/// appease, so one unified path replaces both; the differential sweeps all
+/// four sign quadrants to prove the equivalence rather than assume it.
+///
+/// divmag floors the MAGNITUDE; reapplying the sign afterwards makes the
+/// overall rounding truncate toward zero. That is the property the six pinned
+/// negative-operand tests hold: a floor-toward-negative-infinity mutant nets a
+/// genuinely different mantissa on real input, and historically passed every
+/// magnitude-tolerance check in the reference's suite before those pins
+/// existed.
+pub fn div(a: Fixed, b: Fixed) Fixed {
+    // Divisor-zero check BEFORE the dividend shortcut: 0/0 is undefined, not
+    // canonical zero — same stance, same order, as the reference.
+    std.debug.assert(b.m != 0); // fixed.div: division by zero
+    if (a.m == 0) return Fixed.zero;
+
+    const is_neg = (a.m < 0) != (b.m < 0);
+    const ua: u64 = @bitCast(if (a.m < 0) -%a.m else a.m);
+    const ub: u64 = @bitCast(if (b.m < 0) -%b.m else b.m);
+    std.debug.assert(ua >= TWO62 and ua < 0x8000000000000000); // operand 1 normalized
+    std.debug.assert(ub >= TWO62 and ub < 0x8000000000000000); // operand 2 normalized
+
+    // divmag's result is < 2^63, so the bitcast cannot go negative and the
+    // negation cannot overflow.
+    const mag: i64 = @bitCast(divmag(ua, ub));
+    const r: i64 = if (is_neg) -%mag else mag;
+
+    // Exponent difference in i64: maxInt - minInt overflows i32, and the
+    // reference computes this in doubles then asserts inside norm.
+    const es: i64 = @as(i64, a.e) - @as(i64, b.e);
+    std.debug.assert(es >= std.math.minInt(i32) and es <= std.math.maxInt(i32));
+    return norm(r, @intCast(es));
+}
+
+test "div: the six pinned negative-operand truncation cases" {
+    // Expected mantissas cross-verified in the reference against bc's exact
+    // big-integer floor((|m1|·2^62)/|m2|), not against the kernel's own
+    // output. Truncation toward zero == floor on the magnitude, sign after.
+    const cases = [_]struct { n: i64, d: i64, m: i64, e: i32 }{
+        .{ .n = -1, .d = 3, .m = -6148914691236517204, .e = -2 },
+        .{ .n = 1, .d = -3, .m = -6148914691236517204, .e = -2 },
+        .{ .n = -1, .d = -3, .m = 6148914691236517204, .e = -2 },
+        .{ .n = -7, .d = 11, .m = -5869418568907584605, .e = -1 },
+        .{ .n = 7, .d = -11, .m = -5869418568907584605, .e = -1 },
+        .{ .n = -7, .d = -11, .m = 5869418568907584605, .e = -1 },
+    };
+    for (cases) |c| {
+        try std.testing.expectEqual(
+            Fixed{ .m = c.m, .e = c.e },
+            div(fromInt(c.n), fromInt(c.d)),
+        );
+    }
+}
+
+test "div: x/x is exactly one, across signs and magnitudes" {
+    const one = fromInt(1);
+    for ([_]i64{ 1, -1, 3, -3, 1000003, -4503599627370495, 9007199254740992 }) |v| {
+        const x = fromInt(v);
+        try std.testing.expectEqual(one, div(x, x));
+    }
+}
+
+test "div: exact power-of-two ratios carry no fraction bits" {
+    // 8 / 2 == 4: quotient mantissa must be exactly 2^62 with e = 2.
+    try std.testing.expectEqual(fromInt(4), div(fromInt(8), fromInt(2)));
+    try std.testing.expectEqual(fromInt(-4), div(fromInt(8), fromInt(-2)));
 }
 
 test "add/sub: a true 1-ULP difference must not collapse to false zero" {

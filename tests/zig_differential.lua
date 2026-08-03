@@ -308,4 +308,56 @@ for i = 0, count - 1 do
 	idx = idx + 1
 end
 
+-- --- I: div ----------------------------------------------------------------
+-- Mirrors the Zig DIV_INT_EDGES/DIV_RAW_EDGES in order. The dyadic inexact
+-- ratios (3/2, 5/2) are load-bearing: they are the only inputs where the
+-- bit-serial loop's doubled remainder ever EQUALS the divisor exactly, i.e.
+-- the only inputs able to distinguish `rem >= b` from `rem > b`.
+local DIV_INT_EDGES = {
+	{ -1, 3 },  { 1, -3 },  { -1, -3 },
+	{ -7, 11 }, { 7, -11 }, { -7, -11 },
+	{ 1, 3 },   { 7, 11 },  { 1023, 1024 }, { 1024, 1023 },
+	{ 5, 5 },   { -5, -5 }, { 1, 1 },       { -1, 1 },
+	{ 8, 2 },   { 8, -2 },
+	{ 3, 2 },   { -3, 2 },  { 5, 2 },       { -5, -2 },
+	{ 9007199254740992, -7 }, { -9007199254740992, 7 },
+}
+local DIV_RAW_EDGES = {
+	{ ffi.cast(i64, 0x4000000000000001ULL), 0, MAX_I64, 0 },
+	{ MAX_I64, 0, ffi.cast(i64, 0x4000000000000001ULL), 0 },
+	{ TWO62_I, 5, TWO62_I, -3 },
+	{ -MAX_I64, -1000, TWO62_I, 1000 },
+}
+idx = 0
+for i = 1, #DIV_INT_EDGES do
+	-- Separate locals, never chained as arguments: from_int returns TWO
+	-- values, and Lua expands multiple returns only in the final argument
+	-- position -- fx.div(fx.from_int(a), fx.from_int(b)) silently passes
+	-- three arguments, the trap this project hit three times while verifying.
+	local am, ae = fx.from_int(DIV_INT_EDGES[i][1])
+	local bm, be = fx.from_int(DIV_INT_EDGES[i][2])
+	local rm, re = fx.div(am, ae, bm, be)
+	out[#out + 1] = string.format("I %d %s %d", idx, i64s(rm), re)
+	idx = idx + 1
+end
+for i = 1, #DIV_RAW_EDGES do
+	local c = DIV_RAW_EDGES[i]
+	local rm, re = fx.div(c[1], c[2], c[3], c[4])
+	out[#out + 1] = string.format("I %d %s %d", idx, i64s(rm), re)
+	idx = idx + 1
+end
+for i = 0, count - 1 do
+	local ma = ffi.cast(i64, next_mantissa_magnitude())
+	local mb = ffi.cast(i64, next_mantissa_magnitude())
+	local e1 = E_SET[(i % #E_SET) + 1]
+	local e2 = E_SET[((i + 4) % #E_SET) + 1]
+	for q = 1, #SIGN_QUADRANTS do
+		local m1 = (SIGN_QUADRANTS[q][1] < 0) and -ma or ma
+		local m2 = (SIGN_QUADRANTS[q][2] < 0) and -mb or mb
+		local rm, re = fx.div(m1, e1, m2, e2)
+		out[#out + 1] = string.format("I %d %s %d", idx, i64s(rm), re)
+		idx = idx + 1
+	end
+end
+
 io.write(table.concat(out, "\n"), "\n")

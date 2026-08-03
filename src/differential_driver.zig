@@ -296,8 +296,59 @@ pub fn main(init: std.process.Init) !void {
         idx += 1;
     }
 
+    // --- I: div — sign quadrants x exponent pairs ---------------------------
+    idx = 0;
+    for (DIV_INT_EDGES) |c| {
+        const r = fx.div(fx.fromInt(c[0]), fx.fromInt(c[1]));
+        try out.print("I {d} {d} {d}\n", .{ idx, r.m, r.e });
+        idx += 1;
+    }
+    for (DIV_RAW_EDGES) |c| {
+        const r = fx.div(.{ .m = c.m1, .e = c.e1 }, .{ .m = c.m2, .e = c.e2 });
+        try out.print("I {d} {d} {d}\n", .{ idx, r.m, r.e });
+        idx += 1;
+    }
+    for (0..count) |i| {
+        const ma: i64 = @bitCast(nextMantissaMagnitude());
+        const mb: i64 = @bitCast(nextMantissaMagnitude());
+        const e1 = E_SET[i % E_SET.len];
+        const e2 = E_SET[(i + 4) % E_SET.len];
+        for (SIGN_QUADRANTS) |q| {
+            const m1 = if (q[0] < 0) -%ma else ma;
+            const m2 = if (q[1] < 0) -%mb else mb;
+            const r = fx.div(.{ .m = m1, .e = e1 }, .{ .m = m2, .e = e2 });
+            try out.print("I {d} {d} {d}\n", .{ idx, r.m, r.e });
+            idx += 1;
+        }
+    }
+
     try out.flush();
 }
+
+/// Integer operand pairs for div: the six pinned truncation quadrant cases,
+/// identity and exact-power ratios, just-below/above-one ratios, and —
+/// deliberately — DYADIC inexact ratios (3/2, 5/2). Those are the only inputs
+/// where a doubled remainder ever equals the divisor EXACTLY, i.e. the only
+/// inputs that can distinguish `rem >= b` from `rem > b` in the bit-serial
+/// loop. Random mantissa ratios essentially never land on that boundary, so
+/// without these pins that off-by-one mutant would survive the entire sweep.
+const DIV_INT_EDGES = [_][2]i64{
+    .{ -1, 3 },  .{ 1, -3 },  .{ -1, -3 },
+    .{ -7, 11 }, .{ 7, -11 }, .{ -7, -11 },
+    .{ 1, 3 },   .{ 7, 11 },  .{ 1023, 1024 }, .{ 1024, 1023 },
+    .{ 5, 5 },   .{ -5, -5 }, .{ 1, 1 },       .{ -1, 1 },
+    .{ 8, 2 },   .{ 8, -2 },
+    .{ 3, 2 },   .{ -3, 2 },  .{ 5, 2 },       .{ -5, -2 },
+    .{ 9007199254740992, -7 }, .{ -9007199254740992, 7 },
+};
+
+/// Raw normalized (m, e) operand pairs at the mantissa extremes.
+const DIV_RAW_EDGES = [_]struct { m1: i64, e1: i32, m2: i64, e2: i32 }{
+    .{ .m1 = 0x4000000000000001, .e1 = 0, .m2 = 0x7FFFFFFFFFFFFFFF, .e2 = 0 },
+    .{ .m1 = 0x7FFFFFFFFFFFFFFF, .e1 = 0, .m2 = 0x4000000000000001, .e2 = 0 },
+    .{ .m1 = 0x4000000000000000, .e1 = 5, .m2 = 0x4000000000000000, .e2 = -3 },
+    .{ .m1 = -0x7FFFFFFFFFFFFFFF, .e1 = -1000, .m2 = 0x4000000000000000, .e2 = 1000 },
+};
 
 /// Deterministic add/sub edge cases: the pinned 1-ULP and 2-ULP behaviours,
 /// total cancellation, zero operands, and the d = 62/63/64 gap boundaries.

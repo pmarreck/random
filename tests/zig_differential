@@ -88,7 +88,7 @@ if [ "$fails" -eq 0 ]; then
 	if [ "$zig_lines" -ne "$lua_lines" ]; then
 		bad "case count differs: zig $zig_lines vs lua $lua_lines -- the two sweeps are not walking the same operands"
 	elif cmp -s "$tmp/zig.txt" "$tmp/lua.txt"; then
-		ok "$zig_lines cases bit-identical (from_int, norm, mul128, mul, to_int_trunc, add, sub, neg, cmp, frac)"
+		ok "$zig_lines cases bit-identical (from_int, norm, mul128, mul, to_int_trunc, add, sub, neg, cmp, frac, div)"
 	else
 		diffn=$(diff "$tmp/zig.txt" "$tmp/lua.txt" | grep -c '^<')
 		bad "$diffn of $zig_lines cases DIFFER"
