@@ -38,12 +38,10 @@
 //! here), so a shipped artifact that trusts its own callers is the right
 //! trade; a contract violation is a bug in this repository, not a user error.
 //!
-//! Port status: Tasks 1–2 of docs/plans/2026-08-02-zig-port.md. `norm`,
-//! `fromInt`, `mul128`, `mul`, `toIntTrunc`. `frac` is NOT here despite the
-//! plan listing it under Task 2: `M.frac` is implemented in terms of `M.sub`,
-//! which lands in Task 3, so it goes there with the function it depends on.
-//! The rest arrives in Tasks 3–7, each verified against `lib/fixed.lua` by
-//! tests/zig_differential as it lands.
+//! Port status: Tasks 1–3 of docs/plans/2026-08-02-zig-port.md. `norm`,
+//! `fromInt`, `mul128`, `mul`, `toIntTrunc`, `add`, `sub`, `neg`, `cmp`,
+//! `frac`. The rest arrives in Tasks 4–7, each verified against
+//! `lib/fixed.lua` by tests/zig_differential as it lands.
 
 const std = @import("std");
 
@@ -91,8 +89,8 @@ pub const Fixed = struct {
 pub fn norm(m: i64, e: i32) Fixed {
     if (m == 0) return Fixed.zero;
 
-    const neg = m < 0;
-    var u: u64 = @bitCast(if (neg) -%m else m);
+    const is_neg = m < 0;
+    var u: u64 = @bitCast(if (is_neg) -%m else m);
     var ee = e;
 
     if (u >= 0x8000000000000000) {
@@ -115,7 +113,7 @@ pub fn norm(m: i64, e: i32) Fixed {
 
     // u < 2^63 here, so this bitcast cannot produce a negative value.
     const r: i64 = @bitCast(u);
-    return .{ .m = if (neg) -%r else r, .e = ee };
+    return .{ .m = if (is_neg) -%r else r, .e = ee };
 }
 
 /// Converts an exact integer to normalized soft-float form.
@@ -153,7 +151,7 @@ pub fn mul128(a: u64, b: u64) struct { hi: u64, lo: u64 } {
 pub fn mul(a: Fixed, b: Fixed) Fixed {
     if (a.m == 0 or b.m == 0) return Fixed.zero;
 
-    const neg = (a.m < 0) != (b.m < 0);
+    const is_neg = (a.m < 0) != (b.m < 0);
     const ua: u64 = @bitCast(if (a.m < 0) -%a.m else a.m);
     const ub: u64 = @bitCast(if (b.m < 0) -%b.m else b.m);
     std.debug.assert(ua >= TWO62 and ua < 0x8000000000000000); // operand 1 normalized
@@ -177,7 +175,7 @@ pub fn mul(a: Fixed, b: Fixed) Fixed {
     std.debug.assert(es >= std.math.minInt(i32) and es <= std.math.maxInt(i32));
 
     const r: i64 = @bitCast(um);
-    return .{ .m = if (neg) -%r else r, .e = @intCast(es) };
+    return .{ .m = if (is_neg) -%r else r, .e = @intCast(es) };
 }
 
 /// Truncates toward zero to an exact integer, clamping at ±2^53.
@@ -204,6 +202,170 @@ pub fn toIntTrunc(x: Fixed) i64 {
     if (q > TO_INT_TRUNC_CLAMP) return TO_INT_TRUNC_CLAMP;
     if (q < -TO_INT_TRUNC_CLAMP) return -TO_INT_TRUNC_CLAMP;
     return q;
+}
+
+/// Adds two soft-floats. Mirrors `lib/fixed.lua`'s `M.add`, whose sign split
+/// is load-bearing: opposite-sign addition is EXACT (magnitudes only shrink,
+/// cannot overflow), and only same-sign addition pre-halves against overflow.
+/// A naive version that pre-halves both operands unconditionally loses the low
+/// bit from each side identically and collapses a true 1-ULP difference to a
+/// false canonical zero — the reference pins that exact case.
+///
+/// Every "shift" here is a truncating DIVISION (`@divTrunc`), not `>>`:
+/// arithmetic shift right floors, and the two differ on negative odd operands.
+/// This is the same floor-vs-truncate divergence the whole plan warns about,
+/// in its second habitat.
+pub fn add(a: Fixed, b: Fixed) Fixed {
+    // A zero operand returns the OTHER operand verbatim, not renormalized —
+    // same as the reference.
+    if (a.m == 0) return b;
+    if (b.m == 0) return a;
+
+    // Order so x carries the larger exponent (strict comparison: equal
+    // exponents keep the original order, same as the reference's `e1 < e2`).
+    var x = a;
+    var y = b;
+    if (a.e < b.e) {
+        x = b;
+        y = a;
+    }
+    // Gap in i64: maxInt - minInt overflows i32, and the reference computes
+    // this in doubles where it cannot overflow.
+    const d: i64 = @as(i64, x.e) - @as(i64, y.e);
+    if (d >= 63) return x; // second operand is entirely below the ulp
+
+    const shifted = @divTrunc(y.m, POW2[@intCast(d)]);
+    // Unreachable under the normalization invariant (|y.m| >= 2^62 and
+    // d <= 62 give |shifted| >= 1); kept as defense against an unnormalized
+    // caller, mirroring the reference.
+    if (shifted == 0) return x;
+
+    var sum: i64 = undefined;
+    var es: i64 = undefined;
+    if ((x.m < 0) == (shifted < 0)) {
+        // Same sign: magnitudes accumulate and could overflow i64, so halve
+        // both first (truncating!) and bump the exponent. Error bound 2 ULP,
+        // pinned below.
+        sum = @divTrunc(x.m, 2) + @divTrunc(shifted, 2);
+        es = @as(i64, x.e) + 1;
+    } else {
+        // Opposite signs: the sum's magnitude can only shrink, so it is exact
+        // and cannot overflow.
+        sum = x.m + shifted;
+        es = x.e;
+    }
+    if (sum == 0) return Fixed.zero;
+    std.debug.assert(es >= std.math.minInt(i32) and es <= std.math.maxInt(i32));
+    return norm(sum, @intCast(es));
+}
+
+/// Subtraction as negated addition, mirroring `M.sub`. Wrapping negation for
+/// the same minInt reason as everywhere else — though a normalized b.m can
+/// never be minInt, the zero check must come first exactly as in the
+/// reference, and neither side may depend on which guard fires.
+pub fn sub(a: Fixed, b: Fixed) Fixed {
+    if (b.m == 0) return a;
+    return add(a, .{ .m = -%b.m, .e = b.e });
+}
+
+/// Negation. Zero stays canonical zero; everything else flips the mantissa.
+pub fn neg(x: Fixed) Fixed {
+    if (x.m == 0) return Fixed.zero;
+    return .{ .m = -%x.m, .e = x.e };
+}
+
+/// Three-way comparison: -1, 0, or 1. Mirrors `M.cmp`: sign classes first,
+/// then exponents (normalization makes the larger exponent the larger
+/// magnitude — inverted for negatives), then mantissas.
+pub fn cmp(a: Fixed, b: Fixed) i32 {
+    const s1: i32 = if (a.m > 0) 1 else if (a.m < 0) -1 else 0;
+    const s2: i32 = if (b.m > 0) 1 else if (b.m < 0) -1 else 0;
+    if (s1 != s2) return if (s1 < s2) -1 else 1;
+    if (s1 == 0) return 0;
+    if (a.e != b.e) {
+        const bigger: i32 = if (a.e > b.e) 1 else -1;
+        return if (s1 > 0) bigger else -bigger;
+    }
+    if (a.m == b.m) return 0;
+    return if (a.m < b.m) -1 else 1;
+}
+
+/// Fractional part: x minus its truncated integer part. Mirrors `M.frac`,
+/// including returning x VERBATIM (not renormalized) when the integer part is
+/// zero. Inherits `toIntTrunc`'s ±2^53 clamp — for magnitudes past the clamp
+/// the "integer part" subtracted is the clamp value, on both implementations
+/// identically.
+pub fn frac(x: Fixed) Fixed {
+    const ip = toIntTrunc(x);
+    if (ip == 0) return x;
+    return sub(x, fromInt(ip));
+}
+
+test "add/sub: a true 1-ULP difference must not collapse to false zero" {
+    // The reference's pinned case: two adjacent mantissas at the same
+    // exponent. The naive always-halving version reports canonical zero.
+    const odd1 = Fixed{ .m = 0x4000000000000123, .e = 5 };
+    const odd2 = Fixed{ .m = 0x4000000000000122, .e = 5 };
+    const p = sub(odd1, odd2);
+    const want = norm(1, 5); // 1 ULP at exponent 5
+    try std.testing.expectEqual(want, p);
+}
+
+test "add: same-sign worst case is exactly 2 ULP, pinned" {
+    // m1 = 2^62+1 at e=100, m2 = 2^62 at e=38 (d=62): true sum is 2^62+2 at
+    // e=100; the pre-halving loses exactly 2 from the mantissa.
+    const r = add(.{ .m = 0x4000000000000001, .e = 100 }, .{ .m = 0x4000000000000000, .e = 38 });
+    try std.testing.expectEqual(Fixed{ .m = 0x4000000000000000, .e = 100 }, r);
+}
+
+test "add/sub: d = 62/63/64 exponent-gap boundaries" {
+    const one = fromInt(1);
+    // d=62: the tiny operand's single bit still contributes (sub is exact on
+    // the opposite-sign path).
+    const d62 = norm(0x4000000000000000, one.e - 62);
+    try std.testing.expectEqual(Fixed{ .m = 0x7FFFFFFFFFFFFFFE, .e = -1 }, sub(one, d62));
+    // d=63 and d=64: below the ulp; both add and sub leave the larger operand
+    // exactly unchanged.
+    const d63 = norm(0x4000000000000000, one.e - 63);
+    try std.testing.expectEqual(one, add(one, d63));
+    try std.testing.expectEqual(one, sub(one, d63));
+    const d64 = norm(0x4000000000000000, one.e - 64);
+    try std.testing.expectEqual(one, add(one, d64));
+    try std.testing.expectEqual(one, sub(one, d64));
+}
+
+test "add: total cancellation yields canonical zero" {
+    const x = Fixed{ .m = 0x4000000000000123, .e = 7 };
+    try std.testing.expectEqual(Fixed.zero, add(x, neg(x)));
+    try std.testing.expectEqual(Fixed.zero, sub(x, x));
+}
+
+test "cmp: orders across sign, exponent and mantissa tiers" {
+    const p_small = fromInt(2);
+    const p_big = fromInt(1000);
+    const n_small = fromInt(-2);
+    const n_big = fromInt(-1000);
+    try std.testing.expectEqual(@as(i32, -1), cmp(p_small, p_big));
+    try std.testing.expectEqual(@as(i32, 1), cmp(p_big, p_small));
+    try std.testing.expectEqual(@as(i32, 0), cmp(p_big, p_big));
+    // For negatives the larger exponent means MORE negative.
+    try std.testing.expectEqual(@as(i32, 1), cmp(n_big, p_big) * -1);
+    try std.testing.expectEqual(@as(i32, -1), cmp(n_big, n_small));
+    try std.testing.expectEqual(@as(i32, 0), cmp(Fixed.zero, Fixed.zero));
+}
+
+test "frac: splits value into integer and fractional parts" {
+    // 3.5 = 7 * 0.5: frac -> 0.5, toIntTrunc -> 3.
+    const half = Fixed{ .m = @as(i64, @bitCast(TWO62)), .e = -1 };
+    const three_half = mul(fromInt(7), half);
+    try std.testing.expectEqual(@as(i64, 3), toIntTrunc(three_half));
+    const f = frac(three_half);
+    try std.testing.expectEqual(half, f);
+    // Negative: -3.5 -> integer part -3, frac -0.5 (truncation toward zero).
+    const neg_f = frac(neg(three_half));
+    try std.testing.expectEqual(neg(half), neg_f);
+    // Pure fraction returns verbatim.
+    try std.testing.expectEqual(half, frac(half));
 }
 
 test "mul128 agrees with a manual 32-bit partial synthesis" {

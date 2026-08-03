@@ -103,6 +103,17 @@
       benchmark must record which LuaJIT it ran under.
 - [ ] Mechatron Prime CI via the `mechatron-ci` skill
 
+## Future goals (recorded 2026-08-03, Peter)
+- [ ] **Cryptographically-secure mode** (deferred by Peter's call; priority for
+      now is fast, identical cross-platform seeded output with optional
+      nonlinear distributions). Design sketch when picked up: a seeded DRBG —
+      keyed stream cipher (ChaCha20, as in libsodium's deterministic
+      randombytes, or NIST CTR-DRBG) behind the same generator interface, so
+      reproducibility is preserved (a keyed PRF is deterministic per key).
+      PCG32 stays the fast default and must be documented as PREDICTABLE
+      (state recoverable from a few outputs); a `--secure` flag swaps the
+      generator. Distributions layer unchanged on top of either.
+
 ## TODO
 - [ ] Drop `flake.nix`'s `luajitFixed` override (and its `28084004` pin) once
       nixpkgs-unstable's own `pkgs.luajit` picks up a commit at or past the

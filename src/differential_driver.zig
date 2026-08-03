@@ -224,8 +224,108 @@ pub fn main(init: std.process.Init) !void {
         idx += 1;
     }
 
+    // --- F: add and sub — sign quadrants x exponent gaps --------------------
+    // Gap set straddles every behavioural boundary: 0 (equal exponents), the
+    // last contributing gap (62), the first below-the-ulp gaps (63, 64), and
+    // one far past (120).
+    idx = 0;
+    for (ADD_EDGES) |c| {
+        const r = fx.add(.{ .m = c.m1, .e = c.e1 }, .{ .m = c.m2, .e = c.e2 });
+        try out.print("F {d} {d} {d}\n", .{ idx, r.m, r.e });
+        idx += 1;
+        const s = fx.sub(.{ .m = c.m1, .e = c.e1 }, .{ .m = c.m2, .e = c.e2 });
+        try out.print("F {d} {d} {d}\n", .{ idx, s.m, s.e });
+        idx += 1;
+    }
+    for (0..count) |i| {
+        const ma: i64 = @bitCast(nextMantissaMagnitude());
+        const mb: i64 = @bitCast(nextMantissaMagnitude());
+        const e2 = E_SET[i % E_SET.len];
+        const e1: i32 = e2 + D_GAP_SET[i % D_GAP_SET.len];
+        for (SIGN_QUADRANTS) |q| {
+            const m1 = if (q[0] < 0) -%ma else ma;
+            const m2 = if (q[1] < 0) -%mb else mb;
+            const r = fx.add(.{ .m = m1, .e = e1 }, .{ .m = m2, .e = e2 });
+            try out.print("F {d} {d} {d}\n", .{ idx, r.m, r.e });
+            idx += 1;
+            const s = fx.sub(.{ .m = m1, .e = e1 }, .{ .m = m2, .e = e2 });
+            try out.print("F {d} {d} {d}\n", .{ idx, s.m, s.e });
+            idx += 1;
+            // Reversed operand order: the smaller exponent arrives first, so
+            // the swap branch is exercised exactly as often as the no-swap one.
+            const r2 = fx.add(.{ .m = m2, .e = e2 }, .{ .m = m1, .e = e1 });
+            try out.print("F {d} {d} {d}\n", .{ idx, r2.m, r2.e });
+            idx += 1;
+        }
+    }
+
+    // --- G: neg and cmp -----------------------------------------------------
+    idx = 0;
+    for (0..count) |i| {
+        const ma: i64 = @bitCast(nextMantissaMagnitude());
+        const mb: i64 = @bitCast(nextMantissaMagnitude());
+        const e1 = E_SET[i % E_SET.len];
+        const e2 = E_SET[(i + 2) % E_SET.len];
+        const q = SIGN_QUADRANTS[i % SIGN_QUADRANTS.len];
+        const m1 = if (q[0] < 0) -%ma else ma;
+        const m2 = if (q[1] < 0) -%mb else mb;
+        const n = fx.neg(.{ .m = m1, .e = e1 });
+        try out.print("G {d} {d} {d}\n", .{ idx, n.m, n.e });
+        idx += 1;
+        try out.print("G {d} {d}\n", .{ idx, fx.cmp(.{ .m = m1, .e = e1 }, .{ .m = m2, .e = e2 }) });
+        idx += 1;
+        try out.print("G {d} {d}\n", .{ idx, fx.cmp(.{ .m = m2, .e = e2 }, .{ .m = m1, .e = e1 }) });
+        idx += 1;
+        try out.print("G {d} {d}\n", .{ idx, fx.cmp(.{ .m = m1, .e = e1 }, .{ .m = m1, .e = e1 }) });
+        idx += 1;
+    }
+
+    // --- H: frac ------------------------------------------------------------
+    // Exponent set spans: pure fraction (verbatim return), mixed
+    // integer+fraction (where truncation direction is observable), the 2^53
+    // clamp neighbourhood (52/53), and past-integer territory (62, 63, 100).
+    idx = 0;
+    for (0..count) |i| {
+        const mag: i64 = @bitCast(nextMantissaMagnitude());
+        const e = FRAC_E_SET[i % FRAC_E_SET.len];
+        const fp = fx.frac(.{ .m = mag, .e = e });
+        try out.print("H {d} {d} {d}\n", .{ idx, fp.m, fp.e });
+        idx += 1;
+        const fn_ = fx.frac(.{ .m = -%mag, .e = e });
+        try out.print("H {d} {d} {d}\n", .{ idx, fn_.m, fn_.e });
+        idx += 1;
+    }
+
     try out.flush();
 }
+
+/// Deterministic add/sub edge cases: the pinned 1-ULP and 2-ULP behaviours,
+/// total cancellation, zero operands, and the d = 62/63/64 gap boundaries.
+const ADD_EDGES = [_]struct { m1: i64, e1: i32, m2: i64, e2: i32 }{
+    // 1-ULP adjacent mantissas, same exponent (sub recovers exactly 1 ULP).
+    .{ .m1 = 0x4000000000000123, .e1 = 5, .m2 = 0x4000000000000122, .e2 = 5 },
+    // Total cancellation (sub of identical values).
+    .{ .m1 = 0x4000000000000123, .e1 = 7, .m2 = 0x4000000000000123, .e2 = 7 },
+    // Same-sign 2-ULP worst case, d = 62.
+    .{ .m1 = 0x4000000000000001, .e1 = 100, .m2 = 0x4000000000000000, .e2 = 38 },
+    // d boundaries around fromInt(1) (e = 0).
+    .{ .m1 = 0x4000000000000000, .e1 = 0, .m2 = 0x4000000000000000, .e2 = -62 },
+    .{ .m1 = 0x4000000000000000, .e1 = 0, .m2 = 0x4000000000000000, .e2 = -63 },
+    .{ .m1 = 0x4000000000000000, .e1 = 0, .m2 = 0x4000000000000000, .e2 = -64 },
+    // Zero operands: each side, both orders.
+    .{ .m1 = 0, .e1 = 0, .m2 = 0x4000000000000000, .e2 = 3 },
+    .{ .m1 = 0x4000000000000000, .e1 = 3, .m2 = 0, .e2 = 0 },
+    .{ .m1 = 0, .e1 = 0, .m2 = 0, .e2 = 0 },
+    // Mixed signs at the extremes.
+    .{ .m1 = std.math.maxInt(i64), .e1 = 10, .m2 = -std.math.maxInt(i64), .e2 = 10 },
+    .{ .m1 = std.math.maxInt(i64), .e1 = 10, .m2 = std.math.maxInt(i64), .e2 = 10 },
+};
+
+/// Exponent gaps for the F sweep; see the section comment.
+const D_GAP_SET = [_]i32{ 0, 1, 2, 31, 61, 62, 63, 64, 120 };
+
+/// Exponents for the H (frac) sweep; see the section comment.
+const FRAC_E_SET = [_]i32{ -70, -63, -62, -1, 0, 1, 30, 52, 53, 61, 62, 63, 100 };
 
 /// Wrapper so the anonymous struct returned by fx.mul128 has a name here.
 fn mul128Report(a: u64, b: u64) struct { hi: u64, lo: u64 } {

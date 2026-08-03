@@ -219,4 +219,93 @@ for i = 0, count - 1 do
 	idx = idx + 1
 end
 
+-- --- F: add and sub --------------------------------------------------------
+-- Edge list mirrors src/differential_driver.zig's ADD_EDGES in order: the
+-- pinned 1-ULP and 2-ULP behaviours, total cancellation, zero operands, the
+-- d = 62/63/64 gap boundaries, and sign-mixed extremes.
+local ADD_EDGES = {
+	{ ffi.cast(i64, 0x4000000000000123ULL), 5, ffi.cast(i64, 0x4000000000000122ULL), 5 },
+	{ ffi.cast(i64, 0x4000000000000123ULL), 7, ffi.cast(i64, 0x4000000000000123ULL), 7 },
+	{ ffi.cast(i64, 0x4000000000000001ULL), 100, TWO62_I, 38 },
+	{ TWO62_I, 0, TWO62_I, -62 },
+	{ TWO62_I, 0, TWO62_I, -63 },
+	{ TWO62_I, 0, TWO62_I, -64 },
+	{ ffi.cast(i64, 0), 0, TWO62_I, 3 },
+	{ TWO62_I, 3, ffi.cast(i64, 0), 0 },
+	{ ffi.cast(i64, 0), 0, ffi.cast(i64, 0), 0 },
+	{ MAX_I64, 10, -MAX_I64, 10 },
+	{ MAX_I64, 10, MAX_I64, 10 },
+}
+local D_GAP_SET = { 0, 1, 2, 31, 61, 62, 63, 64, 120 }
+
+idx = 0
+for i = 1, #ADD_EDGES do
+	local c = ADD_EDGES[i]
+	local am, ae = fx.add(c[1], c[2], c[3], c[4])
+	out[#out + 1] = string.format("F %d %s %d", idx, i64s(am), ae)
+	idx = idx + 1
+	local sm, se = fx.sub(c[1], c[2], c[3], c[4])
+	out[#out + 1] = string.format("F %d %s %d", idx, i64s(sm), se)
+	idx = idx + 1
+end
+for i = 0, count - 1 do
+	local ma = ffi.cast(i64, next_mantissa_magnitude())
+	local mb = ffi.cast(i64, next_mantissa_magnitude())
+	local e2 = E_SET[(i % #E_SET) + 1]
+	local e1 = e2 + D_GAP_SET[(i % #D_GAP_SET) + 1]
+	for q = 1, #SIGN_QUADRANTS do
+		local m1 = (SIGN_QUADRANTS[q][1] < 0) and -ma or ma
+		local m2 = (SIGN_QUADRANTS[q][2] < 0) and -mb or mb
+		local am, ae = fx.add(m1, e1, m2, e2)
+		out[#out + 1] = string.format("F %d %s %d", idx, i64s(am), ae)
+		idx = idx + 1
+		local sm, se = fx.sub(m1, e1, m2, e2)
+		out[#out + 1] = string.format("F %d %s %d", idx, i64s(sm), se)
+		idx = idx + 1
+		-- Reversed operand order: smaller exponent first, exercising the swap
+		-- branch exactly as often as the no-swap one.
+		local rm, re = fx.add(m2, e2, m1, e1)
+		out[#out + 1] = string.format("F %d %s %d", idx, i64s(rm), re)
+		idx = idx + 1
+	end
+end
+
+-- --- G: neg and cmp --------------------------------------------------------
+idx = 0
+for i = 0, count - 1 do
+	local ma = ffi.cast(i64, next_mantissa_magnitude())
+	local mb = ffi.cast(i64, next_mantissa_magnitude())
+	local e1 = E_SET[(i % #E_SET) + 1]
+	local e2 = E_SET[((i + 2) % #E_SET) + 1]
+	local q = SIGN_QUADRANTS[(i % #SIGN_QUADRANTS) + 1]
+	local m1 = (q[1] < 0) and -ma or ma
+	local m2 = (q[2] < 0) and -mb or mb
+	local nm, ne = fx.neg(m1, e1)
+	out[#out + 1] = string.format("G %d %s %d", idx, i64s(nm), ne)
+	idx = idx + 1
+	out[#out + 1] = string.format("G %d %d", idx, fx.cmp(m1, e1, m2, e2))
+	idx = idx + 1
+	out[#out + 1] = string.format("G %d %d", idx, fx.cmp(m2, e2, m1, e1))
+	idx = idx + 1
+	out[#out + 1] = string.format("G %d %d", idx, fx.cmp(m1, e1, m1, e1))
+	idx = idx + 1
+end
+
+-- --- H: frac ---------------------------------------------------------------
+-- Exponent set spans pure fraction (verbatim return), mixed integer+fraction
+-- (truncation direction observable), the 2^53 clamp neighbourhood, and
+-- past-integer territory. Mirrors the Zig FRAC_E_SET.
+local FRAC_E_SET = { -70, -63, -62, -1, 0, 1, 30, 52, 53, 61, 62, 63, 100 }
+idx = 0
+for i = 0, count - 1 do
+	local mag = ffi.cast(i64, next_mantissa_magnitude())
+	local e = FRAC_E_SET[(i % #FRAC_E_SET) + 1]
+	local pm, pe = fx.frac(mag, e)
+	out[#out + 1] = string.format("H %d %s %d", idx, i64s(pm), pe)
+	idx = idx + 1
+	local nm2, ne2 = fx.frac(-mag, e)
+	out[#out + 1] = string.format("H %d %s %d", idx, i64s(nm2), ne2)
+	idx = idx + 1
+end
+
 io.write(table.concat(out, "\n"), "\n")
