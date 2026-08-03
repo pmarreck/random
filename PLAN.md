@@ -71,6 +71,18 @@
       `docs/cross-architecture-evidence.md` (2026-08-02 EDT)
 
 ## Next: Zig port (separate plan)
+- [x] **Task 1: toolchain, scaffold, and the differential harness FIRST** — Zig
+      0.16 in the flake (pinned to `zig_0_16`, LuaJIT pin untouched);
+      `build.zig` with ReleaseFast artifacts / ReleaseSafe tests;
+      `src/fixed.zig` with `norm` + `fromInt`; `tests/zig_differential`
+      comparing it against `lib/fixed.lua` bit-exactly over 84,035 swept cases.
+      Harness mutation-verified in both directions: a gross mutation (exponent
+      compensation sign) and a narrow one (canonical zero keeping its incoming
+      exponent, which differs in only a handful of cases) both fail it, and it
+      passes on restore. Wired into `./test` (now 7 suites) and the hermetic
+      Nix check. `ZIG_0.15_TO_0.16_MIGRATION.md` symlinked at the root — it is
+      more current than `ZIG_RECENT_API_CHANGES.md`, which is stale on the
+      0.16 I/O rework (2026-08-02 EDT)
 - [ ] `src/fixed.zig` mirroring `lib/fixed.lua`, verified against the same `bc` sweep
 - [ ] Zig core (pure, no I/O) + `include/randomz.h` C FFI
 - [ ] `randomz` C CLI + `drandomz`/`nrandomz` symlinks, argv[0] dispatch

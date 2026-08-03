@@ -1,0 +1,150 @@
+//! Zig half of the `lib/fixed.lua` ⇄ `src/fixed.zig` differential.
+//!
+//! Prints one line per swept case, `TAG idx m e`, to stdout.
+//! `tests/zig_differential.lua` walks the IDENTICAL sweep through the LuaJIT
+//! reference and prints the same format; `tests/zig_differential` requires the
+//! two to be byte-identical.
+//!
+//! The operand generator is specified here and reimplemented there rather than
+//! shared, because there is nothing to share it through — that duplication is
+//! deliberate and cheap (a plain u64 LCG, fully pinned by both languages), and
+//! any disagreement in it is itself a defect worth failing on.
+//!
+//! WHY A ZIG DRIVER RATHER THAN C-THROUGH-THE-FFI: no FFI exists yet (Task 8).
+//! This is a TEST driver, not the shipped CLI. The fleet rule that the CLI must
+//! be C — so that bypassing the FFI is inexpressible rather than merely
+//! discouraged — still stands and is unaffected; `randomz` arrives in Task 9
+//! and will go through `include/randomz.h`. Do not repurpose this file into a
+//! CLI.
+
+const std = @import("std");
+const fx = @import("fixed");
+
+// ---------------------------------------------------------------------------
+// Operand generator. Must match tests/zig_differential.lua exactly.
+// ---------------------------------------------------------------------------
+const LCG_MULT: u64 = 6364136223846793005;
+const LCG_INC: u64 = 1442695040888963407;
+// Distinct from kernel_jit_diff.lua's and kernel_bc_sweep.lua's seeds so the
+// files' operand streams never accidentally coincide.
+const LCG_SEED: u64 = 0x243F6A8885A308D3;
+
+var lcg_state: u64 = LCG_SEED;
+
+/// Advances the LCG and returns its high bits. Power-of-two-modulus LCGs have
+/// weak low bits, so the low two are discarded rather than used as operands.
+fn nextRaw() u64 {
+    lcg_state = lcg_state *% LCG_MULT +% LCG_INC;
+    return lcg_state >> 2;
+}
+
+/// A magnitude in [2^62, 2^63) — i.e. already normalized, so that shifting it
+/// right by a known amount produces a DE-normalized input whose correct
+/// normalization is known by construction.
+fn nextMantissaMagnitude() u64 {
+    return fx.TWO62 + (nextRaw() % fx.TWO62);
+}
+
+/// Exponents cycled by index rather than drawn from the LCG, so that changing
+/// the case count never shifts which exponent a given index sees.
+const E_SET = [_]i32{ 0, 1, -1, 62, -62, 1000, -1000 };
+/// Right-shift amounts producing de-normalized mantissas. 63 drives the
+/// mantissa to zero, exercising the canonical-zero collapse.
+const SHIFTS = [_]u6{ 0, 1, 2, 3, 7, 15, 31, 47, 62, 63 };
+
+/// Integer edge cases for fromInt. Straddles the 2^53 double-precision
+/// ceiling and both i64 extremes — the reference takes these through LuaJIT
+/// int64 cdata, so full 64-bit range is meaningful on both sides.
+const INT_EDGES = [_]i64{
+    0,                        1,                         -1,
+    2,                        -2,                        3,
+    -3,                       1000000,                   -1000000,
+    2147483647,               -2147483648,               4503599627370496,
+    -4503599627370496,        9007199254740992,          -9007199254740992,
+    4611686018427387904,      -4611686018427387904,      std.math.maxInt(i64),
+    std.math.minInt(i64),
+};
+
+/// (mantissa, exponent) edge cases for norm, including canonical zero with a
+/// nonzero incoming exponent and minInt(i64), whose magnitude is not
+/// representable as a positive i64.
+const NORM_EDGES = [_]struct { m: i64, e: i32 }{
+    .{ .m = 0, .e = 0 },
+    .{ .m = 0, .e = 100 },
+    .{ .m = 0, .e = -100 },
+    .{ .m = std.math.minInt(i64), .e = 0 },
+    .{ .m = std.math.minInt(i64), .e = 5 },
+    .{ .m = std.math.minInt(i64), .e = -5 },
+    .{ .m = 4611686018427387904, .e = 0 },
+    .{ .m = -4611686018427387904, .e = 0 },
+    .{ .m = std.math.maxInt(i64), .e = 0 },
+    .{ .m = -std.math.maxInt(i64), .e = 0 },
+    .{ .m = 1, .e = 0 },
+    .{ .m = -1, .e = 0 },
+    .{ .m = 1, .e = 62 },
+    .{ .m = -1, .e = -62 },
+    .{ .m = 3, .e = 7 },
+    .{ .m = -3, .e = -7 },
+};
+
+// Zig 0.16 entry point: `main` takes `std.process.Init`, which supplies the
+// `Io` instance that File.writer now requires, plus an arena. This is NOT the
+// `pub fn main() !void` + `std.fs.File.stdout()` shape from 0.15 -- `std.fs`
+// has no `File` member in 0.16 at all; it moved to `std.Io.File`.
+// ZIG_RECENT_API_CHANGES.md is stale on this specific point; verified against
+// the shipped stdlib (std/Random/benchmark.zig) rather than assumed.
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
+    const arena = init.arena.allocator();
+
+    var buf: [1 << 16]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(io, &buf);
+    const out = &stdout_writer.interface;
+
+    const argv = try init.minimal.args.toSlice(arena);
+    const count: usize = if (argv.len > 1)
+        std.fmt.parseInt(usize, argv[1], 10) catch 200
+    else
+        200;
+
+    // --- A: fromInt over edges, then LCG-drawn i64s -------------------------
+    var idx: usize = 0;
+    for (INT_EDGES) |v| {
+        const r = fx.fromInt(v);
+        try out.print("A {d} {d} {d}\n", .{ idx, r.m, r.e });
+        idx += 1;
+    }
+    for (0..count) |_| {
+        const raw = nextRaw();
+        const v: i64 = @bitCast(raw);
+        const r = fx.fromInt(v);
+        try out.print("A {d} {d} {d}\n", .{ idx, r.m, r.e });
+        idx += 1;
+    }
+
+    // --- B: norm over edges, then de-normalized LCG mantissas --------------
+    idx = 0;
+    for (NORM_EDGES) |c| {
+        const r = fx.norm(c.m, c.e);
+        try out.print("B {d} {d} {d}\n", .{ idx, r.m, r.e });
+        idx += 1;
+    }
+    for (0..count) |i| {
+        const mag = nextMantissaMagnitude();
+        const e = E_SET[i % E_SET.len];
+        for (SHIFTS) |sh| {
+            const shifted: i64 = @bitCast(mag >> sh);
+            // Both signs: negative operands are load-bearing, not decoration.
+            // A positive-only sweep in this project's history was blind to half
+            // the domain for five tasks running.
+            const r_pos = fx.norm(shifted, e);
+            try out.print("B {d} {d} {d}\n", .{ idx, r_pos.m, r_pos.e });
+            idx += 1;
+            const r_neg = fx.norm(-%shifted, e);
+            try out.print("B {d} {d} {d}\n", .{ idx, r_neg.m, r_neg.e });
+            idx += 1;
+        }
+    }
+
+    try out.flush();
+}

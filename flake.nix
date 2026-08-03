@@ -105,6 +105,12 @@
         # External tools the executable shells out to / the test suite needs.
         testTools = with pkgs; [ bashInteractive coreutils gnugrep gawk bc xxd ];
 
+        # Zig 0.16 for the port (docs/plans/2026-08-02-zig-port.md). Pinned to
+        # the explicit `zig_0_16` attribute rather than the rolling `zig`, so a
+        # nixpkgs bump to 0.17 cannot silently change the compiler underneath a
+        # port whose entire point is bit-reproducible output.
+        zigTools = [ pkgs.zig_0_16 ];
+
         random = pkgs.stdenv.mkDerivation {
           pname = "random";
           version = "0.1.0";
@@ -169,10 +175,17 @@
         # tests/random_test, so fixed_test/golden_test/kernel_bc_sweep are
         # actually exercised here too, not just the CLI-behavior suite.
         checks.random-test = pkgs.runCommand "random-test"
-          { nativeBuildInputs = runtimeTools ++ testTools; } ''
+          { nativeBuildInputs = runtimeTools ++ testTools ++ zigTools; } ''
             cp -r ${./.} work
             chmod -R u+w work
             cd work
+            # Zig writes to a global cache; the sandbox has no writable HOME by
+            # default, and without this `zig build` fails before compiling
+            # anything. No network is needed -- build.zig.zon declares no
+            # dependencies, deliberately.
+            export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
+            export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-local"
+            mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
             # The Nix sandbox has no /usr/bin/env, so resolve shebangs in both the
             # program (bin/) and the test scripts (tests/) — `random --test` execs the
             # latter via its #!/usr/bin/env bash shebang.
@@ -187,7 +200,7 @@
           '';
 
         devShells.default = pkgs.mkShell {
-          packages = runtimeTools ++ testTools;
+          packages = runtimeTools ++ testTools ++ zigTools;
         };
       });
 }

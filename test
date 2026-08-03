@@ -28,7 +28,7 @@ ran=0
 # tests ran, but nothing said so. Every suite name this project ships is
 # listed here explicitly; missing OR non-executable is now a hard,
 # named failure, not a quietly smaller passing count.
-REQUIRED_SUITES=(fixed_test golden_test random_test random_jit_diff_test kernel_bc_sweep kernel_jit_diff)
+REQUIRED_SUITES=(fixed_test golden_test random_test random_jit_diff_test kernel_bc_sweep kernel_jit_diff zig_differential)
 missing=0
 for name in "${REQUIRED_SUITES[@]}"; do
 	suite="$here/tests/$name"
@@ -53,7 +53,7 @@ fi
 # failing with a message. `timeout` converts that into a fast, loud,
 # non-zero-exit failure every time, not just for exp -- any future hang in
 # any suite gets the same treatment.
-for suite in "$here"/tests/*_test "$here"/tests/kernel_bc_sweep "$here"/tests/kernel_jit_diff; do
+for suite in "$here"/tests/*_test "$here"/tests/kernel_bc_sweep "$here"/tests/kernel_jit_diff "$here"/tests/zig_differential; do
 	[ -x "$suite" ] || continue
 	name="$(basename "$suite")"
 	if [ -n "$filter" ] && [[ "$name" != *"$filter"* ]]; then continue; fi

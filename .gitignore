@@ -6,3 +6,7 @@ result-*
 
 # session handoff docs (skill: handoff)
 HANDOFF*
+
+# Zig build outputs
+zig-out
+.zig-cache

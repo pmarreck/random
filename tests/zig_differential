@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# Differential control: src/fixed.zig vs lib/fixed.lua, bit-exact.
+#
+# Built in Task 1 of docs/plans/2026-08-02-zig-port.md, BEFORE the kernel it
+# judges, deliberately inverting the usual order: with the harness already in
+# place every later task is verified the moment it lands, rather than
+# accumulating unverified code and validating at the end.
+#
+# THE ORACLE IS lib/fixed.lua, and its independence is the whole point. It is a
+# separate implementation that already passes 224 kernel checks, a `bc` sweep at
+# 650+ cases per function, 99 golden vectors blessed before it existed, and a
+# four-platform cross-architecture differential. It was not written for this
+# port and cannot be quietly adjusted to agree with it. That is what makes this
+# a real control rather than the port grading its own homework.
+#
+# Coverage grows per task. Task 1: from_int, norm. Tasks 2-7 extend the sweep in
+# both src/differential_driver.zig and tests/zig_differential.lua as each group
+# of functions lands.
+#
+# NOTE: no `set -e` -- see ./test's comment. This script deliberately runs
+# commands that may exit non-zero and inspects their status.
+set -u
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$here/.." && pwd)"
+
+fast="${FAST-1}"
+[ -z "$fast" ] && fast=""
+# Deep mode sweeps wider. Each LCG case expands to 20 norm invocations (10
+# shifts x 2 signs), so 4000 cases is ~80k norm calls plus 4000 from_int.
+COUNT="${ZIG_DIFF_COUNT:-$([ -n "$fast" ] && echo 4000 || echo 40000)}"
+
+fails=0
+ok()  { printf '  \033[32m✓\033[0m %s\n' "$*"; }
+bad() { printf '  \033[31m✗\033[0m %s\n' "$*" >&2; fails=$((fails + 1)); }
+
+if ! command -v zig >/dev/null 2>&1; then
+	echo "zig_differential: FAIL -- zig not on PATH (run under 'nix develop -c')." >&2
+	echo "  Refusing to skip: a silent skip reports success for a comparison" >&2
+	echo "  that never ran, which is exactly how this project shipped five" >&2
+	echo "  guards that could not detect being broken." >&2
+	exit 1
+fi
+if ! command -v luajit >/dev/null 2>&1; then
+	echo "zig_differential: FAIL -- luajit not on PATH; the oracle is unavailable." >&2
+	exit 1
+fi
+
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/zigdiff.XXXXXX")"
+trap 'rm -rf "$tmp"' EXIT
+
+echo ""
+echo "Zig kernel vs LuaJIT reference (COUNT=$COUNT, FAST=${fast:-0})"
+echo "============================================"
+
+# ReleaseSafe, not ReleaseFast: this comparison is exactly where a UB-driven
+# wrong answer would show up, and a ReleaseFast build compiles out the checks
+# that would catch it. Speed is irrelevant here; correctness is the product.
+if ! (cd "$root" && zig build -Doptimize=ReleaseSafe >"$tmp/build.log" 2>&1); then
+	bad "zig build failed"
+	sed 's/^/      /' <"$tmp/build.log" >&2
+	exit 1
+fi
+
+driver="$root/zig-out/bin/differential-driver"
+[ -x "$driver" ] || { bad "driver not built at $driver"; exit 1; }
+
+"$driver" "$COUNT" >"$tmp/zig.txt" 2>"$tmp/zig.err"
+zig_rc=$?
+luajit "$here/zig_differential.lua" "$COUNT" >"$tmp/lua.txt" 2>"$tmp/lua.err"
+lua_rc=$?
+
+# Liveness before comparison. Two empty files compare equal, and this project
+# has already shipped a differential that passed because BOTH sides failed and
+# both digests were of nothing.
+if [ "$zig_rc" -ne 0 ]; then
+	bad "zig driver exited $zig_rc"; sed 's/^/      /' <"$tmp/zig.err" >&2
+fi
+if [ "$lua_rc" -ne 0 ]; then
+	bad "lua reference exited $lua_rc"; sed 's/^/      /' <"$tmp/lua.err" >&2
+fi
+[ -s "$tmp/zig.txt" ] || bad "zig driver produced EMPTY output"
+[ -s "$tmp/lua.txt" ] || bad "lua reference produced EMPTY output"
+
+if [ "$fails" -eq 0 ]; then
+	zig_lines=$(wc -l <"$tmp/zig.txt")
+	lua_lines=$(wc -l <"$tmp/lua.txt")
+	if [ "$zig_lines" -ne "$lua_lines" ]; then
+		bad "case count differs: zig $zig_lines vs lua $lua_lines -- the two sweeps are not walking the same operands"
+	elif cmp -s "$tmp/zig.txt" "$tmp/lua.txt"; then
+		ok "$zig_lines cases bit-identical (from_int, norm)"
+	else
+		diffn=$(diff "$tmp/zig.txt" "$tmp/lua.txt" | grep -c '^<')
+		bad "$diffn of $zig_lines cases DIFFER"
+		echo "      first differing cases (< zig, > lua):" >&2
+		diff "$tmp/zig.txt" "$tmp/lua.txt" | head -12 | sed 's/^/      /' >&2
+	fi
+fi
+
+echo "============================================"
+if [ "$fails" -gt 0 ]; then
+	printf '\033[31mzig_differential: FAILED\033[0m\n' >&2
+	exit 1
+fi
+printf '\033[32mzig_differential: PASSED\033[0m\n'
+exit 0
