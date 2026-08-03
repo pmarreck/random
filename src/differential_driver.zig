@@ -65,6 +65,27 @@ const INT_EDGES = [_]i64{
     std.math.minInt(i64),
 };
 
+/// Sign quadrants, cycled by construction rather than drawn from the LCG, so
+/// mixed-sign multiplication is exercised exactly as often as same-sign on
+/// every run. A positive-only sweep was blind to half the domain for five
+/// consecutive tasks in this project's history.
+const SIGN_QUADRANTS = [_][2]i32{ .{ 1, 1 }, .{ -1, 1 }, .{ 1, -1 }, .{ -1, -1 } };
+
+/// (mantissa, exponent) cases for toIntTrunc spanning every branch: canonical
+/// zero, the `sh >= 0` clamp, the `s > 62` collapse to zero, and the ordinary
+/// truncating divide with both signs.
+const TO_INT_EDGES = [_]struct { m: i64, e: i32 }{
+    .{ .m = 0, .e = 0 },        .{ .m = 0, .e = 500 },
+    .{ .m = 4611686018427387904, .e = 62 },   .{ .m = -4611686018427387904, .e = 62 },
+    .{ .m = 4611686018427387904, .e = 63 },   .{ .m = -4611686018427387904, .e = 63 },
+    .{ .m = 4611686018427387904, .e = 0 },    .{ .m = -4611686018427387904, .e = 0 },
+    .{ .m = 4611686018427387904, .e = -62 },  .{ .m = -4611686018427387904, .e = -62 },
+    .{ .m = 4611686018427387904, .e = -63 },  .{ .m = -4611686018427387904, .e = -63 },
+    .{ .m = std.math.maxInt(i64), .e = 53 },  .{ .m = std.math.minInt(i64), .e = 53 },
+    .{ .m = std.math.maxInt(i64), .e = 54 },  .{ .m = std.math.minInt(i64), .e = 54 },
+    .{ .m = 6917529027641081856, .e = 1 },    .{ .m = -6917529027641081856, .e = 1 },
+};
+
 /// (mantissa, exponent) edge cases for norm, including canonical zero with a
 /// nonzero incoming exponent and minInt(i64), whose magnitude is not
 /// representable as a positive i64.
@@ -146,5 +167,68 @@ pub fn main(init: std.process.Init) !void {
         }
     }
 
+    // --- C: mul128 over the full u64 range plus carry-propagation extremes --
+    idx = 0;
+    const M128_EDGES = [_][2]u64{
+        .{ 0, 0 },                                  .{ 1, 1 },
+        .{ 0xFFFFFFFFFFFFFFFF, 1 },                 .{ 1, 0xFFFFFFFFFFFFFFFF },
+        .{ 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF }, .{ 0x8000000000000000, 2 },
+        .{ 0x100000000, 0x100000000 },              .{ 0xFFFFFFFF, 0xFFFFFFFF },
+        .{ 0x100000000, 0xFFFFFFFF },               .{ fx.TWO62, fx.TWO62 },
+    };
+    for (M128_EDGES) |c| {
+        const p = mul128Report(c[0], c[1]);
+        try out.print("C {d} {d} {d}\n", .{ idx, p.hi, p.lo });
+        idx += 1;
+    }
+    for (0..count) |_| {
+        const a = nextRaw();
+        const b = nextRaw();
+        const p = mul128Report(a, b);
+        try out.print("C {d} {d} {d}\n", .{ idx, p.hi, p.lo });
+        idx += 1;
+    }
+
+    // --- D: mul over normalized operands, all four sign quadrants -----------
+    idx = 0;
+    for (0..count) |i| {
+        const ma: i64 = @bitCast(nextMantissaMagnitude());
+        const mb: i64 = @bitCast(nextMantissaMagnitude());
+        const ea = E_SET[i % E_SET.len];
+        const eb = E_SET[(i + 3) % E_SET.len];
+        for (SIGN_QUADRANTS) |q| {
+            const a: fx.Fixed = .{ .m = if (q[0] < 0) -%ma else ma, .e = ea };
+            const b: fx.Fixed = .{ .m = if (q[1] < 0) -%mb else mb, .e = eb };
+            const r = fx.mul(a, b);
+            try out.print("D {d} {d} {d}\n", .{ idx, r.m, r.e });
+            idx += 1;
+        }
+    }
+
+    // --- E: toIntTrunc, including the clamp and the truncation direction ----
+    idx = 0;
+    for (TO_INT_EDGES) |c| {
+        try out.print("E {d} {d}\n", .{ idx, fx.toIntTrunc(.{ .m = c.m, .e = c.e }) });
+        idx += 1;
+    }
+    for (0..count) |i| {
+        const mag: i64 = @bitCast(nextMantissaMagnitude());
+        // Exponents swept across the whole interesting band: below -62 the
+        // result is 0, at/above 62 it clamps, and in between the truncation
+        // direction is actually observable -- which is the only place
+        // @divTrunc and @divFloor differ.
+        const e: i32 = @intCast(@as(i64, @intCast(i % 130)) - 65);
+        try out.print("E {d} {d}\n", .{ idx, fx.toIntTrunc(.{ .m = mag, .e = e }) });
+        idx += 1;
+        try out.print("E {d} {d}\n", .{ idx, fx.toIntTrunc(.{ .m = -%mag, .e = e }) });
+        idx += 1;
+    }
+
     try out.flush();
+}
+
+/// Wrapper so the anonymous struct returned by fx.mul128 has a name here.
+fn mul128Report(a: u64, b: u64) struct { hi: u64, lo: u64 } {
+    const r = fx.mul128(a, b);
+    return .{ .hi = r.hi, .lo = r.lo };
 }

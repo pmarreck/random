@@ -136,4 +136,87 @@ for i = 0, count - 1 do
 	end
 end
 
+-- --- C: mul128 -------------------------------------------------------------
+-- mul128 returns UNSIGNED halves; tostring on a uint64 cdata yields a value
+-- with a "ULL" suffix, so strip that rather than "LL".
+local function u64s(v)
+	return (tostring(v):gsub("ULL$", ""))
+end
+
+local M128_EDGES = {
+	{ 0ULL, 0ULL }, { 1ULL, 1ULL },
+	{ 0xFFFFFFFFFFFFFFFFULL, 1ULL }, { 1ULL, 0xFFFFFFFFFFFFFFFFULL },
+	{ 0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL }, { 0x8000000000000000ULL, 2ULL },
+	{ 0x100000000ULL, 0x100000000ULL }, { 0xFFFFFFFFULL, 0xFFFFFFFFULL },
+	{ 0x100000000ULL, 0xFFFFFFFFULL }, { TWO62, TWO62 },
+}
+idx = 0
+for i = 1, #M128_EDGES do
+	local hi, lo = fx.mul128(M128_EDGES[i][1], M128_EDGES[i][2])
+	out[#out + 1] = string.format("C %d %s %s", idx, u64s(hi), u64s(lo))
+	idx = idx + 1
+end
+for _ = 1, count do
+	local a = next_raw()
+	local b = next_raw()
+	local hi, lo = fx.mul128(a, b)
+	out[#out + 1] = string.format("C %d %s %s", idx, u64s(hi), u64s(lo))
+	idx = idx + 1
+end
+
+-- --- D: mul ----------------------------------------------------------------
+local SIGN_QUADRANTS = { { 1, 1 }, { -1, 1 }, { 1, -1 }, { -1, -1 } }
+idx = 0
+for i = 0, count - 1 do
+	local ma = ffi.cast(i64, next_mantissa_magnitude())
+	local mb = ffi.cast(i64, next_mantissa_magnitude())
+	local ea = E_SET[(i % #E_SET) + 1]
+	local eb = E_SET[((i + 3) % #E_SET) + 1]
+	for q = 1, #SIGN_QUADRANTS do
+		local sa, sb = SIGN_QUADRANTS[q][1], SIGN_QUADRANTS[q][2]
+		local m1 = (sa < 0) and -ma or ma
+		local m2 = (sb < 0) and -mb or mb
+		local m, e = fx.mul(m1, ea, m2, eb)
+		out[#out + 1] = string.format("D %d %s %d", idx, i64s(m), e)
+		idx = idx + 1
+	end
+end
+
+-- --- E: to_int_trunc -------------------------------------------------------
+-- to_int_trunc returns a Lua NUMBER, and tostring() on a double at this
+-- magnitude prints in exponent form -- tostring(9007199254740992) yields
+-- "9.007199254741e+15", which would never match Zig's "{d}". Route it through
+-- an int64 cdata so the printed digits are exact. (%d on the double would also
+-- work; the cast keeps the formatting path identical to every other section.)
+local function intres(v)
+	return i64s(ffi.cast(i64, v))
+end
+
+local TO_INT_EDGES = {
+	{ ffi.cast(i64, 0), 0 }, { ffi.cast(i64, 0), 500 },
+	{ TWO62_I, 62 },  { -TWO62_I, 62 },
+	{ TWO62_I, 63 },  { -TWO62_I, 63 },
+	{ TWO62_I, 0 },   { -TWO62_I, 0 },
+	{ TWO62_I, -62 }, { -TWO62_I, -62 },
+	{ TWO62_I, -63 }, { -TWO62_I, -63 },
+	{ MAX_I64, 53 },  { MIN_I64, 53 },
+	{ MAX_I64, 54 },  { MIN_I64, 54 },
+	{ ffi.cast(i64, 0x6000000000000000ULL), 1 },
+	{ -ffi.cast(i64, 0x6000000000000000ULL), 1 },
+}
+idx = 0
+for i = 1, #TO_INT_EDGES do
+	out[#out + 1] = string.format("E %d %s", idx,
+		intres(fx.to_int_trunc(TO_INT_EDGES[i][1], TO_INT_EDGES[i][2])))
+	idx = idx + 1
+end
+for i = 0, count - 1 do
+	local mag = ffi.cast(i64, next_mantissa_magnitude())
+	local e = (i % 130) - 65
+	out[#out + 1] = string.format("E %d %s", idx, intres(fx.to_int_trunc(mag, e)))
+	idx = idx + 1
+	out[#out + 1] = string.format("E %d %s", idx, intres(fx.to_int_trunc(-mag, e)))
+	idx = idx + 1
+end
+
 io.write(table.concat(out, "\n"), "\n")
