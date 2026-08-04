@@ -377,8 +377,110 @@ pub fn main(init: std.process.Init) !void {
         idx += 1;
     }
 
+    // --- L: cosTurns — full turn domain plus every quadrant boundary -------
+    idx = 0;
+    for (COS_RAW_EDGES) |c| {
+        const r = fx.cosTurns(.{ .m = c.m, .e = c.e });
+        try out.print("L {d} {d} {d}\n", .{ idx, r.m, r.e });
+        idx += 1;
+    }
+    for (0..count) |i| {
+        // u sweeps [0, 1) via a normalized mantissa at exponent -1..-4, so
+        // all four quadrants are hit, plus out-of-domain u > 1 and u < 0 to
+        // exercise the frac-wrap defense on both implementations.
+        const mag: i64 = @bitCast(nextMantissaMagnitude());
+        const e: i32 = @as(i32, @intCast(i % 4)) - 4;
+        const rp = fx.cosTurns(.{ .m = mag, .e = e });
+        try out.print("L {d} {d} {d}\n", .{ idx, rp.m, rp.e });
+        idx += 1;
+        const rn = fx.cosTurns(.{ .m = -%mag, .e = e });
+        try out.print("L {d} {d} {d}\n", .{ idx, rn.m, rn.e });
+        idx += 1;
+        const rw = fx.cosTurns(.{ .m = mag, .e = 3 }); // u well outside [0,1)
+        try out.print("L {d} {d} {d}\n", .{ idx, rw.m, rw.e });
+        idx += 1;
+    }
+
+    // --- M: sqrt — both exponent parities, perfect squares, extremes -------
+    idx = 0;
+    for (SQRT_INT_EDGES) |v| {
+        const r = fx.sqrt(fx.fromInt(v));
+        try out.print("M {d} {d} {d}\n", .{ idx, r.m, r.e });
+        idx += 1;
+    }
+    for (0..count) |i| {
+        const mag: i64 = @bitCast(nextMantissaMagnitude());
+        // Sweep BOTH exponent parities: the odd branch halves the mantissa
+        // and bumps the exponent, and is a separate code path.
+        const e = SQRT_E_SET[i % SQRT_E_SET.len];
+        const r = fx.sqrt(.{ .m = mag, .e = e });
+        try out.print("M {d} {d} {d}\n", .{ idx, r.m, r.e });
+        idx += 1;
+        const r2 = fx.sqrt(.{ .m = mag, .e = e + 1 });
+        try out.print("M {d} {d} {d}\n", .{ idx, r2.m, r2.e });
+        idx += 1;
+    }
+
+    // --- N: pow — positive bases, both exponent signs ----------------------
+    idx = 0;
+    for (POW_INT_EDGES) |c| {
+        const r = fx.pow(fx.fromInt(c[0]), fx.fromInt(c[1]));
+        try out.print("N {d} {d} {d}\n", .{ idx, r.m, r.e });
+        idx += 1;
+    }
+    for (0..count) |i| {
+        const bm: i64 = @bitCast(nextMantissaMagnitude());
+        const ym: i64 = @bitCast(nextMantissaMagnitude());
+        // Base exponent kept modest and y kept small (|e| <= 3, mirroring
+        // kernel_jit_diff's POW_Y_EXP_SET rationale) so y*ln(x) stays well
+        // inside exp's domain and the correction loop never has real work.
+        const be = POW_B_EXP_SET[i % POW_B_EXP_SET.len];
+        const ye = POW_Y_EXP_SET[i % POW_Y_EXP_SET.len];
+        const rp = fx.pow(.{ .m = bm, .e = be }, .{ .m = ym, .e = ye });
+        try out.print("N {d} {d} {d}\n", .{ idx, rp.m, rp.e });
+        idx += 1;
+        const rn = fx.pow(.{ .m = bm, .e = be }, .{ .m = -%ym, .e = ye });
+        try out.print("N {d} {d} {d}\n", .{ idx, rn.m, rn.e });
+        idx += 1;
+    }
+
     try out.flush();
 }
+
+/// cosTurns edges: canonical zero, the exact quadrant landmarks (u = 0,
+/// 1/4, 1/2, 3/4, 1), and values just either side of each boundary where
+/// the quadrant selection flips.
+const COS_RAW_EDGES = [_]struct { m: i64, e: i32 }{
+    .{ .m = 0, .e = 0 },
+    .{ .m = 4611686018427387904, .e = -2 }, // 1/4
+    .{ .m = 4611686018427387904, .e = -1 }, // 1/2
+    .{ .m = 6917529027641081856, .e = -1 }, // 3/4
+    .{ .m = 4611686018427387904, .e = 1 }, // 1 -> wraps to 0
+    .{ .m = 4611686018427387905, .e = -2 }, // just past 1/4
+    .{ .m = std.math.maxInt(i64), .e = -3 }, // just under 1/4 (normalized!)
+    .{ .m = std.math.maxInt(i64), .e = -1 }, // just under 1
+    .{ .m = -4611686018427387904, .e = -2 }, // negative: frac-wrap defense
+    .{ .m = -4611686018427387904, .e = -1 },
+};
+
+/// sqrt integer edges: perfect squares (exact), non-squares, and the 2^53
+/// neighbourhood.
+const SQRT_INT_EDGES = [_]i64{
+    0, 1, 2, 3, 4, 5, 9, 15, 16, 17, 64, 65, 1024, 65536, 65537,
+    4503599627370496, 9007199254740992, 9007199254740993,
+};
+/// EVEN exponents; the driver also probes e+1 for each, covering both
+/// parities without duplicating the list.
+const SQRT_E_SET = [_]i32{ -62, -30, -8, -2, 0, 2, 8, 30, 62, 1000, -1000 };
+
+/// pow integer edges: identities (x^0, x^1, 1^y), exact powers of two, and
+/// negative exponents.
+const POW_INT_EDGES = [_][2]i64{
+    .{ 5, 0 },  .{ 2, 1 },  .{ 2, 10 }, .{ 2, -1 }, .{ 1, 7 },
+    .{ 3, 3 },  .{ 10, 3 }, .{ 7, -2 }, .{ 1024, 1 }, .{ 2, 30 },
+};
+const POW_B_EXP_SET = [_]i32{ -3, -1, 0, 1, 3, 7 };
+const POW_Y_EXP_SET = [_]i32{ -3, -2, -1, 0, 1, 2, 3 };
 
 /// ln edge integers: 1 (exact zero), 2 (exactly LN2), 15 (the reference
 /// doc's own slow-convergence example), 1024 (exactly 10·ln2).

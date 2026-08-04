@@ -38,9 +38,10 @@
 //! here), so a shipped artifact that trusts its own callers is the right
 //! trade; a contract violation is a bug in this repository, not a user error.
 //!
-//! Port status: Tasks 1–5 of docs/plans/2026-08-02-zig-port.md. `norm`,
+//! Port status: Tasks 1–6 of docs/plans/2026-08-02-zig-port.md. `norm`,
 //! `fromInt`, `mul128`, `mul`, `toIntTrunc`, `add`, `sub`, `neg`, `cmp`,
-//! `frac`, `div`, `ln`, `exp`. The rest arrives in Tasks 6–7, each verified against
+//! `frac`, `div`, `ln`, `exp`, `cosTurns`, `sqrt`, `pow`. Decimal I/O (Task 7) is
+//! the remainder, each verified against
 //! `lib/fixed.lua` by tests/zig_differential as it lands.
 
 const std = @import("std");
@@ -539,6 +540,195 @@ pub fn exp(x: Fixed) Fixed {
     if (es < std.math.minInt(i32) or es > std.math.maxInt(i32))
         @panic("fixed.exp: result exponent outside i32");
     return norm(acc.m, @intCast(es));
+}
+
+/// pi/2, as a normalized soft-float. pi/2 lies in [1, 2), so its normalized
+/// form sits at exponent 0 and the mantissa is the value scaled by 2^62:
+/// floor(pi/2 · 2^62).
+///
+/// PROVEN by integer enclosure (2026-08-04), same method as LN2. Machin's
+/// formula pi/4 = 4·atan(1/5) − atan(1/239), where each atan series is
+/// ALTERNATING, so partial sums with an even vs odd term count bracket the
+/// true value from both sides. Summed in bc at scale=0 (exact integer
+/// division) with guard precision 2^80: both bounds floor to this same
+/// integer at 2^62 scale, and the fractional position (100740/262144 ≈ 0.38)
+/// sits far from an integer boundary, so no guard escalation was needed.
+pub const PI_2: Fixed = .{ .m = 7244019458077122842, .e = 0 };
+
+/// Taylor term count for cos/sin. 14, not the brief's 8 — measured against
+/// bc at scale=80 over the reduced domain [0, pi/2), where the error grows
+/// monotonically with |x|. At N=8 cos's idealized error is 5.26e-13, roughly
+/// 2.4 MILLION times the kernel's own 2^-62 ≈ 2.168e-19 ULP floor.
+const COS_TERMS = 14;
+
+/// Newton refinement passes for sqrt's soft-float stage.
+const SQRT_REFINE = 3;
+
+/// Taylor denominator reciprocals for cos and sin, built at comptime by the
+/// kernel's own div — same policy as ODD_RECIP/FACT_RECIP.
+const COS_RECIP = blk: {
+    @setEvalBranchQuota(2_000_000);
+    var t: [COS_TERMS]Fixed = undefined;
+    for (&t, 1..) |*slot, n| slot.* = div(fromInt(1), fromInt(@intCast((2 * n - 1) * (2 * n))));
+    break :blk t;
+};
+const SIN_RECIP = blk: {
+    @setEvalBranchQuota(2_000_000);
+    var t: [COS_TERMS]Fixed = undefined;
+    for (&t, 1..) |*slot, n| slot.* = div(fromInt(1), fromInt(@intCast((2 * n) * (2 * n + 1))));
+    break :blk t;
+};
+
+/// cos(a) for a ∈ [0, pi/2), by Taylor series.
+/// Reusing the ALREADY-NEGATED term as the next iteration's base is what
+/// makes the alternating (−1)^n land with no separate sign bookkeeping.
+fn cosRad(a: Fixed) Fixed {
+    const a2 = mul(a, a);
+    var term = fromInt(1);
+    var acc = fromInt(1);
+    for (COS_RECIP) |r| {
+        term = mul(term, a2);
+        term = mul(term, r);
+        term.m = -%term.m;
+        acc = add(acc, term);
+    }
+    return acc;
+}
+
+/// sin(a) for a ∈ [0, pi/2). Same recurrence as cosRad, seeded with
+/// term₀ = a rather than 1.
+fn sinRad(a: Fixed) Fixed {
+    const a2 = mul(a, a);
+    var term = a;
+    var acc = a;
+    for (SIN_RECIP) |r| {
+        term = mul(term, a2);
+        term = mul(term, r);
+        term.m = -%term.m;
+        acc = add(acc, term);
+    }
+    return acc;
+}
+
+/// cos(2·pi·u) with u given in TURNS, not radians.
+///
+/// Quadrant reduction happens on u DIRECTLY and is therefore EXACT — no
+/// 2·pi multiply participates in the reduction at all. That is the single
+/// largest rounding source removed from the original Box-Muller path, and
+/// it is why callers pass turns: every caller wanted cos of 2·pi·something
+/// anyway.
+pub fn cosTurns(x: Fixed) Fixed {
+    if (x.m == 0) return fromInt(1);
+    var f = frac(x);
+    // Out-of-domain defense, matching the reference: real callers hand over
+    // u ∈ [0,1), but frac's truncating semantics yield a negative remainder
+    // for negative input, so wrap it the way a turns-based angle would.
+    if (f.m < 0) f = add(f, fromInt(1));
+    const q4 = mul(f, fromInt(4));
+    const q = toIntTrunc(q4);
+    const w = sub(q4, fromInt(q));
+    const a = mul(w, PI_2); // angle in [0, pi/2)
+    return switch (q) {
+        0 => cosRad(a),
+        1 => neg(sinRad(a)),
+        2 => neg(cosRad(a)),
+        else => sinRad(a),
+    };
+}
+
+/// Square root: integer Newton for a ~31-bit seed, then soft-float Newton
+/// refinement to full precision. Pure-integer Newton on the mantissa caps
+/// at ~31 bits, which is why the second stage exists.
+///
+/// The exponent is e = ee/2 + 31, derived rather than guessed: with ee even,
+/// value = f·2^ee and the integer stage's x ≈ sqrt(f)·2^31, so
+/// sqrt(value) = x·2^(ee/2 − 31); norm's e means "x·2^(e−62)", giving
+/// e − 62 = ee/2 − 31. The brief's formula reduced to ee/2 — short by
+/// exactly 2^31, which returns 2·2^-31 for sqrt(4).
+pub fn sqrt(x: Fixed) Fixed {
+    std.debug.assert(x.m >= 0); // fixed.sqrt: argument must be non-negative
+    if (x.m == 0) return Fixed.zero;
+
+    var mm = x.m;
+    var ee: i64 = x.e;
+    // Lua's `%` on a negative odd exponent yields a POSITIVE remainder
+    // (floored), where Zig's `%` would too, but @rem would not — parity is
+    // what matters, so test against zero explicitly rather than relying on
+    // either operator's sign convention.
+    if (@mod(ee, 2) != 0) {
+        mm = @divTrunc(mm, 2);
+        ee += 1;
+    }
+    // Mantissa now in [2^61, 2^63); its root is in [2^30.5, 2^31.5), so 2^32
+    // is a safe always-above start for Newton's monotonically-decreasing
+    // branch.
+    const u: u64 = @bitCast(mm);
+    var xi: u64 = 0x100000000;
+    for (0..40) |_| {
+        const nx = (xi + u / xi) / 2;
+        if (nx == xi) break;
+        xi = nx;
+    }
+    const es: i64 = @divTrunc(ee, 2) + 31;
+    std.debug.assert(es >= std.math.minInt(i32) and es <= std.math.maxInt(i32));
+    var y = norm(@bitCast(xi), @intCast(es));
+    for (0..SQRT_REFINE) |_| {
+        const s = add(y, div(x, y));
+        // Routed through norm rather than assigning (s.m, s.e - 1): this is
+        // the one exponent construction the reference flagged as otherwise
+        // bypassing the i32 assert, and it explicitly named the Zig port as
+        // the reason to care — `s.e - 1` at i32 min panics here where Lua
+        // silently returned an out-of-contract double.
+        const se: i64 = @as(i64, s.e) - 1;
+        std.debug.assert(se >= std.math.minInt(i32) and se <= std.math.maxInt(i32));
+        y = norm(s.m, @intCast(se));
+    }
+    return y;
+}
+
+/// x^y via exp(y · ln x). Defined only for x > 0, which is all this program
+/// needs. y == 0 and y's sign both fall out of the composition — no special
+/// cases. Inherits exp's loud out-of-domain failure rather than clamping.
+pub fn pow(base: Fixed, y: Fixed) Fixed {
+    std.debug.assert(base.m > 0); // fixed.pow: base must be positive
+    return exp(mul(y, ln(base)));
+}
+
+test "cosTurns: exact quadrant landmarks" {
+    // cos(2pi·0) = 1 exactly (short-circuit on zero).
+    try std.testing.expectEqual(fromInt(1), cosTurns(Fixed.zero));
+    // u = 1/2 -> cos(pi) = -1. q=2, w=0, a=0, so -cosRad(0) = -1 exactly.
+    const half = Fixed{ .m = @as(i64, @bitCast(TWO62)), .e = -1 };
+    try std.testing.expectEqual(fromInt(-1), cosTurns(half));
+    // u = 1/4 -> cos(pi/2) = 0. q=1, w=0, a=0, so -sinRad(0) = 0 exactly.
+    const quarter = Fixed{ .m = @as(i64, @bitCast(TWO62)), .e = -2 };
+    try std.testing.expectEqual(Fixed.zero, cosTurns(quarter));
+    // u = 1 wraps to 0 via frac -> 1.
+    try std.testing.expectEqual(fromInt(1), cosTurns(fromInt(1)));
+}
+
+test "sqrt: exact on perfect squares, and the 2^31 exponent trap" {
+    // sqrt(4) must be 2, not 2·2^-31 — the brief's formula failed here.
+    try std.testing.expectEqual(fromInt(2), sqrt(fromInt(4)));
+    try std.testing.expectEqual(fromInt(1), sqrt(fromInt(1)));
+    try std.testing.expectEqual(fromInt(4), sqrt(fromInt(16)));
+    try std.testing.expectEqual(fromInt(256), sqrt(fromInt(65536)));
+    try std.testing.expectEqual(Fixed.zero, sqrt(Fixed.zero));
+    // Odd input exponent takes the halving branch.
+    try std.testing.expectEqual(fromInt(8), sqrt(fromInt(64)));
+}
+
+test "pow: exact integer identities" {
+    try std.testing.expectEqual(fromInt(1), pow(fromInt(5), Fixed.zero)); // x^0 = 1
+    // 2^10 = 1024: ln2·10 range-reduces to k=10, r=0 exactly.
+    try std.testing.expectEqual(fromInt(1024), pow(fromInt(2), fromInt(10)));
+    try std.testing.expectEqual(fromInt(2), pow(fromInt(2), fromInt(1)));
+}
+
+test "constants: PI_2 and the cos/sin tables are normalized" {
+    try std.testing.expect(@as(u64, @bitCast(PI_2.m)) >= TWO62);
+    for (COS_RECIP) |r| try std.testing.expect(@as(u64, @bitCast(r.m)) >= TWO62);
+    for (SIN_RECIP) |r| try std.testing.expect(@as(u64, @bitCast(r.m)) >= TWO62);
 }
 
 test "ln: exact identities — ln(1) is zero, ln(2) is LN2, ln(2^k) is k*ln2" {

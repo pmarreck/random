@@ -432,4 +432,82 @@ for i = 0, count - 1 do
 	idx = idx + 1
 end
 
+-- --- L: cos_turns ----------------------------------------------------------
+local COS_RAW_EDGES = {
+	{ ffi.cast(i64, 0), 0 },
+	{ TWO62_I, -2 },                                    -- 1/4
+	{ TWO62_I, -1 },                                    -- 1/2
+	{ ffi.cast(i64, 0x6000000000000000ULL), -1 },       -- 3/4
+	{ TWO62_I, 1 },                                     -- 1 -> wraps to 0
+	{ ffi.cast(i64, 0x4000000000000001ULL), -2 },       -- just past 1/4
+	{ MAX_I64, -3 },                                    -- just under 1/4 (normalized!)
+	{ MAX_I64, -1 },                                    -- just under 1
+	{ -TWO62_I, -2 },                                   -- negative: frac-wrap
+	{ -TWO62_I, -1 },
+}
+idx = 0
+for i = 1, #COS_RAW_EDGES do
+	local rm, re = fx.cos_turns(COS_RAW_EDGES[i][1], COS_RAW_EDGES[i][2])
+	out[#out + 1] = string.format("L %d %s %d", idx, i64s(rm), re)
+	idx = idx + 1
+end
+for i = 0, count - 1 do
+	local mag = ffi.cast(i64, next_mantissa_magnitude())
+	local e = (i % 4) - 4
+	local pm, pe = fx.cos_turns(mag, e)
+	out[#out + 1] = string.format("L %d %s %d", idx, i64s(pm), pe); idx = idx + 1
+	local nm2, ne2 = fx.cos_turns(-mag, e)
+	out[#out + 1] = string.format("L %d %s %d", idx, i64s(nm2), ne2); idx = idx + 1
+	local wm, we = fx.cos_turns(mag, 3)                 -- u well outside [0,1)
+	out[#out + 1] = string.format("L %d %s %d", idx, i64s(wm), we); idx = idx + 1
+end
+
+-- --- M: sqrt ---------------------------------------------------------------
+local SQRT_INT_EDGES = {
+	0, 1, 2, 3, 4, 5, 9, 15, 16, 17, 64, 65, 1024, 65536, 65537,
+	4503599627370496, 9007199254740992, 9007199254740993LL,
+}
+local SQRT_E_SET = { -62, -30, -8, -2, 0, 2, 8, 30, 62, 1000, -1000 }
+idx = 0
+for i = 1, #SQRT_INT_EDGES do
+	local am, ae = fx.from_int(SQRT_INT_EDGES[i])
+	local rm, re = fx.sqrt(am, ae)
+	out[#out + 1] = string.format("M %d %s %d", idx, i64s(rm), re)
+	idx = idx + 1
+end
+for i = 0, count - 1 do
+	local mag = ffi.cast(i64, next_mantissa_magnitude())
+	local e = SQRT_E_SET[(i % #SQRT_E_SET) + 1]
+	local rm, re = fx.sqrt(mag, e)
+	out[#out + 1] = string.format("M %d %s %d", idx, i64s(rm), re); idx = idx + 1
+	local r2m, r2e = fx.sqrt(mag, e + 1)                -- opposite parity
+	out[#out + 1] = string.format("M %d %s %d", idx, i64s(r2m), r2e); idx = idx + 1
+end
+
+-- --- N: pow ----------------------------------------------------------------
+local POW_INT_EDGES = {
+	{ 5, 0 },  { 2, 1 },  { 2, 10 }, { 2, -1 }, { 1, 7 },
+	{ 3, 3 },  { 10, 3 }, { 7, -2 }, { 1024, 1 }, { 2, 30 },
+}
+local POW_B_EXP_SET = { -3, -1, 0, 1, 3, 7 }
+local POW_Y_EXP_SET = { -3, -2, -1, 0, 1, 2, 3 }
+idx = 0
+for i = 1, #POW_INT_EDGES do
+	local bm, be = fx.from_int(POW_INT_EDGES[i][1])
+	local ym, ye = fx.from_int(POW_INT_EDGES[i][2])
+	local rm, re = fx.pow(bm, be, ym, ye)
+	out[#out + 1] = string.format("N %d %s %d", idx, i64s(rm), re)
+	idx = idx + 1
+end
+for i = 0, count - 1 do
+	local bm = ffi.cast(i64, next_mantissa_magnitude())
+	local ym = ffi.cast(i64, next_mantissa_magnitude())
+	local be = POW_B_EXP_SET[(i % #POW_B_EXP_SET) + 1]
+	local ye = POW_Y_EXP_SET[(i % #POW_Y_EXP_SET) + 1]
+	local pm, pe = fx.pow(bm, be, ym, ye)
+	out[#out + 1] = string.format("N %d %s %d", idx, i64s(pm), pe); idx = idx + 1
+	local nm3, ne3 = fx.pow(bm, be, -ym, ye)
+	out[#out + 1] = string.format("N %d %s %d", idx, i64s(nm3), ne3); idx = idx + 1
+end
+
 io.write(table.concat(out, "\n"), "\n")

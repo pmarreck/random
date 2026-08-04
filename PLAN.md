@@ -103,6 +103,46 @@
       benchmark must record which LuaJIT it ran under.
 - [ ] Mechatron Prime CI via the `mechatron-ci` skill
 
+## Approved directives (Peter, 2026-08-04)
+
+**Standing permission:** `random`'s public behavior may be changed at will —
+Peter is currently its only user. Preserve the existing API surface; replace
+internals with superior ones. Behavior changes no longer need per-change
+sign-off (this supersedes the "awaits Peter's approval" boundary Einstein
+recorded on 2026-08-04).
+
+- [ ] **Entropy: fail closed, via `getrandom(2)`/`getentropy()`.** Delete the
+      time-derived stage-3 fallback in `get_random_bytes`
+      (`bin/random:312-317`) entirely — it emits an arithmetic progression
+      mod 256 (measured: constant step ≈58, two same-second draws differ by a
+      constant), ~10-15 bits of real entropy. Reach the syscalls by FFI;
+      devices become the fail-closed fallback with a read-retry loop (a
+      partial read must re-read the same source, never demote to a weaker
+      one). Blocking-until-seeded is the DEFAULT and is free — it is
+      `getrandom`'s behavior absent `GRND_NONBLOCK`. Add a flag for callers
+      who prefer a loud error to a wait (Peter's explicit request); a
+      `--random-source=PATH` option à la `shuf` also makes the failure path
+      naturally testable without the code knowing it is under test.
+- [ ] **Make `drandom` itself a CSPRNG.** Not a `--secure` opt-in: the
+      deterministic path becomes a BLAKE3 keyed DRBG outright. Seed 32 bytes
+      from `getrandom` when none is given; a user `--seed` is expanded
+      through BLAKE3's KDF rather than used raw. Counter mode or seekable XOF
+      — both give O(1) random access to draw N, which is what makes replaying
+      one fuzz-corpus entry cheap.
+      CONSEQUENCE TO PLAN FOR: seeded streams change completely, so every
+      deterministic golden vector must be re-blessed in the same commit. Do
+      this AFTER the kernel port lands, so goldens move exactly once and both
+      implementations change together.
+      SPEED NOTE (measured, not assumed): BLAKE3 in LuaJIT yields ~1.8M u64
+      draws/s vs PCG32's far higher rate — acceptable, because the LuaJIT
+      side is the ORACLE; Zig's SIMD BLAKE3 is the production path. If a
+      fast-but-predictable generator is ever wanted back, it returns as an
+      explicit opt-in, never the default.
+- [ ] **New functionality lands in LuaJIT first**, then ports to Zig using
+      LuaJIT as the differential oracle — the established pattern. (The
+      kernel-port tasks are the reverse direction: existing LuaJIT functions
+      being ported to Zig.)
+
 ## Future goals (recorded 2026-08-03, Peter)
 - [ ] **Cryptographically-secure mode** (deferred by Peter's call; priority for
       now is fast, identical cross-platform seeded output with optional
