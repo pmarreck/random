@@ -21,6 +21,7 @@ annotate=[
 	docs/luajit-ir-without-fwd.txt = IR dump (-jdump=i -O3 -O-fwd): the correct build, for diffing
 	docs/plans/2026-08-01-deterministic-numeric-kernel.md = Implementation plan, spec steps 1-4: pcg32_range fix, integer goldens, soft-float kernel, LuaJIT conversion
 	docs/plans/2026-08-02-zig-port.md = Zig port implementation plan: kernel -> C FFI -> randomz CLI, differential-tested against bin/random
+	docs/research/2026-08-04-pure-lua-blake3-evaluation.md = differential of a pure-Lua BLAKE3 gist vs Zig stdlib (246/246 official-methodology vectors, seek verified, 346 MB/s); blocked on licensing
 	docs/specs/2026-07-31-deterministic-fixed-point-rng-design.md = Design spec: integer-only Q32.32+soft-float RNG kernel for cross-platform bit-identical seeded streams; Zig/FFI port plan
 	lib/fixed.lua = integer-only soft-float kernel (mul/add/sub/neg/cmp/norm/from_int/frac/div/ln/exp/cos_turns/sqrt/pow/parse/parse_int/tostring); replaces libm and strtod/%f for cross-platform reproducibility. M.norm and div_signed both need jit.off (LuaJIT/LuaJIT#1499)
 	src/differential_driver.zig = TEST driver printing the Zig kernel's swept results for comparison against lib/fixed.lua; NOT the CLI (that is C, Task 9)
