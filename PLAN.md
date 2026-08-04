@@ -114,6 +114,18 @@
       (state recoverable from a few outputs); a `--secure` flag swaps the
       generator. Distributions layer unchanged on top of either.
 
+## Inbox-driven (additive, after current Zig-port task)
+- [ ] **Einstein 2026-08-04: assess `random` as entropy source for
+      `randompassdict`** (inbox/2026-08-04-from-einstein-randompassdict-csprng.md,
+      stays in inbox/ until answered). Review-only, no dotfiles changes. Five
+      questions: OS-CSPRNG API surface, rejection-vs-modulo bounded sampling
+      (cite code+tests), smallest stable call for uniform [0, dict_size),
+      security delta vs GNU `shuf --random-source=/dev/random`, and
+      platform/fork/partial-read caveats for secret generation. Reply via
+      LLMsend with evidence and known-green SHA. NOTE: current PCG32 seeded
+      mode is NOT cryptographically secure (recorded under Future goals);
+      only the true-random path is candidate material here.
+
 ## TODO
 - [ ] Drop `flake.nix`'s `luajitFixed` override (and its `28084004` pin) once
       nixpkgs-unstable's own `pkgs.luajit` picks up a commit at or past the

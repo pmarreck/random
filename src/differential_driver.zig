@@ -322,8 +322,87 @@ pub fn main(init: std.process.Init) !void {
         }
     }
 
+    // --- J: ln — positive mantissas across the full exponent range ----------
+    idx = 0;
+    for (LN_INT_EDGES) |v| {
+        const r = fx.ln(fx.fromInt(v));
+        try out.print("J {d} {d} {d}\n", .{ idx, r.m, r.e });
+        idx += 1;
+    }
+    for (LN_RAW_EDGES) |c| {
+        const r = fx.ln(.{ .m = c.m, .e = c.e });
+        try out.print("J {d} {d} {d}\n", .{ idx, r.m, r.e });
+        idx += 1;
+    }
+    for (0..count) |i| {
+        const mag: i64 = @bitCast(nextMantissaMagnitude());
+        const e = E_SET[i % E_SET.len];
+        const r = fx.ln(.{ .m = mag, .e = e });
+        try out.print("J {d} {d} {d}\n", .{ idx, r.m, r.e });
+        idx += 1;
+    }
+
+    // --- K: exp — both signs, exponents capped at the i32-safe 29 -----------
+    idx = 0;
+    for (EXP_INT_EDGES) |v| {
+        const r = fx.exp(fx.fromInt(v));
+        try out.print("K {d} {d} {d}\n", .{ idx, r.m, r.e });
+        idx += 1;
+    }
+    {
+        // Range-reduction boundary operands, built by the kernel's own
+        // arithmetic exactly as the Lua mirror builds them.
+        const half_ln2 = fx.div(fx.LN2, fx.fromInt(2));
+        const exp_raw_edges = [_]fx.Fixed{
+            fx.LN2,                          fx.neg(fx.LN2),
+            half_ln2,                        fx.neg(half_ln2),
+            .{ .m = 4611686018427387904, .e = 29 },
+            .{ .m = -4611686018427387904, .e = 29 },
+            .{ .m = 4611686018427387904, .e = -63 },
+        };
+        for (exp_raw_edges) |c| {
+            const r = fx.exp(c);
+            try out.print("K {d} {d} {d}\n", .{ idx, r.m, r.e });
+            idx += 1;
+        }
+    }
+    for (0..count) |i| {
+        const mag: i64 = @bitCast(nextMantissaMagnitude());
+        const e = EXP_E_SET[i % EXP_E_SET.len];
+        const rp = fx.exp(.{ .m = mag, .e = e });
+        try out.print("K {d} {d} {d}\n", .{ idx, rp.m, rp.e });
+        idx += 1;
+        const rn = fx.exp(.{ .m = -%mag, .e = e });
+        try out.print("K {d} {d} {d}\n", .{ idx, rn.m, rn.e });
+        idx += 1;
+    }
+
     try out.flush();
 }
+
+/// ln edge integers: 1 (exact zero), 2 (exactly LN2), 15 (the reference
+/// doc's own slow-convergence example), 1024 (exactly 10·ln2).
+const LN_INT_EDGES = [_]i64{ 1, 2, 15, 1024 };
+
+/// ln raw edges: f = 1 exactly, the worst-case f -> 2 mantissa (slowest
+/// atanh convergence), the smallest nonzero t, and the k·ln2 extremes.
+const LN_RAW_EDGES = [_]struct { m: i64, e: i32 }{
+    .{ .m = 4611686018427387904, .e = 0 },
+    .{ .m = std.math.maxInt(i64), .e = 0 },
+    .{ .m = 4611686018427387905, .e = 0 },
+    .{ .m = 4611686018427387904, .e = 1000 },
+    .{ .m = 4611686018427387904, .e = -1000 },
+};
+
+/// exp edge integers, small enough that k stays far inside i32.
+const EXP_INT_EDGES = [_]i64{ 0, 1, -1, 20, -20, 700, -700 };
+
+/// Exponents for the exp sweep. Capped at 29, NOT 30: at e = 30 a mantissa
+/// past ~1.49 puts k = x/ln2 beyond i32 and exp correctly refuses (panic
+/// here, error() in the reference) — the sweep must stay inside the domain
+/// where both implementations return values. 29 is safe for EVERY mantissa:
+/// |x| < 2^30, so |k| ≤ 2^30/ln2 ≈ 1.55e9 < 2^31−1.
+const EXP_E_SET = [_]i32{ -63, -30, -7, -3, -1, 0, 1, 3, 7, 20, 29 };
 
 /// Integer operand pairs for div: the six pinned truncation quadrant cases,
 /// identity and exact-power ratios, just-below/above-one ratios, and —

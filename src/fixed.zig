@@ -38,9 +38,9 @@
 //! here), so a shipped artifact that trusts its own callers is the right
 //! trade; a contract violation is a bug in this repository, not a user error.
 //!
-//! Port status: Tasks 1–4 of docs/plans/2026-08-02-zig-port.md. `norm`,
+//! Port status: Tasks 1–5 of docs/plans/2026-08-02-zig-port.md. `norm`,
 //! `fromInt`, `mul128`, `mul`, `toIntTrunc`, `add`, `sub`, `neg`, `cmp`,
-//! `frac`, `div`. The rest arrives in Tasks 5–7, each verified against
+//! `frac`, `div`, `ln`, `exp`. The rest arrives in Tasks 6–7, each verified against
 //! `lib/fixed.lua` by tests/zig_differential as it lands.
 
 const std = @import("std");
@@ -363,6 +363,200 @@ pub fn div(a: Fixed, b: Fixed) Fixed {
     const es: i64 = @as(i64, a.e) - @as(i64, b.e);
     std.debug.assert(es >= std.math.minInt(i32) and es <= std.math.maxInt(i32));
     return norm(r, @intCast(es));
+}
+
+/// ln 2, as a normalized soft-float. ln2 lies in [0.5, 1), so its normalized
+/// form sits at exponent -1 and the mantissa is ln2 scaled by 2^63 (not 2^62):
+/// floor(l(2) · 2^63), truncated ONCE from full bc precision. Regenerated
+/// independently on 2026-08-04 (`echo 'scale=80; v=l(2) * 2^63; scale=0; v/1'
+/// | bc -l` → 6393154322601327829) and compared against the reference's
+/// constant rather than copied from it, per the plan.
+///
+/// The reference documents why the truncation must happen at the target
+/// scale: 2·floor(l(2)·2^62) ends in ...828, but floor(l(2)·2^63) ends in
+/// ...829 — the fractional bit the coarser truncation discards is a 1, so
+/// "truncate at 2^62 then renormalize" is wrong by exactly 1 ULP.
+pub const LN2: Fixed = .{ .m = 6393154322601327829, .e = -1 };
+
+/// Series lengths, measured in the reference, not assumed: ln's atanh series
+/// needs 20 terms (convergence is slowest at f → 2, where t → 1/3; the real
+/// kernel's error plateaus from N=17, and 12 — the original brief's claim —
+/// leaves a 1.56e-14 relative error, ~4 orders above the kernel's floor).
+/// exp's factorial-weighted series reaches ~100x below the kernel's ULP floor
+/// at 16 terms over the range-reduced |r| ≤ ln2/2 domain.
+const ATANH_TERMS = 20;
+const EXP_TERMS = 16;
+
+/// Correction-loop bound for exp's range reduction, with 1 unit of headroom
+/// above the empirically confirmed maximum of 2 (600k+ trials in the
+/// reference; the idealized exact-arithmetic proof says 1, and div's ~2^-62
+/// rounding very rarely compounds to need a second).
+pub const EXP_MAX_CORRECTIONS = 3;
+
+/// Reciprocals of the odd denominators 3, 5, ..., 41 for ln's atanh series.
+/// Built AT COMPTIME BY THE KERNEL'S OWN div — not pasted decimal constants —
+/// exactly as the reference builds them at module load via M.div, so the
+/// table inherits the kernel's own rounding and stays bit-identical by
+/// construction.
+const ODD_RECIP = blk: {
+    @setEvalBranchQuota(1_000_000);
+    var t: [ATANH_TERMS]Fixed = undefined;
+    for (&t, 0..) |*slot, i| {
+        slot.* = div(fromInt(1), fromInt(@intCast(2 * (i + 1) + 1)));
+    }
+    break :blk t;
+};
+
+/// Reciprocals of 1!..16! for exp's Taylor series. Same comptime-via-own-
+/// arithmetic policy as ODD_RECIP: the running factorial is accumulated with
+/// the kernel's mul, then inverted with the kernel's div, mirroring the
+/// reference's module-load loop operation for operation.
+const FACT_RECIP = blk: {
+    @setEvalBranchQuota(1_000_000);
+    var t: [EXP_TERMS]Fixed = undefined;
+    var f = fromInt(1);
+    for (&t, 0..) |*slot, i| {
+        f = mul(f, fromInt(@intCast(i + 1)));
+        slot.* = div(fromInt(1), f);
+    }
+    break :blk t;
+};
+
+/// ln2/2 and its negation — the range-reduction acceptance window. Built by
+/// the kernel's own div/neg, matching the reference's module-load derivation.
+const HALF_LN2 = blk: {
+    @setEvalBranchQuota(100_000);
+    break :blk div(LN2, fromInt(2));
+};
+const NEG_HALF_LN2 = neg(HALF_LN2);
+
+/// Natural log. The soft-float form IS the decomposition: x = f · 2^e with
+/// f = m/2^62 ∈ [1, 2) exactly the mantissa reinterpreted at exponent 0, so
+/// ln x = e·ln2 + ln f with no further range reduction. ln f uses
+/// 2·atanh((f−1)/(f+1)); f ∈ [1,2) keeps t ∈ [0, 1/3).
+/// Key technique: atanh (Gregory) series with precomputed odd-reciprocal
+/// coefficients; term counts measured against bc, not assumed.
+pub fn ln(x: Fixed) Fixed {
+    std.debug.assert(x.m > 0); // fixed.ln: argument must be positive
+    const k = x.e;
+    const f = Fixed{ .m = x.m, .e = 0 };
+    const one = fromInt(1);
+    const t = div(sub(f, one), add(f, one));
+    const t2 = mul(t, t);
+    var term = t;
+    var acc = t;
+    for (ODD_RECIP) |r| {
+        term = mul(term, t2);
+        acc = add(acc, mul(term, r));
+    }
+    // 2·acc + k·ln2, in exactly the reference's operation order.
+    var l = add(acc, acc);
+    if (k != 0) {
+        l = add(l, mul(LN2, fromInt(k)));
+    }
+    return l;
+}
+
+/// r = x − k·ln2, recomputed from x and the CANDIDATE k every time — never
+/// accumulated from a running r — so each candidate is evaluated exactly.
+/// Single call site for the one arithmetic decision (subtract, not add).
+fn reduceR(x: Fixed, k: i64) Fixed {
+    return sub(x, mul(LN2, fromInt(k)));
+}
+
+/// True when a correction count has exceeded the bound. Factored out (and
+/// public) so the boundary — 3 must pass, 4 must trip — can be pinned by a
+/// unit test directly: the reference's 600k-trial search found the natural
+/// maximum is 2 corrections, so no real exp input can distinguish `>` from a
+/// `>=` off-by-one mutant; only a direct test of the predicate can.
+pub fn correctionGuardWouldTrip(count: usize) bool {
+    return count > EXP_MAX_CORRECTIONS;
+}
+
+/// Exponential. Range-reduce x = k·ln2 + r with |r| ≤ ln2/2, evaluate exp(r)
+/// by Taylor series, then multiply by 2^k purely in the exponent.
+///
+/// NOT total, exactly like the reference: the result exponent is ~x/ln2, so
+/// the i32 exponent contract fires around |x| ≳ 2^31·ln2 ≈ 1.5e9. Both
+/// failure modes are LOUD `@panic`s — live in every build mode including
+/// ReleaseFast, deliberately stronger than this file's std.debug.assert
+/// policy — because the reference treats them as always-live error() calls
+/// and they are reachable from user input (an extreme `--mean` reaches exp
+/// with no range validation in bin/random). The C CLI must pre-validate if
+/// it ever wants to refuse gracefully instead (note for Task 8/9).
+///
+/// The reference's correction loop exists because ITS k is a Lua double whose
+/// ULP exceeds 1 past 2^53, freezing `k ± 1`. Here k is an i64 and cannot
+/// freeze — but the loop, its bound, and its loud failure are preserved
+/// anyway: toIntTrunc clamps at ±2^53 identically on both sides, so for huge
+/// arguments r never lands inside the window and the guard trips on both
+/// implementations alike.
+pub fn exp(x: Fixed) Fixed {
+    if (x.m == 0) return fromInt(1);
+    // k = round(x/ln2): truncate, then nudge by at most
+    // EXP_MAX_CORRECTIONS bounded steps.
+    var k: i64 = toIntTrunc(div(x, LN2));
+    var r = reduceR(x, k);
+    var corrections: usize = 0;
+    while (cmp(r, HALF_LN2) > 0) {
+        k += 1;
+        r = reduceR(x, k);
+        corrections += 1;
+        if (correctionGuardWouldTrip(corrections))
+            @panic("fixed.exp: argument too large to range-reduce (correction bound exceeded)");
+    }
+    while (cmp(r, NEG_HALF_LN2) < 0) {
+        k -= 1;
+        r = reduceR(x, k);
+        corrections += 1;
+        if (correctionGuardWouldTrip(corrections))
+            @panic("fixed.exp: argument too large to range-reduce (correction bound exceeded)");
+    }
+    // exp(r) = Σ r^n/n!, n = 0..16, incremental power, early break on a
+    // zero term — the reference's loop shape exactly.
+    var acc = fromInt(1);
+    var pw = fromInt(1);
+    for (FACT_RECIP) |fr| {
+        pw = mul(pw, r);
+        const c = mul(pw, fr);
+        if (c.m == 0) break;
+        acc = add(acc, c);
+    }
+    // Multiply by 2^k purely in the exponent, routed through norm so the i32
+    // exponent contract is enforced at the point of creation. The range check
+    // is a live panic, not a debug assert — see the doc comment.
+    const es: i64 = @as(i64, acc.e) + k;
+    if (es < std.math.minInt(i32) or es > std.math.maxInt(i32))
+        @panic("fixed.exp: result exponent outside i32");
+    return norm(acc.m, @intCast(es));
+}
+
+test "ln: exact identities — ln(1) is zero, ln(2) is LN2, ln(2^k) is k*ln2" {
+    try std.testing.expectEqual(Fixed.zero, ln(fromInt(1)));
+    try std.testing.expectEqual(LN2, ln(fromInt(2)));
+    // ln(2^10) = 10·ln2 exactly (t = 0, so only the k·ln2 term survives).
+    try std.testing.expectEqual(mul(LN2, fromInt(10)), ln(fromInt(1024)));
+}
+
+test "exp: exact identities — exp(0) is one, exp(ln2) is exactly 2" {
+    try std.testing.expectEqual(fromInt(1), exp(Fixed.zero));
+    // k = trunc(ln2/ln2) = 1, r = ln2 − 1·ln2 = 0 exactly, exp(0)·2^1 = 2.
+    try std.testing.expectEqual(fromInt(2), exp(LN2));
+}
+
+test "exp: correction-guard boundary — 3 passes, 4 trips" {
+    // The natural maximum is 2 corrections (600k-trial search in the
+    // reference), so no exp input can pin this boundary; only the predicate
+    // itself can — same rationale as the reference's test-only export.
+    try std.testing.expect(!correctionGuardWouldTrip(3));
+    try std.testing.expect(correctionGuardWouldTrip(4));
+}
+
+test "constants: LN2 and the comptime tables are normalized" {
+    try std.testing.expect(@as(u64, @bitCast(LN2.m)) >= TWO62);
+    for (ODD_RECIP) |r| try std.testing.expect(@as(u64, @bitCast(r.m)) >= TWO62);
+    for (FACT_RECIP) |r| try std.testing.expect(@as(u64, @bitCast(r.m)) >= TWO62);
+    try std.testing.expect(@as(u64, @bitCast(HALF_LN2.m)) >= TWO62);
 }
 
 test "div: the six pinned negative-operand truncation cases" {

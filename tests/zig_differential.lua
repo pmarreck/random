@@ -360,4 +360,76 @@ for i = 0, count - 1 do
 	end
 end
 
+-- --- J: ln -----------------------------------------------------------------
+-- Mirrors the Zig LN_INT_EDGES / LN_RAW_EDGES in order.
+local LN_INT_EDGES = { 1, 2, 15, 1024 }
+local LN_RAW_EDGES = {
+	{ TWO62_I, 0 },
+	{ MAX_I64, 0 },
+	{ ffi.cast(i64, 0x4000000000000001ULL), 0 },
+	{ TWO62_I, 1000 },
+	{ TWO62_I, -1000 },
+}
+idx = 0
+for i = 1, #LN_INT_EDGES do
+	local am, ae = fx.from_int(LN_INT_EDGES[i])
+	local rm, re = fx.ln(am, ae)
+	out[#out + 1] = string.format("J %d %s %d", idx, i64s(rm), re)
+	idx = idx + 1
+end
+for i = 1, #LN_RAW_EDGES do
+	local rm, re = fx.ln(LN_RAW_EDGES[i][1], LN_RAW_EDGES[i][2])
+	out[#out + 1] = string.format("J %d %s %d", idx, i64s(rm), re)
+	idx = idx + 1
+end
+for i = 0, count - 1 do
+	local mag = ffi.cast(i64, next_mantissa_magnitude())
+	local e = E_SET[(i % #E_SET) + 1]
+	local rm, re = fx.ln(mag, e)
+	out[#out + 1] = string.format("J %d %s %d", idx, i64s(rm), re)
+	idx = idx + 1
+end
+
+-- --- K: exp ----------------------------------------------------------------
+-- Exponents capped at 29, not 30: at e=30 a mantissa past ~1.49 pushes
+-- k = x/ln2 beyond i32 and exp correctly REFUSES (error() here, panic in
+-- Zig); the sweep must stay where both implementations return values.
+local EXP_INT_EDGES = { 0, 1, -1, 20, -20, 700, -700 }
+local EXP_E_SET = { -63, -30, -7, -3, -1, 0, 1, 3, 7, 20, 29 }
+idx = 0
+for i = 1, #EXP_INT_EDGES do
+	local am, ae = fx.from_int(EXP_INT_EDGES[i])
+	local rm, re = fx.exp(am, ae)
+	out[#out + 1] = string.format("K %d %s %d", idx, i64s(rm), re)
+	idx = idx + 1
+end
+do
+	-- Range-reduction boundary operands, built by the kernel's own
+	-- arithmetic exactly as the Zig driver builds them.
+	local h_m, h_e = fx.div(fx.LN2_M, fx.LN2_E, fx.from_int(2))
+	local nh_m, nh_e = fx.neg(h_m, h_e)
+	local nl_m, nl_e = fx.neg(fx.LN2_M, fx.LN2_E)
+	local EXP_RAW_EDGES = {
+		{ fx.LN2_M, fx.LN2_E }, { nl_m, nl_e },
+		{ h_m, h_e },           { nh_m, nh_e },
+		{ TWO62_I, 29 },        { -TWO62_I, 29 },
+		{ TWO62_I, -63 },
+	}
+	for i = 1, #EXP_RAW_EDGES do
+		local rm, re = fx.exp(EXP_RAW_EDGES[i][1], EXP_RAW_EDGES[i][2])
+		out[#out + 1] = string.format("K %d %s %d", idx, i64s(rm), re)
+		idx = idx + 1
+	end
+end
+for i = 0, count - 1 do
+	local mag = ffi.cast(i64, next_mantissa_magnitude())
+	local e = EXP_E_SET[(i % #EXP_E_SET) + 1]
+	local pm, pe = fx.exp(mag, e)
+	out[#out + 1] = string.format("K %d %s %d", idx, i64s(pm), pe)
+	idx = idx + 1
+	local nm2, ne2 = fx.exp(-mag, e)
+	out[#out + 1] = string.format("K %d %s %d", idx, i64s(nm2), ne2)
+	idx = idx + 1
+end
+
 io.write(table.concat(out, "\n"), "\n")
