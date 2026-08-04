@@ -444,8 +444,240 @@ pub fn main(init: std.process.Init) !void {
         idx += 1;
     }
 
+    // --- O: parse — malformed rejection, signs, fraction-digit cutoff ------
+    idx = 0;
+    for (PARSE_EDGES) |s| {
+        if (fx.parse(s)) |r| {
+            try out.print("O {d} {d} {d}\n", .{ idx, r.m, r.e });
+        } else {
+            try out.print("O {d} nil\n", .{idx});
+        }
+        idx += 1;
+    }
+    {
+        // Mechanically generated decimal corpus: digit counts sweep 1..25,
+        // straddling both the 2^53 double ceiling and the 2^63 i64 ceiling
+        // (so parse's bignum fallback is genuinely exercised), the point
+        // walks every position, and both signs appear.
+        var dbuf: [64]u8 = undefined;
+        for (0..count) |_| {
+            const s = genDecimal(&dbuf);
+            if (fx.parse(s)) |r| {
+                try out.print("O {d} {d} {d}\n", .{ idx, r.m, r.e });
+            } else {
+                try out.print("O {d} nil\n", .{idx});
+            }
+            idx += 1;
+        }
+    }
+
+    // --- P: parseInt / parseIntSafe ----------------------------------------
+    // Bounded at |v| <= 2^53 by construction: past that the reference routes
+    // its result through a double and ROUNDS, where this port returns the
+    // exact i64. That divergence is deliberate (see fixed.zig's parseInt doc
+    // comment) and is pinned by unit test rather than swept here — sweeping
+    // it would only re-measure a defect this port intentionally does not have.
+    idx = 0;
+    for (PARSE_INT_EDGES) |s| {
+        if (fx.parseInt(s)) |v| {
+            try out.print("P {d} {d}\n", .{ idx, v });
+        } else {
+            try out.print("P {d} nil\n", .{idx});
+        }
+        idx += 1;
+        if (fx.parseIntSafe(s)) |v| {
+            try out.print("P {d} {d}\n", .{ idx, v });
+        } else {
+            try out.print("P {d} nil\n", .{idx});
+        }
+        idx += 1;
+    }
+    for (PARSE_INT_SAFE_EDGES) |s| {
+        if (fx.parseIntSafe(s)) |v| {
+            try out.print("P {d} {d}\n", .{ idx, v });
+        } else {
+            try out.print("P {d} nil\n", .{idx});
+        }
+        idx += 1;
+    }
+    {
+        var ibuf: [32]u8 = undefined;
+        for (0..count) |_| {
+            const s = genSafeInt(&ibuf);
+            if (fx.parseInt(s)) |v| {
+                try out.print("P {d} {d}\n", .{ idx, v });
+            } else {
+                try out.print("P {d} nil\n", .{idx});
+            }
+            idx += 1;
+            if (fx.parseIntSafe(s)) |v| {
+                try out.print("P {d} {d}\n", .{ idx, v });
+            } else {
+                try out.print("P {d} nil\n", .{idx});
+            }
+            idx += 1;
+        }
+    }
+
+    // --- Q: toString, swept across every `places` width the CLI can ask ----
+    idx = 0;
+    {
+        var sbuf: [fx.TOSTRING_BUF_LEN]u8 = undefined;
+        for (TOSTRING_EDGES) |c| {
+            for (PLACES_SET) |p| {
+                const s = fx.toString(.{ .m = c.m, .e = c.e }, p, &sbuf) catch "ERR";
+                try out.print("Q {d} {s}\n", .{ idx, s });
+                idx += 1;
+            }
+        }
+        for (0..count) |i| {
+            const mag: i64 = @bitCast(nextMantissaMagnitude());
+            const e = TOSTRING_E_SET[i % TOSTRING_E_SET.len];
+            const p = PLACES_SET[i % PLACES_SET.len];
+            const sp = fx.toString(.{ .m = mag, .e = e }, p, &sbuf) catch "ERR";
+            try out.print("Q {d} {s}\n", .{ idx, sp });
+            idx += 1;
+            const sn = fx.toString(.{ .m = -%mag, .e = e }, p, &sbuf) catch "ERR";
+            try out.print("Q {d} {s}\n", .{ idx, sn });
+            idx += 1;
+        }
+    }
+
+    // --- R: parse/toString ROUND TRIP — the property that ties them ------
+    // Render, re-parse, render again: the two strings must agree. This is an
+    // oracle-free metamorphic check on top of the differential, and it is
+    // what would catch parse and toString drifting apart in the SAME
+    // direction (which a value-for-value comparison against the reference
+    // could in principle miss if both implementations drifted together).
+    idx = 0;
+    {
+        var sbuf: [fx.TOSTRING_BUF_LEN]u8 = undefined;
+        var sbuf2: [fx.TOSTRING_BUF_LEN]u8 = undefined;
+        for (0..count) |i| {
+            const mag: i64 = @bitCast(nextMantissaMagnitude());
+            const e = TOSTRING_E_SET[i % TOSTRING_E_SET.len];
+            const first = fx.toString(.{ .m = mag, .e = e }, 6, &sbuf) catch "ERR";
+            if (fx.parse(first)) |back| {
+                const second = fx.toString(back, 6, &sbuf2) catch "ERR";
+                try out.print("R {d} {s} {s}\n", .{ idx, first, second });
+            } else {
+                try out.print("R {d} {s} nil\n", .{ idx, first });
+            }
+            idx += 1;
+        }
+    }
+
     try out.flush();
 }
+
+/// Deterministic decimal-string generator, mirrored exactly in the Lua half.
+/// Digit counts 1..25 straddle both the 2^53 and 2^63 ceilings so parse's
+/// bignum fallback is genuinely reached.
+fn genDecimal(buf: []u8) []const u8 {
+    var r = nextRaw();
+    const int_len: usize = @intCast(r % 25 + 1);
+    r /= 25;
+    const frac_len: usize = @intCast(r % 20);
+    r /= 20;
+    const negative = (r % 2) == 1;
+    r /= 2;
+    var w: usize = 0;
+    if (negative) {
+        buf[w] = '-';
+        w += 1;
+    }
+    for (0..int_len) |_| {
+        buf[w] = @intCast('0' + @as(u8, @intCast(r % 10)));
+        w += 1;
+        r /= 10;
+        if (r == 0) r = nextRaw();
+    }
+    if (frac_len > 0) {
+        buf[w] = '.';
+        w += 1;
+        for (0..frac_len) |_| {
+            buf[w] = @intCast('0' + @as(u8, @intCast(r % 10)));
+            w += 1;
+            r /= 10;
+            if (r == 0) r = nextRaw();
+        }
+    }
+    return buf[0..w];
+}
+
+/// Integer strings bounded to |v| <= 2^53 — see the P section's comment.
+fn genSafeInt(buf: []u8) []const u8 {
+    var r = nextRaw();
+    const negative = (r % 2) == 1;
+    r /= 2;
+    const v = r % 9007199254740993; // [0, 2^53]
+    var w: usize = 0;
+    if (negative) {
+        buf[w] = '-';
+        w += 1;
+    }
+    const printed = std.fmt.bufPrint(buf[w..], "{d}", .{v}) catch unreachable;
+    return buf[0 .. w + printed.len];
+}
+
+/// parse edges: whitespace, both signs, bare fraction/point, every malformed
+/// shape, the 18-digit fraction cutoff, and magnitudes past i64.
+const PARSE_EDGES = [_][]const u8{
+    "0",           "42",          "-42",         "+42",        "  42  ",
+    "1.5",         "-1.5",        "+1.5",        ".5",         "5.",
+    "",            "   ",         "abc",         "1.2.3",      "-",
+    "+",           "1x",          ".",           "1 2",        "- 1",
+    "0.000000000000000000001", // past the 18-digit fraction cutoff
+    "1.234567890123456789012345",
+    "9007199254740992",  "9007199254740993",
+    "9223372036854775807", "9223372036854775808", // at and past i64 max
+    "18446744073709551616", // 2^64, bignum fallback
+    "99999999999999999999999999999999999999999",
+    "-9223372036854775808", "0.0", "-0.0", "000042", "0000.5000",
+};
+
+/// parseInt edges: the same rejection surface, plus the 2^53 boundary that
+/// separates parseInt from parseIntSafe.
+const PARSE_INT_EDGES = [_][]const u8{
+    "0",   "42",  "-42", "+42", "  42  ", "1.5",  "",    "-",   "+",
+    "abc", "1x",  "007", "-007",
+    "9007199254740992",  "-9007199254740992",
+    "9007199254740991",  "-9007199254740991",
+    "4503599627370496", "9223372036854775808",
+    "99999999999999999999999",
+};
+
+/// parseIntSafe-ONLY edges, straddling the 2^53 ceiling. Unlike parseInt,
+/// parse_int_safe compares the EXACT int64 before any tonumber, so it is exact
+/// on both sides at every magnitude and can be swept past 2^53. Without these
+/// the ceiling itself is untested: a mutant raising it to 2^54 survived the
+/// whole 264k-case sweep.
+const PARSE_INT_SAFE_EDGES = [_][]const u8{
+    "9007199254740992",  "-9007199254740992",   // 2^53, accepted
+    "9007199254740993",  "-9007199254740993",   // 2^53+1, rejected
+    "9007199254740994",  "13510798882111488",   // between 2^53 and 2^54
+    "18014398509481984", "-18014398509481984",  // 2^54
+    "18014398509481983", "9007199254740991",
+};
+
+/// toString edges: canonical zero, the 1e14 scientific-notation trap, the
+/// 2^62 clamp trap, and both sides of the fraction/integer split.
+const TOSTRING_EDGES = [_]struct { m: i64, e: i32 }{
+    .{ .m = 0, .e = 0 },
+    .{ .m = 4611686018427387904, .e = 0 }, // 1
+    .{ .m = -4611686018427387904, .e = 0 }, // -1
+    .{ .m = 4611686018427387904, .e = -1 }, // 0.5
+    .{ .m = 4611686018427387904, .e = 47 }, // ~1e14, the tostring trap
+    .{ .m = 4611686018427387904, .e = 62 }, // 2^62, the clamp trap
+    .{ .m = 4611686018427387904, .e = 63 }, // 2^63, bignum render
+    .{ .m = 4611686018427387904, .e = 100 },
+    .{ .m = std.math.maxInt(i64), .e = 0 },
+    .{ .m = -std.math.maxInt(i64), .e = -3 },
+    .{ .m = 4611686018427387904, .e = -62 }, // tiny
+    .{ .m = 4611686018427387904, .e = -100 }, // rounds to all-zero fraction
+};
+const TOSTRING_E_SET = [_]i32{ -100, -62, -20, -3, -1, 0, 1, 3, 20, 47, 61, 62, 63, 100 };
+const PLACES_SET = [_]usize{ 0, 1, 2, 6, 12, 18 };
 
 /// cosTurns edges: canonical zero, the exact quadrant landmarks (u = 0,
 /// 1/4, 1/2, 3/4, 1), and values just either side of each boundary where

@@ -510,4 +510,171 @@ for i = 0, count - 1 do
 	out[#out + 1] = string.format("N %d %s %d", idx, i64s(nm3), ne3); idx = idx + 1
 end
 
+-- --- O: parse --------------------------------------------------------------
+local PARSE_EDGES = {
+	"0",           "42",          "-42",         "+42",        "  42  ",
+	"1.5",         "-1.5",        "+1.5",        ".5",         "5.",
+	"",            "   ",         "abc",         "1.2.3",      "-",
+	"+",           "1x",          ".",           "1 2",        "- 1",
+	"0.000000000000000000001",
+	"1.234567890123456789012345",
+	"9007199254740992",  "9007199254740993",
+	"9223372036854775807", "9223372036854775808",
+	"18446744073709551616",
+	"99999999999999999999999999999999999999999",
+	"-9223372036854775808", "0.0", "-0.0", "000042", "0000.5000",
+}
+-- Deterministic decimal generator; must match genDecimal in the Zig driver.
+local function gen_decimal()
+	local r = next_raw()
+	local int_len = tonumber(r % 25ULL) + 1
+	r = r / 25ULL
+	local frac_len = tonumber(r % 20ULL)
+	r = r / 20ULL
+	local negative = (r % 2ULL) == 1ULL
+	r = r / 2ULL
+	local p = {}
+	if negative then p[#p + 1] = "-" end
+	for _ = 1, int_len do
+		p[#p + 1] = string.char(48 + tonumber(r % 10ULL))
+		r = r / 10ULL
+		if r == 0ULL then r = next_raw() end
+	end
+	if frac_len > 0 then
+		p[#p + 1] = "."
+		for _ = 1, frac_len do
+			p[#p + 1] = string.char(48 + tonumber(r % 10ULL))
+			r = r / 10ULL
+			if r == 0ULL then r = next_raw() end
+		end
+	end
+	return table.concat(p)
+end
+
+idx = 0
+for i = 1, #PARSE_EDGES do
+	local m, e = fx.parse(PARSE_EDGES[i])
+	if m == nil then
+		out[#out + 1] = string.format("O %d nil", idx)
+	else
+		out[#out + 1] = string.format("O %d %s %d", idx, i64s(m), e)
+	end
+	idx = idx + 1
+end
+for _ = 1, count do
+	local s = gen_decimal()
+	local m, e = fx.parse(s)
+	if m == nil then
+		out[#out + 1] = string.format("O %d nil", idx)
+	else
+		out[#out + 1] = string.format("O %d %s %d", idx, i64s(m), e)
+	end
+	idx = idx + 1
+end
+
+-- --- P: parse_int / parse_int_safe -----------------------------------------
+-- Bounded to |v| <= 2^53: past that the REFERENCE routes its result through a
+-- double and rounds, where the Zig port returns the exact i64. That divergence
+-- is deliberate and unit-pinned on the Zig side; sweeping it here would only
+-- re-measure a defect the port intentionally does not have.
+local PARSE_INT_EDGES = {
+	"0",   "42",  "-42", "+42", "  42  ", "1.5",  "",    "-",   "+",
+	"abc", "1x",  "007", "-007",
+	"9007199254740992",  "-9007199254740992",
+	"9007199254740991",  "-9007199254740991",
+	"4503599627370496", "9223372036854775808",
+	"99999999999999999999999",
+}
+-- parseIntSafe-ONLY edges straddling the 2^53 ceiling. parse_int_safe compares
+-- the EXACT int64 before any tonumber, so unlike parse_int it is exact on both
+-- sides at every magnitude and can be swept past 2^53. Without these the
+-- ceiling itself is untested -- a mutant raising it to 2^54 survived 264k cases.
+local PARSE_INT_SAFE_EDGES = {
+	"9007199254740992",  "-9007199254740992",
+	"9007199254740993",  "-9007199254740993",
+	"9007199254740994",  "13510798882111488",
+	"18014398509481984", "-18014398509481984",
+	"18014398509481983", "9007199254740991",
+}
+-- Integers bounded to |v| <= 2^53; must match genSafeInt in the Zig driver.
+local function gen_safe_int()
+	local r = next_raw()
+	local negative = (r % 2ULL) == 1ULL
+	r = r / 2ULL
+	local v = r % 9007199254740993ULL
+	return (negative and "-" or "") .. u64s(v)
+end
+local function emit_int(tag, v)
+	if v == nil then
+		out[#out + 1] = string.format("%s %d nil", tag, idx)
+	else
+		-- Route through an int64 cdata: parse_int returns a Lua NUMBER, and
+		-- tostring on a double past ~1e14 prints in exponent form, which
+		-- would never match Zig's "{d}".
+		out[#out + 1] = string.format("%s %d %s", tag, idx, i64s(ffi.cast(i64, v)))
+	end
+	idx = idx + 1
+end
+
+idx = 0
+for i = 1, #PARSE_INT_EDGES do
+	emit_int("P", fx.parse_int(PARSE_INT_EDGES[i]))
+	emit_int("P", fx.parse_int_safe(PARSE_INT_EDGES[i]))
+end
+for i = 1, #PARSE_INT_SAFE_EDGES do
+	emit_int("P", fx.parse_int_safe(PARSE_INT_SAFE_EDGES[i]))
+end
+for _ = 1, count do
+	local s = gen_safe_int()
+	emit_int("P", fx.parse_int(s))
+	emit_int("P", fx.parse_int_safe(s))
+end
+
+-- --- Q: tostring -----------------------------------------------------------
+local TOSTRING_EDGES = {
+	{ ffi.cast(i64, 0), 0 },
+	{ TWO62_I, 0 }, { -TWO62_I, 0 },
+	{ TWO62_I, -1 },
+	{ TWO62_I, 47 }, { TWO62_I, 62 }, { TWO62_I, 63 }, { TWO62_I, 100 },
+	{ MAX_I64, 0 }, { -MAX_I64, -3 },
+	{ TWO62_I, -62 }, { TWO62_I, -100 },
+}
+local TOSTRING_E_SET = { -100, -62, -20, -3, -1, 0, 1, 3, 20, 47, 61, 62, 63, 100 }
+local PLACES_SET = { 0, 1, 2, 6, 12, 18 }
+
+idx = 0
+for i = 1, #TOSTRING_EDGES do
+	for j = 1, #PLACES_SET do
+		local okc, s = pcall(fx.tostring, TOSTRING_EDGES[i][1], TOSTRING_EDGES[i][2], PLACES_SET[j])
+		out[#out + 1] = string.format("Q %d %s", idx, okc and s or "ERR")
+		idx = idx + 1
+	end
+end
+for i = 0, count - 1 do
+	local mag = ffi.cast(i64, next_mantissa_magnitude())
+	local e = TOSTRING_E_SET[(i % #TOSTRING_E_SET) + 1]
+	local p = PLACES_SET[(i % #PLACES_SET) + 1]
+	local okp, sp = pcall(fx.tostring, mag, e, p)
+	out[#out + 1] = string.format("Q %d %s", idx, okp and sp or "ERR"); idx = idx + 1
+	local okn, sn = pcall(fx.tostring, -mag, e, p)
+	out[#out + 1] = string.format("Q %d %s", idx, okn and sn or "ERR"); idx = idx + 1
+end
+
+-- --- R: parse/tostring round trip ------------------------------------------
+idx = 0
+for i = 0, count - 1 do
+	local mag = ffi.cast(i64, next_mantissa_magnitude())
+	local e = TOSTRING_E_SET[(i % #TOSTRING_E_SET) + 1]
+	local ok1, first = pcall(fx.tostring, mag, e, 6)
+	first = ok1 and first or "ERR"
+	local bm, be = fx.parse(first)
+	if bm == nil then
+		out[#out + 1] = string.format("R %d %s nil", idx, first)
+	else
+		local ok2, second = pcall(fx.tostring, bm, be, 6)
+		out[#out + 1] = string.format("R %d %s %s", idx, first, ok2 and second or "ERR")
+	end
+	idx = idx + 1
+end
+
 io.write(table.concat(out, "\n"), "\n")

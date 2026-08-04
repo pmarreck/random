@@ -38,11 +38,12 @@
 //! here), so a shipped artifact that trusts its own callers is the right
 //! trade; a contract violation is a bug in this repository, not a user error.
 //!
-//! Port status: Tasks 1–6 of docs/plans/2026-08-02-zig-port.md. `norm`,
+//! Port status: Tasks 1–7 of docs/plans/2026-08-02-zig-port.md. `norm`,
 //! `fromInt`, `mul128`, `mul`, `toIntTrunc`, `add`, `sub`, `neg`, `cmp`,
-//! `frac`, `div`, `ln`, `exp`, `cosTurns`, `sqrt`, `pow`. Decimal I/O (Task 7) is
-//! the remainder, each verified against
-//! `lib/fixed.lua` by tests/zig_differential as it lands.
+//! `frac`, `div`, `ln`, `exp`, `cosTurns`, `sqrt`, `pow`, `parse`, `parseInt`,
+//! `parseIntSafe`, `toString`. The kernel port is COMPLETE; the C FFI
+//! (Task 8) and `randomz` CLI (Task 9) remain. Every function is verified
+//! against `lib/fixed.lua` by tests/zig_differential.
 
 const std = @import("std");
 
@@ -692,6 +693,362 @@ pub fn sqrt(x: Fixed) Fixed {
 pub fn pow(base: Fixed, y: Fixed) Fixed {
     std.debug.assert(base.m > 0); // fixed.pow: base must be positive
     return exp(mul(y, ln(base)));
+}
+
+/// Maximum magnitude an i64-based decimal accumulator holds. Symmetric around
+/// zero: it rejects the single asymmetric two's-complement edge (minInt,
+/// magnitude 2^63) rather than tracking sign during accumulation.
+const INT64_MAX_MAG: i64 = std.math.maxInt(i64);
+
+/// Shared magnitude limit for the integer PART of a parsed or rendered
+/// decimal, in digits. Read by BOTH `parse`'s bignum fallback and
+/// `toString`'s shift guard — the same constant, not two independently chosen
+/// ones, so the two cannot silently disagree about what is parseable versus
+/// renderable. (A hostile review found exactly that defect: `tostring` could
+/// render a value `parse` then refused to read back.)
+pub const MAX_INT_PART_DIGITS: usize = 2000;
+
+/// 2^53 — `parseIntSafe`'s ceiling, beyond which a value cannot survive a
+/// round trip through an IEEE-754 double.
+pub const SAFE_INT_MAG: i64 = 9007199254740992;
+
+/// Buffer size that always suffices for `toString`: sign + the digit limit +
+/// point + fraction.
+pub const TOSTRING_BUF_LEN: usize = MAX_INT_PART_DIGITS + 2 + 64;
+
+/// Lua's `%s` character class, for the leading/trailing trim `parse` performs.
+fn isSpace(c: u8) bool {
+    return c == ' ' or c == '\t' or c == '\n' or c == '\r' or c == 11 or c == 12;
+}
+
+const Accum = struct { v: i64, count: usize, next: usize, overflow: bool };
+
+/// Accumulates consecutive ASCII digits into an i64, reporting overflow rather
+/// than wrapping. The bound is checked BEFORE the multiply — `v > (MAX-d)/10`
+/// — so no intermediate ever exceeds i64.
+fn accumulateDigits(s: []const u8, start: usize) Accum {
+    var v: i64 = 0;
+    var count: usize = 0;
+    var i = start;
+    while (i < s.len) : (i += 1) {
+        const ch = s[i];
+        if (ch < '0' or ch > '9') break;
+        const d: i64 = ch - '0';
+        if (v > @divTrunc(INT64_MAX_MAG - d, 10)) return .{ .v = 0, .count = count, .next = i, .overflow = true };
+        v = v * 10 + d;
+        count += 1;
+    }
+    return .{ .v = v, .count = count, .next = i, .overflow = false };
+}
+
+/// Parses a decimal string to a soft-float. Returns null for malformed input.
+/// NO `strtod`: that is the entire point — a platform decimal parser would
+/// re-introduce cross-platform divergence at the I/O boundary that the kernel
+/// exists to eliminate everywhere else.
+///
+/// An integer part that overflows i64 is NOT malformed: `toString` can
+/// legitimately render values wider than i64 (log-normal's exp is effectively
+/// unbounded), so the overflow path rebuilds the integer part directly as a
+/// soft-float by repeated multiply-by-ten-add-digit, bounded by the SAME
+/// `MAX_INT_PART_DIGITS` the renderer enforces.
+///
+/// Fraction digits past the 18th are DROPPED, not misparsed: 10^18 is the
+/// largest power of ten that still fits i64 exactly as the denominator, and
+/// this kernel's ~62-bit mantissa cannot represent more than that anyway.
+pub fn parse(s_in: []const u8) ?Fixed {
+    var s = s_in;
+    while (s.len > 0 and isSpace(s[0])) s = s[1..];
+    while (s.len > 0 and isSpace(s[s.len - 1])) s = s[0 .. s.len - 1];
+    if (s.len == 0) return null;
+
+    var sign: i32 = 1;
+    var i: usize = 0;
+    if (s[0] == '-') {
+        sign = -1;
+        i = 1;
+    } else if (s[0] == '+') {
+        i = 1;
+    }
+
+    const int_start = i;
+    const acc = accumulateDigits(s, int_start);
+    var int_part: Fixed = undefined;
+    var int_digits: usize = undefined;
+
+    if (acc.overflow) {
+        int_part = Fixed.zero;
+        var digits_seen: usize = 0;
+        var j = int_start;
+        while (j < s.len) : (j += 1) {
+            const ch = s[j];
+            if (ch < '0' or ch > '9') break;
+            digits_seen += 1;
+            if (digits_seen > MAX_INT_PART_DIGITS) return null;
+            int_part = mul(int_part, fromInt(10));
+            int_part = add(int_part, fromInt(ch - '0'));
+        }
+        int_digits = digits_seen;
+        i = j;
+    } else {
+        int_part = fromInt(acc.v);
+        int_digits = acc.count;
+        i = acc.next;
+    }
+
+    var frac_v: i64 = 0;
+    var frac_digits: usize = 0;
+    if (i < s.len and s[i] == '.') {
+        i += 1;
+        while (i < s.len) : (i += 1) {
+            const ch = s[i];
+            if (ch < '0' or ch > '9') break;
+            if (frac_digits < 18) {
+                frac_v = frac_v * 10 + (ch - '0');
+                frac_digits += 1;
+            }
+        }
+    }
+    if (i < s.len) return null; // trailing garbage, e.g. a second '.'
+    if (int_digits == 0 and frac_digits == 0) return null;
+
+    var r = int_part;
+    if (frac_digits > 0) {
+        var den: i64 = 1;
+        for (0..frac_digits) |_| den *= 10;
+        r = add(r, div(fromInt(frac_v), fromInt(den)));
+    }
+    if (sign < 0) r = neg(r);
+    return r;
+}
+
+/// Parses a decimal string to an exact integer. Fractional input is REJECTED
+/// rather than silently floored — a fractional range bound has no meaning.
+///
+/// DELIBERATE DIVERGENCE FROM THE REFERENCE, the only one in this file:
+/// `M.parse_int` ends with `sign * tonumber(v)`, and `tonumber` on an int64
+/// cdata routes through an IEEE-754 double, so the reference silently ROUNDS
+/// results whose magnitude exceeds 2^53. This returns the exact i64 instead.
+/// Peter authorised superior internals behind a preserved API (2026-08-04),
+/// and propagating a precision defect into new code to preserve bit-equality
+/// with it would be the wrong trade. Consequence for testing: the differential
+/// sweeps this function only where |v| <= 2^53, the range where both are
+/// exact; the divergence above that is pinned by unit test instead.
+pub fn parseInt(s_in: []const u8) ?i64 {
+    var s = s_in;
+    while (s.len > 0 and isSpace(s[0])) s = s[1..];
+    while (s.len > 0 and isSpace(s[s.len - 1])) s = s[0 .. s.len - 1];
+    if (s.len == 0) return null;
+
+    var sign: i64 = 1;
+    var i: usize = 0;
+    if (s[0] == '-') {
+        sign = -1;
+        i = 1;
+    } else if (s[0] == '+') {
+        i = 1;
+    }
+    if (i >= s.len) return null; // bare sign, nothing after it
+
+    const acc = accumulateDigits(s, i);
+    if (acc.overflow) return null;
+    if (acc.count == 0) return null;
+    if (acc.next < s.len) return null; // trailing garbage, e.g. "1.5"
+    return sign * acc.v;
+}
+
+/// As `parseInt`, but additionally rejects magnitudes past 2^53 — the point
+/// beyond which a value cannot survive a round trip through a double. This is
+/// what the CLI uses for range bounds and counts.
+pub fn parseIntSafe(s: []const u8) ?i64 {
+    const v = parseInt(s) orelse return null;
+    if (v > SAFE_INT_MAG or v < -SAFE_INT_MAG) return null;
+    return v;
+}
+
+/// Doubles a decimal digit string exactly `n` times by base-10 long
+/// multiplication with LSB->MSB carry propagation. This is the bignum step
+/// `toString` needs once a soft-float's integer part outgrows i64.
+/// O(n · digits); the caller's guard keeps `n` bounded.
+fn decimalShiftLeft(digits: []const u8, n: usize, buf: []u8) []const u8 {
+    var len = digits.len;
+    for (digits, 0..) |c, i| buf[i] = c - '0';
+    for (0..n) |_| {
+        var carry: u8 = 0;
+        var i = len;
+        while (i > 0) {
+            i -= 1;
+            const v = buf[i] * 2 + carry;
+            if (v >= 10) {
+                buf[i] = v - 10;
+                carry = 1;
+            } else {
+                buf[i] = v;
+                carry = 0;
+            }
+        }
+        if (carry > 0) {
+            var j = len;
+            while (j > 0) : (j -= 1) buf[j] = buf[j - 1];
+            buf[0] = carry;
+            len += 1;
+        }
+    }
+    for (buf[0..len]) |*c| c.* += '0';
+    return buf[0..len];
+}
+
+pub const ToStringError = error{ IntegerPartTooLong, BufferTooSmall };
+
+/// Renders a soft-float as a fixed-point decimal with `places` digits.
+/// Integer-only throughout: the fraction advances by repeated multiply-by-ten,
+/// never `printf("%f")`, and the integer part never round-trips through a
+/// double either.
+///
+/// The reference documents two real defects this shape exists to avoid, both
+/// found while verifying rather than predicted: Lua's `tostring` switches to
+/// scientific notation past ~1e14 (splicing "1e+15.001922" into output), and
+/// routing the integer part through `to_int_trunc` collapsed EVERY value at or
+/// past 2^62 to the single clamp constant — three distinct log-normal draws
+/// all printed "9007199254740992.999999".
+///
+/// Writes into `buf` and returns a slice of it; no allocation, so the kernel
+/// stays pure. `TOSTRING_BUF_LEN` always suffices.
+pub fn toString(x: Fixed, places: usize, buf: []u8) ToStringError![]const u8 {
+    if (buf.len < places + 3) return error.BufferTooSmall;
+    if (x.m == 0) {
+        if (places == 0) {
+            buf[0] = '0';
+            return buf[0..1];
+        }
+        buf[0] = '0';
+        buf[1] = '.';
+        @memset(buf[2 .. 2 + places], '0');
+        return buf[0 .. 2 + places];
+    }
+
+    const is_neg = x.m < 0;
+    const a = if (is_neg) neg(x) else x;
+    const sh: i64 = @as(i64, a.e) - 62;
+
+    // Scratch for the integer part's digits. i64ToDecimal is at most 19
+    // characters (a normalized mantissa is in [2^62, 2^63), both 19-digit),
+    // and each doubling adds at most one digit.
+    var ipbuf: [MAX_INT_PART_DIGITS + 24]u8 = undefined;
+    var digbuf: [MAX_INT_PART_DIGITS + 24]u8 = undefined;
+    var ip_str: []const u8 = undefined;
+    var f: Fixed = undefined;
+
+    if (sh >= 0) {
+        // Guard BEFORE the doubling loop, not after: the i32 exponent contract
+        // permits sh up to ~2^31, which would ask for ~646 million digits.
+        // The reference confirmed that hangs rather than merely running slow.
+        if (sh > @as(i64, @intCast(MAX_INT_PART_DIGITS)) - 19) return error.IntegerPartTooLong;
+        const base = std.fmt.bufPrint(&ipbuf, "{d}", .{a.m}) catch return error.BufferTooSmall;
+        ip_str = decimalShiftLeft(base, @intCast(sh), &digbuf);
+        f = Fixed.zero;
+    } else {
+        const s_amt = -sh;
+        const ipv: i64 = if (s_amt > 62) 0 else @divTrunc(a.m, POW2[@intCast(s_amt)]);
+        ip_str = std.fmt.bufPrint(&ipbuf, "{d}", .{ipv}) catch return error.BufferTooSmall;
+        f = sub(a, fromInt(ipv));
+    }
+
+    const total = ip_str.len + (if (is_neg) @as(usize, 1) else 0) + (if (places > 0) places + 1 else 0);
+    if (buf.len < total) return error.BufferTooSmall;
+
+    var w: usize = 0;
+    if (is_neg) {
+        buf[w] = '-';
+        w += 1;
+    }
+    @memcpy(buf[w .. w + ip_str.len], ip_str);
+    w += ip_str.len;
+    if (places > 0) {
+        buf[w] = '.';
+        w += 1;
+        for (0..places) |_| {
+            f = mul(f, fromInt(10));
+            var d = toIntTrunc(f);
+            // Defensive only, not live under the invariant: f stays in [0, 1)
+            // after each subtraction, so d is always in [0, 9]. Kept for an
+            // upstream bug handing in an out-of-invariant intermediate.
+            if (d < 0) d = 0;
+            if (d > 9) d = 9;
+            buf[w] = @intCast('0' + @as(u8, @intCast(d)));
+            w += 1;
+            f = sub(f, fromInt(d));
+        }
+    }
+    return buf[0..w];
+}
+
+test "parse: representative decimals, signs, and rejections" {
+    try std.testing.expectEqual(fromInt(0), parse("0").?);
+    try std.testing.expectEqual(fromInt(42), parse("42").?);
+    try std.testing.expectEqual(fromInt(-42), parse("-42").?);
+    try std.testing.expectEqual(fromInt(42), parse("+42").?);
+    try std.testing.expectEqual(fromInt(42), parse("  42  ").?);
+    // Sign applies to the whole magnitude, integer AND fraction — the
+    // reference has a dedicated pin for this.
+    const a = parse("-1.5").?;
+    const b = neg(parse("1.5").?);
+    try std.testing.expectEqual(b, a);
+    // Malformed
+    try std.testing.expect(parse("") == null);
+    try std.testing.expect(parse("   ") == null);
+    try std.testing.expect(parse("abc") == null);
+    try std.testing.expect(parse("1.2.3") == null);
+    try std.testing.expect(parse("-") == null);
+    try std.testing.expect(parse("1x") == null);
+    try std.testing.expect(parse(".") == null);
+    // Bare fraction and bare integer-with-point are both legal
+    try std.testing.expect(parse(".5") != null);
+    try std.testing.expect(parse("5.") != null);
+}
+
+test "parseInt / parseIntSafe: rejection boundaries" {
+    try std.testing.expectEqual(@as(i64, 42), parseInt("42").?);
+    try std.testing.expectEqual(@as(i64, -42), parseInt("-42").?);
+    try std.testing.expect(parseInt("1.5") == null); // fraction rejected, not floored
+    try std.testing.expect(parseInt("") == null);
+    try std.testing.expect(parseInt("-") == null);
+    try std.testing.expect(parseInt("99999999999999999999999") == null); // i64 overflow
+    // parseIntSafe's extra 2^53 ceiling
+    try std.testing.expectEqual(SAFE_INT_MAG, parseIntSafe("9007199254740992").?);
+    try std.testing.expect(parseIntSafe("9007199254740993") == null);
+    try std.testing.expectEqual(-SAFE_INT_MAG, parseIntSafe("-9007199254740992").?);
+    // parseInt still accepts it, exactly — the deliberate divergence from the
+    // reference, which would round this through a double.
+    try std.testing.expectEqual(@as(i64, 9007199254740993), parseInt("9007199254740993").?);
+    try std.testing.expectEqual(std.math.maxInt(i64), parseInt("9223372036854775807").?);
+}
+
+test "toString: renders without scientific notation or clamping" {
+    var buf: [TOSTRING_BUF_LEN]u8 = undefined;
+    try std.testing.expectEqualStrings("0.000000", try toString(Fixed.zero, 6, &buf));
+    try std.testing.expectEqualStrings("0", try toString(Fixed.zero, 0, &buf));
+    try std.testing.expectEqualStrings("1.500000", try toString(parse("1.5").?, 6, &buf));
+    try std.testing.expectEqualStrings("-1.500000", try toString(parse("-1.5").?, 6, &buf));
+    try std.testing.expectEqualStrings("42", try toString(fromInt(42), 0, &buf));
+    // Past 1e14, where Lua's tostring would have emitted "1e+15".
+    try std.testing.expectEqualStrings("1000000000000000", try toString(fromInt(1000000000000000), 0, &buf));
+    // At/past 2^62, where routing through toIntTrunc would have collapsed
+    // every value to the 2^53 clamp constant.
+    try std.testing.expectEqualStrings("4611686018427387904", try toString(fromInt(4611686018427387904), 0, &buf));
+    // The shared digit limit is enforced rather than hung on.
+    try std.testing.expectError(error.IntegerPartTooLong, toString(.{ .m = 4611686018427387904, .e = 2147483647 }, 0, &buf));
+}
+
+test "parse/toString round-trip past i64, via the bignum paths" {
+    var buf: [TOSTRING_BUF_LEN]u8 = undefined;
+    // 2^63 exactly: needs toString's decimalShiftLeft AND parse's bignum
+    // fallback. The reference's parse returned nil here before its fallback
+    // existed.
+    const big = Fixed{ .m = 4611686018427387904, .e = 63 };
+    const s = try toString(big, 0, &buf);
+    try std.testing.expectEqualStrings("9223372036854775808", s);
+    const back = parse(s).?;
+    try std.testing.expectEqual(big, back);
 }
 
 test "cosTurns: exact quadrant landmarks" {
