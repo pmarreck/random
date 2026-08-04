@@ -113,6 +113,11 @@
       PCG32 stays the fast default and must be documented as PREDICTABLE
       (state recoverable from a few outputs); a `--secure` flag swaps the
       generator. Distributions layer unchanged on top of either.
+      PRIMITIVE SETTLED (2026-08-04): BLAKE3 from Egor Skriptunoff's
+      MIT-licensed pure_lua_SHA on the LuaJIT side, std.crypto.hash.Blake3
+      on the Zig side -- both verified bit-exact against the official
+      test-vector methodology (246/246, all three modes, seekable XOF).
+      See docs/research/2026-08-04-pure-lua-blake3-evaluation.md.
 
 ## Inbox-driven (additive, after current Zig-port task)
 - [ ] **Einstein 2026-08-04: assess `random` as entropy source for

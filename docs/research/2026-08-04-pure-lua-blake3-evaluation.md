@@ -81,7 +81,60 @@ roughly an order of magnitude off the C library — and still far faster than
 this use case needs (a fuzz loop drawing 64 random bytes per iteration would
 spend ~3µs/draw).
 
-## Blocker: no license
+## RESOLVED: use `pure_lua_SHA`, which is MIT and contains the same BLAKE3
+
+Peter spotted that the same author maintains
+[`pure_lua_SHA`](https://github.com/Egor-Skriptunoff/pure_lua_SHA), whose
+`sha2.lua` (VERSION 12, 2022-02-23) exports the **same** BLAKE3 API —
+`blake3(message, key, digest_size_in_bytes)`, `blake3_derive_key`, and the
+`digest_size = -1` seekable XOF — under an explicit grant:
+
+> MIT License — Copyright (c) 2018-2022 Egor Skriptunoff
+
+Re-ran the identical differential against it:
+
+- **246/246 vectors byte-identical to the Zig stdlib**, and byte-identical to
+  the gist as well (so the two Lua sources agree with each other and with the
+  library).
+- **Seekable XOF verified: 6/6** out-of-order reads match the Zig-generated
+  contiguous stream, same methodology as above.
+
+### Head-to-head performance (two runs, both orderings, to control for
+### JIT-warmup order effects)
+
+| implementation | bulk keyed | DRBG-shaped (64B keyed draws) | `require` |
+|---|---|---|---|
+| gist (`blake3_for_luajit.lua`, 14 KB) | ~346 MB/s | **~223,000/s** | ~0 ms |
+| MIT (`sha2.lua`, 276 KB) | ~345 MB/s | ~155,000/s | ~7 ms |
+
+Bulk throughput is a wash (within noise). The gist is **~44% faster on the
+small-call path**, consistently across both runs and both orderings — which
+makes sense: it is LuaJIT-specific, where `sha2.lua` dispatches across Lua
+5.1–5.4 / LuaJIT / Luau and carries per-call overhead. A benchmark-internal
+assertion cross-checks the two implementations agree before either is timed.
+
+### Why the slower one is nonetheless the right choice
+
+**The LuaJIT side is the differential ORACLE, not the production path.** Its
+job is to be independently correct; the Zig implementation is what ships and
+what runs in a fuzz loop. Optimizing the oracle for speed is optimizing the
+wrong thing — and 155,000 draws/s is ~6.4 µs per 64-byte draw regardless,
+far beyond what this use case needs.
+
+So: **adopt `pure_lua_SHA`.** Licensing is a hard blocker; a 44% edge on a
+path that does not need it is a preference. As a bonus, the same file
+supplies SHA-2/SHA-3/BLAKE2/MD5 should anything later want them.
+
+### Attribution
+
+Both sources are by **Egor Skriptunoff**. Any vendored copy keeps the MIT
+header and copyright line intact, and the project's own docs should credit
+the upstream repository by name and URL rather than silently absorbing the
+code. If the gist's speed ever becomes relevant, the correct move is to ask
+the author to add a license to it — not to infer one from the sibling
+repository, since an author may license different works differently.
+
+## Original blocker (retained for the record): the gist has no license
 
 The gist carries **no license header, and no license field in its gist
 metadata** (checked via the GitHub API: description "BLAKE3 for LuaJIT",
@@ -113,9 +166,18 @@ measured.
 
 ## Recommendation
 
-Correctness and performance are settled: this implementation is bit-exact
-against the Zig stdlib across the official vector methodology, including
-keyed and derive_key modes and seekable XOF, at ~346 MB/s. Do not adopt it
-into the repo until licensing is resolved. Pursue (1); fall back to (3),
-which is independently attractive for being small enough to audit line by
-line.
+**Adopt BLAKE3 from `pure_lua_SHA` (MIT) for the LuaJIT side; use
+`std.crypto.hash.Blake3` on the Zig side.** Both are verified bit-exact
+against the official test-vector methodology, in all three modes, including
+seekable XOF. No dependency on `libblake3`, no hand-written crypto, no
+licensing ambiguity.
+
+The DRBG then reduces to: seed 32 bytes from `getrandom`/`getentropy`
+(deterministic mode: derive the key from the user seed via BLAKE3's KDF
+mode), then either seek the keyed XOF or keyed-hash a counter — both give
+O(1) random access to draw *N*, which is what makes replaying a single
+fuzz-corpus entry cheap.
+
+Still open, and deliberately NOT started: this is a new feature needing its
+own plan document and golden vectors, and it sits behind the entropy fix
+(fail-closed `getrandom`) and the remaining kernel port tasks in PLAN.md.
