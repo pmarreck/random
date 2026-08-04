@@ -376,6 +376,16 @@ pub fn div(a: Fixed, b: Fixed) Fixed {
 /// scale: 2·floor(l(2)·2^62) ends in ...828, but floor(l(2)·2^63) ends in
 /// ...829 — the fractional bit the coarser truncation discards is a 1, so
 /// "truncate at 2^62 then renormalize" is wrong by exactly 1 ULP.
+///
+/// PROVEN, not merely measured (2026-08-04): by integer enclosure over
+/// ln2 = Σ 1/(k·2^k), whose tail past N is < 2/((N+1)·2^N). In bc, scale=0:
+///   s = 0; for (k = 1; k <= 100; k++) { s += 2^80 / (k * 2^k) }
+/// Every term is exact integer division losing < 1 unit at 2^-80, terms
+/// vanish for k ≥ 74, and the analytic tail past k=100 is < 2^-107 < 1 unit,
+/// so ln2·2^80 ∈ [s, s+75] with certainty. Both ends floor to the SAME
+/// integer at 2^63 scale — this one — and the fractional position
+/// (117184/131072 ≈ 0.89) shows the enclosure sits nowhere near an integer
+/// boundary, so no Table-Maker's-Dilemma escalation was needed.
 pub const LN2: Fixed = .{ .m = 6393154322601327829, .e = -1 };
 
 /// Series lengths, measured in the reference, not assumed: ln's atanh series
