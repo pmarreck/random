@@ -123,16 +123,27 @@ recorded on 2026-08-04).
       who prefer a loud error to a wait (Peter's explicit request); a
       `--random-source=PATH` option à la `shuf` also makes the failure path
       naturally testable without the code knowing it is under test.
-- [ ] **Make `drandom` itself a CSPRNG.** Not a `--secure` opt-in: the
+- [ ] **Make `drandom` itself a CSPRNG — NOW, BEFORE the FFI/CLI port
+      (resequenced 2026-08-04 by Peter).** Rationale: porting PCG32 to Zig in
+      Task 8 and then deleting it the same day for BLAKE3 is pure waste; replace
+      the generator first, then port the result, so the Zig core implements
+      BLAKE3 directly and PCG32 is never ported. Not a `--secure` opt-in: the
       deterministic path becomes a BLAKE3 keyed DRBG outright. Seed 32 bytes
-      from `getrandom` when none is given; a user `--seed` is expanded
-      through BLAKE3's KDF rather than used raw. Counter mode or seekable XOF
-      — both give O(1) random access to draw N, which is what makes replaying
-      one fuzz-corpus entry cheap.
-      CONSEQUENCE TO PLAN FOR: seeded streams change completely, so every
-      deterministic golden vector must be re-blessed in the same commit. Do
-      this AFTER the kernel port lands, so goldens move exactly once and both
-      implementations change together.
+      from `getrandom` when none is given (couples to the entropy fix below); a
+      user `--seed` is expanded through BLAKE3's KDF rather than used raw.
+      Counter mode or seekable XOF — both give O(1) random access to draw N,
+      which is what makes replaying one fuzz-corpus entry cheap.
+      CONSEQUENCE: seeded streams change completely, so every deterministic
+      golden vector must be re-blessed in the SAME commit. (This is why it was
+      originally scheduled last; moving it first means the FFI/CLI port and the
+      CLI-level differential are built against the FINAL generator, not a
+      throwaway one — the goldens still move exactly once.)
+      DESIGN: being brainstormed 2026-08-04 (superpowers:brainstorming); spec
+      will land in docs/superpowers/specs/. Open forks: XOF-seek vs
+      keyed-hash-of-counter; --seed → key mapping (BLAKE3 KDF vs derive_key vs
+      keyed hash); new persisted-state format (key + counter); counter/byte
+      endianness (pin cross-platform); vendor pure_lua_SHA whole vs strip to
+      LuaJIT-only BLAKE3.
       SPEED NOTE (measured, not assumed): BLAKE3 in LuaJIT yields ~1.8M u64
       draws/s vs PCG32's far higher rate — acceptable, because the LuaJIT
       side is the ORACLE; Zig's SIMD BLAKE3 is the production path. If a
