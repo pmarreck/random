@@ -125,6 +125,37 @@ So: **adopt `pure_lua_SHA`.** Licensing is a hard blocker; a 44% edge on a
 path that does not need it is a preference. As a bonus, the same file
 supplies SHA-2/SHA-3/BLAKE2/MD5 should anything later want them.
 
+### Chronology — the gist is the DERIVATIVE, not the ancestor
+
+Checked rather than assumed (the working assumption had been the reverse):
+
+| event | date |
+|---|---|
+| `pure_lua_SHA` repo created | 2018-10-06 |
+| **BLAKE3 added** (sha2.lua VERSION 11) | **2022-01-09** |
+| sha2.lua VERSION 12 | 2022-02-23 |
+| **gist created** | **2022-03-05** |
+
+The gist postdates BLAKE3's arrival in the MIT repo by two months, so it is
+almost certainly the author's own LuaJIT-specific extraction of code that was
+already MIT-licensed — not the seed it grew from.
+
+Two consequences:
+
+1. **Deriving our own LuaJIT-only version from `sha2.lua` retraces the path
+   the author himself took**, and should land close to the gist's numbers.
+   MIT explicitly permits modification, so the derivative stays MIT with the
+   copyright notice retained. This is the sanctioned route to the gist's
+   performance without depending on the unlicensed file.
+2. It still does **not** make the gist MIT. The author holds the copyright
+   and may publish a derivative of his own work under different terms, or
+   none. Provenance is what matters, not resemblance: copyright attaches to
+   the act of copying, so a version we derive from the MIT source has clean
+   chain of title even if it converges on nearly identical code.
+
+(Legal reasoning by a non-lawyer; the conservative path was chosen precisely
+because it needs no legal judgement call.)
+
 ### Attribution
 
 Both sources are by **Egor Skriptunoff**. Any vendored copy keeps the MIT
