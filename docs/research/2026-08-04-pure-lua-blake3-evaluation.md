@@ -1,7 +1,8 @@
 # Pure-Lua BLAKE3 evaluated against the Zig stdlib oracle
 
-**Date:** 2026-08-04 · **Verdict:** the implementation is correct and fast
-enough; **licensing is the only blocker.**
+**Date:** 2026-08-04 · **Verdict:** the LuaJIT-specific implementation is
+correct, materially faster on DRBG-sized calls, and adopted with an explicit
+best-effort licensing/provenance notice pending author clarification.
 
 ## Why this was tested
 
@@ -81,7 +82,7 @@ roughly an order of magnitude off the C library — and still far faster than
 this use case needs (a fuzz loop drawing 64 random bytes per iteration would
 spend ~3µs/draw).
 
-## RESOLVED: use `pure_lua_SHA`, which is MIT and contains the same BLAKE3
+## License/provenance investigation
 
 Peter spotted that the same author maintains
 [`pure_lua_SHA`](https://github.com/Egor-Skriptunoff/pure_lua_SHA), whose
@@ -113,17 +114,13 @@ makes sense: it is LuaJIT-specific, where `sha2.lua` dispatches across Lua
 5.1–5.4 / LuaJIT / Luau and carries per-call overhead. A benchmark-internal
 assertion cross-checks the two implementations agree before either is timed.
 
-### Why the slower one is nonetheless the right choice
+### Decision
 
-**The LuaJIT side is the differential ORACLE, not the production path.** Its
-job is to be independently correct; the Zig implementation is what ships and
-what runs in a fuzz loop. Optimizing the oracle for speed is optimizing the
-wrong thing — and 155,000 draws/s is ~6.4 µs per 64-byte draw regardless,
-far beyond what this use case needs.
-
-So: **adopt `pure_lua_SHA`.** Licensing is a hard blocker; a 44% edge on a
-path that does not need it is a preference. As a bonus, the same file
-supplies SHA-2/SHA-3/BLAKE2/MD5 should anything later want them.
+Peter chose the LuaJIT-specific gist. It is the architecturally appropriate
+implementation for the LuaJIT oracle and is materially faster on the small
+calls this DRBG actually makes. The much larger general-purpose hash library
+would add unrelated code and runtime dispatch without improving the BLAKE3
+result.
 
 ### Chronology — the gist is the DERIVATIVE, not the ancestor
 
@@ -140,32 +137,22 @@ The gist postdates BLAKE3's arrival in the MIT repo by two months, so it is
 almost certainly the author's own LuaJIT-specific extraction of code that was
 already MIT-licensed — not the seed it grew from.
 
-Two consequences:
-
-1. **Deriving our own LuaJIT-only version from `sha2.lua` retraces the path
-   the author himself took**, and should land close to the gist's numbers.
-   MIT explicitly permits modification, so the derivative stays MIT with the
-   copyright notice retained. This is the sanctioned route to the gist's
-   performance without depending on the unlicensed file.
-2. It still does **not** make the gist MIT. The author holds the copyright
-   and may publish a derivative of his own work under different terms, or
-   none. Provenance is what matters, not resemblance: copyright attaches to
-   the act of copying, so a version we derive from the MIT source has clean
-   chain of title even if it converges on nearly identical code.
-
-(Legal reasoning by a non-lawyer; the conservative path was chosen precisely
-because it needs no legal judgement call.)
+Direct comparison adds the architectural evidence to that chronology: the
+gist is the same author's later LuaJIT-specific derivative of the BLAKE3 work
+already published under MIT in `pure_lua_SHA`. The project therefore carries
+the earlier work's complete MIT notice with the gist, while stating plainly
+that the gist itself has no separately visible license. This is a best-effort
+inference, not a claim of legal certainty or a claim that the gist contains an
+explicit grant.
 
 ### Attribution
 
-Both sources are by **Egor Skriptunoff**. Any vendored copy keeps the MIT
-header and copyright line intact, and the project's own docs should credit
-the upstream repository by name and URL rather than silently absorbing the
-code. If the gist's speed ever becomes relevant, the correct move is to ask
-the author to add a license to it — not to infer one from the sibling
-repository, since an author may license different works differently.
+Both sources are by **Egor Skriptunoff**. The vendored copy keeps the full MIT
+notice and copyright line, credits both upstream URLs and exact commits, and
+records the pending-clarification caveat rather than silently absorbing the
+code. Clarification should still be sought if contact becomes practicable.
 
-## Original blocker (retained for the record): the gist has no license
+## Caveat retained for the record: the gist has no visible license
 
 The gist carries **no license header, and no license field in its gist
 metadata** (checked via the GitHub API: description "BLAKE3 for LuaJIT",
@@ -174,10 +161,9 @@ copyright line anywhere in the source). Absent an explicit grant, default
 copyright applies and vendoring it into an MIT-licensed repository is not
 something to do quietly.
 
-Resolution paths, in order of preference:
+Alternatives considered before Peter's provenance decision were:
 
-1. **Ask the author** to add a license (he licensed `pure_lua_SHA` MIT, so
-   this is likely a simple oversight and a one-line answer).
+1. **Ask the author** to add a license (presently not practicable).
 2. Depend on nixpkgs `libblake3` via FFI for the LuaJIT side (correct and
    official, at the cost of a runtime dep — which is *also* what the
    `getrandom` FFI work introduces anyway, so the marginal cost is smaller
@@ -195,13 +181,13 @@ keyed hashing of a counter — already gives O(1) random access to draw *N*
 using only the API verified above. That is the shape the DRBG benchmark
 measured.
 
-## Recommendation
+## Implemented recommendation
 
-**Adopt BLAKE3 from `pure_lua_SHA` (MIT) for the LuaJIT side; use
-`std.crypto.hash.Blake3` on the Zig side.** Both are verified bit-exact
-against the official test-vector methodology, in all three modes, including
-seekable XOF. No dependency on `libblake3`, no hand-written crypto, no
-licensing ambiguity.
+**Use the faster LuaJIT-specific BLAKE3 with the complete provenance caveat;
+use `std.crypto.hash.Blake3` on the Zig side.** The Lua implementation is also
+gated directly against all 35 upstream published expected cases in all three
+modes, not only against generated Zig differential results. There is no
+dependency on `libblake3` and no new handwritten cryptographic primitive.
 
 The DRBG then reduces to: seed 32 bytes from `getrandom`/`getentropy`
 (deterministic mode: derive the key from the user seed via BLAKE3's KDF
@@ -209,6 +195,7 @@ mode), then either seek the keyed XOF or keyed-hash a counter — both give
 O(1) random access to draw *N*, which is what makes replaying a single
 fuzz-corpus entry cheap.
 
-Still open, and deliberately NOT started: this is a new feature needing its
-own plan document and golden vectors, and it sits behind the entropy fix
-(fail-closed `getrandom`) and the remaining kernel port tasks in PLAN.md.
+The LuaJIT DRBG, fail-closed entropy adapter, strict seed grammar, replayable
+auto-seeds, official-vector gate, independent Zig DRBG reference, and
+re-blessed goldens were implemented together on 2026-08-04. The production Zig
+port remains downstream, with LuaJIT as its behavioral oracle.

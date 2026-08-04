@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Verify the vendored BLAKE3 against an immutable upstream fixture and then
+# execute every published expected vector. No `set -e`; see ./test.
+set -u
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fixture="$here/fixtures/blake3-test-vectors.json"
+expected_hash="dcb91ea8accc77e6d6e632af7cdc1a99a9f3ae78cf648da595c7d064db32f624"
+
+if [ ! -f "$fixture" ]; then
+	echo "blake3 test FAILED: official fixture missing" >&2
+	exit 1
+fi
+
+if command -v sha256sum >/dev/null 2>&1; then
+	actual_hash="$(sha256sum "$fixture" | awk '{print $1}')"
+else
+	actual_hash="$(shasum -a 256 "$fixture" | awk '{print $1}')"
+fi
+if [ "$actual_hash" != "$expected_hash" ]; then
+	echo "blake3 test FAILED: official fixture hash changed" >&2
+	echo "expected $expected_hash" >&2
+	echo "actual   $actual_hash" >&2
+	exit 1
+fi
+
+output="$(luajit "$here/blake3_vectors.lua" 2>&1)"
+status=$?
+if [ "$status" -ne 0 ]; then
+	echo "blake3 test FAILED: vector runner exited $status" >&2
+	printf '%s\n' "$output" >&2
+	exit 1
+fi
+
+printf '%s\n' "$output"

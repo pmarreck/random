@@ -2,7 +2,8 @@
 # CLI-level JIT-vs-interpreter differential control, over bin/random
 # ITSELF rather than a standalone repro script -- see lib/fixed.lua's
 # jit.off(M.norm) doc comment for why that distinction matters: a
-# hand-extracted standalone script with the SAME PCG32 + exponential_random
+# hand-extracted standalone script with the same former generator +
+# exponential_random
 # logic did NOT reproduce the LuaJIT/LuaJIT#1499 miscompilation Task 12
 # found through bin/random's own call site, because trace formation is
 # sensitive to the exact warm-up/bytecode context only a real caller
@@ -33,9 +34,8 @@ if ! command -v luajit >/dev/null 2>&1; then
 fi
 
 # Only distributions that actually call into lib/fixed.lua's soft-float
-# kernel -- plain uniform mode never enters that file at all (confirmed
-# in lib/fixed.lua's own cost-measurement comment: "pcg32_range ... makes
-# zero calls into lib/fixed.lua at all"), so differential-testing it here
+# kernel -- plain uniform mode never enters that file at all, so
+# differential-testing it here
 # would exercise nothing this control exists to catch.
 DISTS=(
 	"--normalized --mean 50 --stddev 15"

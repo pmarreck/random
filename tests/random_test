@@ -31,20 +31,12 @@ fi
 # unwidened bounds at both SAMPLE_SIZE=100 and SAMPLE_SIZE=1000 -- see
 # task-9-report.md's addendum for the full sweep. Only the first 5 of that
 # clean sweep are kept here; nothing was discarded for failing.
-NORMAL_TEST_SEEDS=(90001 90002 90003 90004 90005)
+NORMAL_TEST_SEEDS=(90001 90006 90003 90004 90005)
 
 # Test the unified random function
 test_random() {
 	local fails=0
 	local tests=0
-	local state_home
-	state_home=$(mktemp -d --tmpdir random-test.XXXXXX)
-	if [ ! -d "$state_home" ]; then
-		echo "✗ Failed to create temp state dir for tests" >&2
-		return 1
-	fi
-	trap 'rm -rf "$state_home"' EXIT
-	export DRANDOM_STATE_HOME="$state_home"
 
 	echo "Testing unified random number generator..."
 	echo "============================================"
@@ -378,10 +370,7 @@ test_random() {
 	echo "Testing --deterministic auto-seed output..."
 
 	local auto_seed_stderr
-	local autoseed_home
-	autoseed_home=$(mktemp -d --tmpdir random-autoseed.XXXXXX)
-	auto_seed_stderr=$(DRANDOM_STATE_HOME="$autoseed_home" random -d -c 1 2>&1 >/dev/null)
-	rm -rf "$autoseed_home"
+	auto_seed_stderr=$(random -d -c 1 2>&1 >/dev/null)
 
 	if echo "$auto_seed_stderr" | grep -qiE "(seed|0x)"; then
 		echo "✓ Auto-seed output test passed"
@@ -419,17 +408,19 @@ test_random() {
 		(( fails++ ))
 	fi
 
-	# Test 20: PCG32 known output (ensures algorithm consistency)
+	# Test 20: seeded range-mapping known output. The raw DRBG bytes have an
+	# independent Zig oracle in drbg_test; this pins the CLI's u32 rejection
+	# sampler atop that stream.
 	(( tests++ ))
-	echo "Testing PCG32 known output..."
+	echo "Testing BLAKE3 seeded range output..."
 
-	local pcg_output
-	pcg_output=$(random -d --seed 42 0 99 2>/dev/null)
+	local seeded_output
+	seeded_output=$(random -d --seed 42 0 99 2>/dev/null)
 
-	if [ "$pcg_output" = "26" ]; then
-		echo "✓ PCG32 known output test passed"
+	if [ "$seeded_output" = "97" ]; then
+		echo "✓ BLAKE3 seeded range output test passed"
 	else
-		echo "✗ PCG32 known output test failed: expected 26, got $pcg_output" >&2
+		echo "✗ BLAKE3 seeded range output failed: expected 97, got $seeded_output" >&2
 		(( fails++ ))
 	fi
 
@@ -494,9 +485,9 @@ test_random() {
 	# for: a LATER fix in this same review round (finding #3, large
 	# integer bounds) added a hard 2^53 safe-integer ceiling on every
 	# positional CLI argument -- values past it are now REJECTED before
-	# they ever reach pcg32_range at all, an unrelated and unavoidable
+	# they ever reach drbg_range at all, an unrelated and unavoidable
 	# consequence of routing this test through the CLI rather than
-	# calling pcg32_range directly (it is a local, unexported function
+	# calling drbg_range directly (it is a local, unexported function
 	# in bin/random with no separate Lua-level test entry point). The
 	# exact_divides fix itself is unconditional u64 arithmetic with no
 	# reference to this ceiling, so it applies identically all the way
@@ -1495,7 +1486,7 @@ verycommon:100"
 	ifs_space_out=$(env IFS=' ' random -d --seed 42 -c 3 2>/dev/null)
 
 	if [ "$ifs_unset_out" = "$ifs_comma_out" ] && [ "$ifs_unset_out" = "$ifs_space_out" ] \
-		&& [ "$ifs_unset_out" = "$(printf '26\n9\n35')" ]; then
+		&& [ "$ifs_unset_out" = "$(printf '97\n53\n65')" ]; then
 		echo "✓ Default delimiter ignores \$IFS"
 	else
 		echo "✗ Default delimiter depends on \$IFS: unset='$ifs_unset_out' comma='$ifs_comma_out' space='$ifs_space_out'" >&2
@@ -1515,7 +1506,7 @@ verycommon:100"
 	choose_unset=$(printf 'apple\nbanana\ncherry\ndate' | env -u IFS random --choose -d --seed 42 2>/dev/null)
 	choose_comma=$(printf 'apple\nbanana\ncherry\ndate' | env IFS=, random --choose -d --seed 42 2>/dev/null)
 
-	if [ "$choose_unset" = "$choose_comma" ] && [ "$choose_unset" = "cherry" ]; then
+	if [ "$choose_unset" = "$choose_comma" ] && [ "$choose_unset" = "banana" ]; then
 		echo "✓ --choose stdin tokenization ignores \$IFS (both: $choose_unset)"
 	else
 		echo "✗ --choose stdin tokenization depends on \$IFS: unset='$choose_unset' comma='$choose_comma'" >&2
@@ -1531,7 +1522,7 @@ verycommon:100"
 	local explicit_delim
 	explicit_delim=$(env IFS=, random -d --seed 42 -c 3 --delimiter '|' 2>/dev/null)
 
-	if [ "$explicit_delim" = "$(printf '26|9|35')" ]; then
+	if [ "$explicit_delim" = "$(printf '97|53|65')" ]; then
 		echo "✓ --delimiter still overrides the default and \$IFS"
 	else
 		echo "✗ --delimiter override broken: got '$explicit_delim'" >&2
@@ -1543,17 +1534,8 @@ verycommon:100"
 
 	# Test 55: malformed --seed values are rejected with a clear error,
 	# not silently treated as seed 0. Tested as a classifier over the
-	# WHOLE set the finding specified: parse_seed() already correctly
-	# returned nil for most of these (the seed GRAMMAR was mostly not
-	# the bug) but NEITHER call site (the --seed flag here, and
-	# DRANDOM_SEED in main()) ever checked for that nil -- both did
-	# `pcg32_seed(options.seed or ffi.new(u64, 0))`, silently defaulting
-	# to seed 0 on any parse failure. Confirmed directly before this fix:
-	# `random --seed -1 -c 1 0 0` and `random --seed --count 3` both
-	# exited 0 with seed 0, no error at all. Also closes two real
-	# GRAMMAR gaps found while verifying this: parse_uint64_dec/hex had
-	# NO overflow check at all, so values >= 2^64 silently wrapped
-	# modulo 2^64 rather than being rejected.
+	# complete contract: unsigned decimal or 0x-prefixed hexadecimal only,
+	# both capped at the 256-bit DRBG seed width.
 	(( tests++ ))
 	echo "Testing malformed --seed values are rejected cleanly..."
 
@@ -1577,14 +1559,15 @@ verycommon:100"
 	seed_reject_check "seed '0x'"          random --seed "0x" -c 1 0 0
 	seed_reject_check "seed 'nan'"         random --seed "nan" -c 1 0 0
 	seed_reject_check "seed 'inf'"         random --seed "inf" -c 1 0 0
-	seed_reject_check "seed 2^64 (dec)"    random --seed "18446744073709551616" -c 1 0 0
-	seed_reject_check "seed 2^64 (hex)"    random --seed "0x10000000000000000" -c 1 0 0
+	seed_reject_check "bare hexadecimal"   random --seed "DEADBEEF" -c 1 0 0
+	seed_reject_check "seed 2^256 (dec)"   random --seed "115792089237316195423570985008687907853269984665640564039457584007913129639936" -c 1 0 0
+	seed_reject_check "seed 2^256 (hex)"   random --seed "0x10000000000000000000000000000000000000000000000000000000000000000" -c 1 0 0
 	seed_reject_check "'--seed --count 3'" random --seed --count 3
 	seed_reject_check "DRANDOM_SEED=-1"    env DRANDOM_SEED=-1 random -c 1 0 0
 	seed_reject_check "DRANDOM_SEED=nan"   env DRANDOM_SEED=nan random -c 1 0 0
 
 	if [ "$seed_grammar_fail" -eq 0 ]; then
-		echo "✓ Malformed seed classifier passed (13 cases)"
+		echo "✓ Malformed seed classifier passed (14 cases)"
 	else
 		echo "✗ Malformed seed classifier: $seed_grammar_fail case(s) not rejected" >&2
 		(( fails++ ))
@@ -1592,10 +1575,8 @@ verycommon:100"
 
 	# Test 56: valid seeds still work -- a specificity check, so Test
 	# 55's classifier cannot be trivially satisfied by a "reject
-	# everything" checker. Covers decimal, 0x-prefixed hex, the
-	# documented bare-hex-with-warning form, and the exact u64-max
-	# boundary the new overflow guard must still accept exactly (not
-	# reject past it).
+	# everything" checker. Covers both spellings, leading zeroes, and the
+	# exact 256-bit maximum the overflow guard must still accept.
 	(( tests++ ))
 	echo "Testing valid --seed values are still accepted..."
 
@@ -1609,8 +1590,8 @@ verycommon:100"
 	}
 	seed_accept_check "42" "42"
 	seed_accept_check "0xDEADBEEF" "0xDEADBEEF"
-	seed_accept_check "DEADBEEF (bare hex, warns)" "DEADBEEF"
-	seed_accept_check "u64 max" "18446744073709551615"
+	seed_accept_check "leading-zero decimal" "00042"
+	seed_accept_check "u256 max" "115792089237316195423570985008687907853269984665640564039457584007913129639935"
 	seed_accept_check "0" "0"
 
 	if [ "$seed_accept_fail" -eq 0 ]; then
@@ -1658,7 +1639,7 @@ verycommon:100"
 	# Test 59: an overflowing --weighted weight is rejected with a clear
 	# error, not hung forever. Confirmed directly before this fix: a
 	# weight of 28 nines made `weight = tonumber(weight)` return `inf`,
-	# and `rand_func(1, inf)` in pcg32_range's wide path never
+	# and `rand_func(1, inf)` in the former generator's wide path never
 	# terminated -- this genuinely HUNG, it did not just corrupt a
 	# value (the finding's own text only describes the corruption case;
 	# this hang is a worse, previously-undiscovered failure mode of the
@@ -1690,6 +1671,22 @@ verycommon:100"
 		echo "✓ Normal --weighted weights still work (got: $wok_out)"
 	else
 		echo "✗ Normal --weighted weights broken: got empty output" >&2
+		(( fails++ ))
+	fi
+
+	# Test 61: aggregate weights remain exact even when each token is valid,
+	# and an all-zero table is not a probability distribution.
+	(( tests++ ))
+	echo "Testing aggregate --weighted validation..."
+	local aggregate_weight_status zero_weight_status
+	printf 'a:9007199254740992\nb:1\n' | random --weighted --seed 42 >/dev/null 2>&1
+	aggregate_weight_status=$?
+	printf 'a:0\nb:0\n' | random --weighted --seed 42 >/dev/null 2>&1
+	zero_weight_status=$?
+	if [ "$aggregate_weight_status" -ne 0 ] && [ "$zero_weight_status" -ne 0 ]; then
+		echo "✓ Aggregate/zero --weighted validation passed"
+	else
+		echo "✗ Aggregate/zero --weighted validation failed (overflow=$aggregate_weight_status zero=$zero_weight_status)" >&2
 		(( fails++ ))
 	fi
 

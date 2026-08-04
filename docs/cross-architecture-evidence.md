@@ -1,6 +1,7 @@
 # Cross-architecture determinism: evidence
 
-**Date:** 2026-08-02 · **Suite:** `tests/cross_arch_diff` (`./crossarch`)
+**Date:** 2026-08-02; BLAKE3 DRBG extension re-verified 2026-08-04 ·
+**Suite:** `tests/cross_arch_diff` (`./crossarch`)
 
 ## What was actually at stake
 
@@ -28,7 +29,7 @@ varies:
 | `aarch64-qemu` | aarch64 | glibc | Linux | `pkgsCross` + qemu user-mode |
 | `aarch64-darwin` | aarch64 | Apple libSystem | macOS 26.5 | **native M4 Max hardware** |
 
-Three payloads:
+Four payloads:
 
 - **kernel** — `tests/kernel_jit_diff.lua`, reused verbatim. Sweeps `div`,
   `mul`, `add`, `sub`, `norm`, `ln`, `exp`, `cos_turns`, `sqrt`, `pow` over
@@ -40,6 +41,10 @@ Three payloads:
   `from_int`, `to_int_trunc`, `frac`, `cmp`, `mul128`. Decimal I/O is exactly
   where a platform `strtod`/`printf` would re-enter an otherwise integer-only
   program.
+- **drbg** — `tests/cross_arch_drbg.lua`, 4096 bytes from the versioned KDF and
+  keyed BLAKE3 XOF, with chunked-consumption and seek assertions against the
+  one-shot stream. This payload was added with the 2026-08-04 PCG32→BLAKE3
+  migration and rerun on all four legs, including native M4 Max hardware.
 - **cli** — `bin/random` end to end, byte-exact stdout, 42 invocations × 3 seeds.
 
 ## Results
@@ -50,10 +55,13 @@ sha256 of stdout, first 16 hex digits, `FAST=1`:
 |---|---|---|---|---|
 | kernel | `cbafb0f3177483e1` | `cbafb0f3177483e1` | `cbafb0f3177483e1` | `cbafb0f3177483e1` |
 | decimal | `943f23170e87eb3d` | `943f23170e87eb3d` | `943f23170e87eb3d` | `943f23170e87eb3d` |
+| BLAKE3 DRBG | `5c2ce6fe2d53725c` | `5c2ce6fe2d53725c` | `5c2ce6fe2d53725c` | `5c2ce6fe2d53725c` |
 | *control:* libm | `d74d06aa0e68f67d` | `622518d5ffc3a60f` | `d74d06aa0e68f67d` | `763ae34a97400ca9` |
 | *control:* float2int | `ddcc9fd67f79fb99` | `ddcc9fd67f79fb99` | `1ae5e1a5aa89121b` | `1ae5e1a5aa89121b` |
 
 Plus 42 CLI invocations × 3 seeds byte-identical across the three local legs.
+The native remote section directly rechecked kernel, decimal, and the new DRBG
+payload; it does not currently rerun the full CLI matrix remotely.
 
 **The claim holds.** Every payload row is constant across all four platforms.
 
@@ -108,7 +116,7 @@ integer-range modes quantize it away entirely. The kernel payload is what
 actually carries the weight here — a CLI-level differential alone, which is
 what the original port kickoff proposed, would have passed this mutation.
 
-## Two mistakes made and corrected while building this
+## Three mistakes made and corrected while building this
 
 Recorded because the corrections are the useful part.
 
@@ -127,6 +135,11 @@ Recorded because the corrections are the useful part.
    swept thousands of distinct libm inputs and the harness fired immediately.
    The mutation was defective, not the harness; "test filters as classifiers
    over sets, not predicates over single examples" applies to mutations too.
+3. **Compared byte seeks to character offsets.** The first DRBG payload sought
+   to byte 1023 but sliced the one-shot hexadecimal result at character 1024.
+   A direct smoke run failed before the matrix was accepted. The expected slice
+   now converts the byte interval to `2*offset+1 .. 2*(offset+length)`, and the
+   corrected payload agrees on all four platforms.
 
 The remote leg also initially returned empty output and, because its stderr was
 being discarded, was undiagnosable. Capturing it revealed the real cause in one

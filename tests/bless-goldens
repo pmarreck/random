@@ -6,10 +6,8 @@ set -u
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PATH="$here/../bin:$PATH"
-export DRANDOM_STATE_HOME="$(mktemp -d)"
-trap 'rm -rf "$DRANDOM_STATE_HOME"' EXIT
-# bin/random derives its default output delimiter from $IFS. If a caller has
-# exported IFS, every default-delimiter vector silently changes. Pin it.
+# The default output delimiter is deliberately independent of $IFS. Unset it
+# here as an additional guard against accidental shell-side word splitting.
 unset IFS
 
 which="${1-}"

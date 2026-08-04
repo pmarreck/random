@@ -1,0 +1,233 @@
+#!/usr/bin/env bash
+# End-to-end contract tests for the BLAKE3 DRBG and entropy boundary.
+# No `set -e`; commands under test deliberately fail.
+set -u
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="$here/../bin:$PATH"
+
+fails=0
+tests=0
+test_tmp="$(mktemp -d --tmpdir random-drbg-test.XXXXXX)"
+state_probe="$test_tmp/state-probe"
+capture_dir="$test_tmp/captures"
+mkdir -p "$state_probe" "$capture_dir"
+cleanup_test_tmp() {
+	if [ -x /run/current-system/sw/bin/rm ]; then
+		/run/current-system/sw/bin/rm -rf "$test_tmp"
+	else
+		/bin/rm -rf "$test_tmp"
+	fi
+}
+trap cleanup_test_tmp EXIT
+capture_id=0
+
+# Capture textual stdout/stderr/status without depending on Peter's dotfiles.
+# Every file lives under this suite's private directory and is removed by the
+# trap above; commands in this suite do not emit NUL bytes on captured paths.
+capture() {
+	capture_id=$((capture_id + 1))
+	local stdout_file="$capture_dir/capture.$capture_id.out"
+	local stderr_file="$capture_dir/capture.$capture_id.err"
+	"$@" >"$stdout_file" 2>"$stderr_file"
+	rc=$?
+	out="$(<"$stdout_file")"
+	err="$(<"$stderr_file")"
+}
+
+fail() {
+	echo "drbg test FAILED: $*" >&2
+	fails=$((fails + 1))
+}
+
+hex_stream() {
+	random -d --seed "$1" --binaryoutput --hex --count "${2:-64}" 2>/dev/null
+}
+
+# LuaJIT is the original implementation and owns the contract that the later
+# Zig port must match. This small Zig-stdlib reference is an independent
+# pre-port control against a self-consistent Lua mistake, not the port oracle.
+# Cover multiple keys and all output/block boundaries with one 131-byte
+# reference stream per key.
+tests=$((tests + 1))
+canonical_42="000000000000000000000000000000000000000000000000000000000000002a"
+canonical_seeds=(
+	"0000000000000000000000000000000000000000000000000000000000000000:0"
+	"0000000000000000000000000000000000000000000000000000000000000001:1"
+	"$canonical_42:42"
+	"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+)
+structural_counts=(1 31 32 63 64 65 131)
+reference=""
+lua_42=""
+for seed_case in "${canonical_seeds[@]}"; do
+	canonical="${seed_case%%:*}"
+	seed="${seed_case#*:}"
+	reference_stream="$(zig run "$here/drbg_reference.zig" -O ReleaseSafe -- "$canonical" 131 2>/dev/null)"
+	reference_status=$?
+	lua_stream="$(hex_stream "$seed" 131)"
+	if [ "$reference_status" -ne 0 ]; then
+		fail "Zig reference did not run for seed $seed"
+		break
+	fi
+	for count in "${structural_counts[@]}"; do
+		if [ "${lua_stream:0:count*2}" != "${reference_stream:0:count*2}" ]; then
+			fail "Lua stream differs from Zig at seed $seed, length $count"
+			break 2
+		fi
+	done
+	if [ "$seed" = "42" ]; then
+		reference="$reference_stream"
+		lua_42="${lua_stream:0:128}"
+	fi
+done
+
+# Decimal and hexadecimal are two spellings of one unsigned 256-bit integer.
+tests=$((tests + 1))
+seed_aliases=(42 00042 0x2a 0X002A)
+for seed in "${seed_aliases[@]}"; do
+	actual="$(hex_stream "$seed")"
+	if [ "$actual" != "$lua_42" ]; then
+		fail "equivalent seed '$seed' selected a different stream"
+		break
+	fi
+done
+
+# Classify the whole accepted boundary set, including both maxima.
+tests=$((tests + 1))
+max_decimal="115792089237316195423570985008687907853269984665640564039457584007913129639935"
+max_hex="0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+valid_seeds=(0 0000 1 "$max_decimal" 0x0 0Xf "$max_hex")
+for seed in "${valid_seeds[@]}"; do
+	local_out="$(random -d --seed "$seed" --count 1 0 0 2>/dev/null)"
+	local_status=$?
+	if [ "$local_status" -ne 0 ] || [ "$local_out" != "0" ]; then
+		fail "valid seed '$seed' was rejected"
+		break
+	fi
+done
+
+# Reject every non-contract grammar and both overflow boundaries.
+tests=$((tests + 1))
+overflow_decimal="115792089237316195423570985008687907853269984665640564039457584007913129639936"
+overflow_hex="0x1ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+invalid_seeds=(-1 +1 0x 0X deadbeef 1_000 0b10 nan " 1" "1 " 1.0 0xgg "$overflow_decimal" "$overflow_hex")
+for seed in "${invalid_seeds[@]}"; do
+	out='' err='' rc=0
+	capture random -d --seed "$seed" --count 1
+	if [ "$rc" -eq 0 ]; then
+		fail "invalid seed '$seed' was accepted"
+		break
+	fi
+done
+
+# Auto-generated entropy is printed as a replayable full-width seed. The
+# explicit source makes this deterministic without giving the program a test
+# mode or mock hook.
+tests=$((tests + 1))
+entropy_fixture="$here/fixtures/blake3-test-vectors.json"
+out='' err='' rc=0
+capture random -d --random-source="$entropy_fixture" --binaryoutput --hex --count 64
+auto_out="$out"
+auto_err="$err"
+auto_rc="$rc"
+auto_seed="$(printf '%s\n' "$auto_err" | sed -n 's/^[(]seed: \(0x[0-9a-f]\{64\}\)[)]$/\1/p')"
+if [ "$auto_rc" -ne 0 ] || [ -z "$auto_seed" ]; then
+	fail "auto-seed did not print one replayable 256-bit hex seed"
+else
+	replay="$(hex_stream "$auto_seed")"
+	if [ "$replay" != "$auto_out" ]; then
+		fail "printed auto-seed did not replay the generated stream"
+	fi
+fi
+
+# Entropy exhaustion is a hard error. No clock or weaker source may run after
+# an explicitly selected source reaches EOF.
+tests=$((tests + 1))
+out='' err='' rc=0
+capture random --random-source=/dev/null --count 1
+if [ "$rc" -eq 0 ] || [[ "$err" != *"entropy"* ]]; then
+	fail "empty explicit random source did not fail closed with an entropy error"
+fi
+
+# State environment variables are now inert compatibility debris: neither an
+# explicit nor auto seed may create anything beneath the supplied directory.
+tests=$((tests + 1))
+DRANDOM_STATE_HOME="$state_probe" random -d --seed 42 --count 3 >/dev/null 2>/dev/null
+explicit_status=$?
+DRANDOM_STATE_HOME="$state_probe" random -d --random-source="$entropy_fixture" --count 3 >/dev/null 2>/dev/null
+auto_status=$?
+state_entry="$(find "$state_probe" -mindepth 1 -print -quit)"
+if [ "$explicit_status" -ne 0 ] || [ "$auto_status" -ne 0 ]; then
+	fail "state-write probe commands failed before filesystem inspection"
+elif [ -n "$state_entry" ]; then
+	fail "deterministic mode still wrote persistent state: $state_entry"
+fi
+
+# The default full byte range consumes the XOF contiguously. Ranged binary is
+# deliberately sampled and only promises that every result is in range.
+tests=$((tests + 1))
+raw_17="$(random -d --seed 42 --binaryoutput --hex --count 17 2>/dev/null)"
+if [ "$raw_17" != "${reference:0:34}" ]; then
+	fail "default binary output is not the first 17 contiguous XOF bytes"
+fi
+ranged_hex="$(random -d --seed 42 --binaryoutput --hex --count 128 64 192 2>/dev/null)"
+ranged_bad="$(printf '%s' "$ranged_hex" | xxd -r -p | od -An -tu1 | awk '{for(i=1;i<=NF;i++) if ($i<64 || $i>192) bad=1} END {print bad+0}')"
+if [ "$ranged_bad" -ne 0 ]; then
+	fail "ranged binary output escaped [64,192]"
+fi
+
+# An explicit true-random source is independently observable. Full-range
+# binary must copy its bytes directly, while a wide integer draw must assemble
+# the first eight bytes (0x7b0a2020225f636f) as one exact big-endian u64
+# before rejection/modulo; modulo 5000000000001 is 4138818188525.
+tests=$((tests + 1))
+source_prefix="$(head -c 17 "$entropy_fixture" | xxd -p | tr -d '\n')"
+true_raw="$(random --random-source="$entropy_fixture" --binaryoutput --hex --count 17 2>/dev/null)"
+true_wide="$(random --random-source="$entropy_fixture" --count 1 0 5000000000000 2>/dev/null)"
+if [ "$true_raw" != "$source_prefix" ]; then
+	fail "default true-random binary output did not copy the source contiguously"
+elif [ "$true_wide" != "4138818188525" ]; then
+	fail "wide true-random range draw was not exact big-endian u64 sampling (got $true_wide)"
+fi
+
+# Lua-number range arithmetic cannot exactly represent an inclusive span above
+# 2^53. Reject that contract boundary instead of silently rounding the span;
+# reject negative loop counts as input errors rather than a successful no-op.
+tests=$((tests + 1))
+out='' err='' rc=0
+capture random -d --seed 42 --count 1 -9007199254740992 9007199254740992
+range_rc=$rc
+range_err="$err"
+out='' err='' rc=0
+capture random -d --seed 42 --count -1
+count_rc=$rc
+count_err="$err"
+out='' err='' rc=0
+capture random -d --seed 42 --count 1 -9007199254740992 -1
+max_span_rc=$rc
+max_span_out="$out"
+if [ "$range_rc" -eq 0 ] || [[ "$range_err" != Error:* ]]; then
+	fail "inexact inclusive range span above 2^53 was not rejected cleanly"
+elif [ "$count_rc" -eq 0 ] || [[ "$count_err" != Error:* ]]; then
+	fail "negative --count was not rejected cleanly"
+elif [ "$max_span_rc" -ne 0 ] || [ "$max_span_out" -lt -9007199254740992 ] ||
+	[ "$max_span_out" -gt -1 ]; then
+	fail "exact inclusive range span of 2^53 values was not accepted"
+fi
+
+# A zero u32 is mapped to the smallest positive draw, 2^-32, before a
+# logarithmic transform. The former 1e-6 substitute produced ~13.8 here;
+# the exact endpoint produces -ln(2^-32) ~= 22.18.
+tests=$((tests + 1))
+zero_exponential="$(random --random-source=/dev/zero --exponential --count 1 2>/dev/null)"
+if ! awk -v value="$zero_exponential" 'BEGIN { exit !(value > 22 && value < 23) }'; then
+	fail "zero uniform draw was not mapped to the exact 2^-32 endpoint (got $zero_exponential)"
+fi
+
+if [ "$fails" -ne 0 ]; then
+	echo "drbg test FAILED: $fails of $tests controls failed" >&2
+	exit "$fails"
+fi
+
+echo "drbg test PASSED: $tests contract controls"

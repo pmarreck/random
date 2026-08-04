@@ -4,8 +4,8 @@
 
 A unified command-line random number generator, written in [LuaJIT](https://luajit.org/).
 One small program that covers the cases you usually reach for several tools to do:
-multiple statistical distributions, both **true** randomness (`/dev/urandom`) and
-**reproducible** randomness (seeded PCG32), stdin operations (choose/shuffle/weighted),
+multiple statistical distributions, both **true** randomness (the OS CSPRNG) and
+**reproducible** randomness (a seeded BLAKE3 keyed XOF), stdin operations (choose/shuffle/weighted),
 and several output encodings.
 
 It ships as three commands — `random`, `nrandom`, `drandom` — that are the same binary;
@@ -14,10 +14,10 @@ the invocation name selects the mode (`nrandom` ⇒ normalized, `drandom` ⇒ de
 ## Features
 
 - **Distributions:** uniform (default), normal (Box-Muller), exponential, Poisson, log-normal, beta
-- **Two sources:** true random from `/dev/urandom`, or deterministic PCG32 (`-d`/`--seed`)
+- **Two sources:** the platform OS CSPRNG, or a deterministic BLAKE3 keyed XOF (`-d`/`--seed`)
 - **Stdin ops:** `--choose` one item, `--shuffle` all items, `--weighted` (`value:weight`)
 - **Output formats:** decimal, `--hex`, `--base64`, raw `--binaryoutput`
-- **Reproducible sessions:** deterministic state persists per session so sequences continue across calls
+- **Replayable invocations:** deterministic mode starts at stream position zero and never writes state to disk
 - **Reproducible across platforms:** seeded streams are bit-identical across machines, operating systems and CPU architectures — verified on x86_64-glibc, x86_64-musl, aarch64-Linux and native aarch64-macOS — because all math runs on an integer-only kernel instead of the platform's libm — see [Determinism](#determinism) below
 - **Zero heavy deps:** just LuaJIT (FFI + bit are built in)
 
@@ -32,9 +32,24 @@ domain, `log` differs on 0.006% of inputs, `cos` on 3.06%, and `exp` on 8.85% �
 which meant roughly 3% of seeded "normal" values differed between two builds of
 the same source at the same seed.
 
-The algorithm is PCG32 (XSH-RR 64/32), multiplier `6364136223846793005`,
-increment `1442695040888963407`, seeded by `state = 0; advance; state += seed;
-advance`. A stream is reproducible from that description alone.
+The deterministic generator accepts only an unsigned decimal integer or a
+`0x`-prefixed hexadecimal integer smaller than 2^256. Both spellings are
+serialized as the same 32-byte big-endian value, passed through BLAKE3's
+derive-key mode with context `random drbg 2026-08-04 v1`, then used as the key
+for a BLAKE3 XOF over the empty message. Multibyte draws are assembled
+big-endian. Default binary output over `[0,255]` is the contiguous XOF byte
+stream; other integer ranges use rejection sampling.
+
+The KDF provides domain separation, not extra entropy. A small or public seed
+is reproducible and therefore predictable. If deterministic mode is requested
+without a seed, the program obtains 32 bytes from the OS and prints a full
+`0x`-prefixed seed to stderr so the invocation can be replayed. Compromise of
+that seed/key reveals the stream; this interface does not claim backtracking
+resistance or state-compromise recovery.
+
+If unpredictability matters, treat the seed as sensitive: command-line
+arguments, shell history, environment variables, and captured stderr may expose
+it. The CLI's replay feature is not a secret-storage mechanism.
 
 That portability claim is measured, not argued. `./crossarch`
 (`tests/cross_arch_diff`) runs the kernel, the decimal I/O paths and `bin/random`
@@ -60,13 +75,10 @@ commit or later, the mitigation switches itself off automatically.
 
 #### Compatibility note
 
-Converting to the integer kernel deliberately changed seeded output **once**:
-values from `--normalized`, `--exponential`, `--poisson`, `--log-normal` and
-`--beta` at a given seed differ from pre-conversion runs of this program (the
-old float path was never cross-platform-reproducible to begin with, so there
-was no compatibility guarantee to preserve). Also, fractional range bounds are
-no longer accepted — `random 1.5 6.5` is now an error, not a silently-truncated
-range.
+The BLAKE3 migration deliberately breaks all old PCG32 seeded streams and
+removes legacy state-file compatibility. Earlier integer-kernel conversion also
+changed seeded alternate-distribution output. Fractional range bounds are not
+accepted — `random 1.5 6.5` is an error, not a silently-truncated range.
 
 #### `$IFS` is not part of the reproducibility contract
 
@@ -94,17 +106,22 @@ printf 'rare:1,common:10' | random --weighted --delimiter ','
 
 Run `random -h` for the full option list.
 
-### State persistence note
+### Entropy and persistence
 
-In deterministic mode, state is saved per session (keyed by `DRANDOM_CONTEXT`, defaulting
-to the parent PID) so successive calls continue the sequence. Because pipes and `$(...)`
-subshells change the parent PID, set a stable context in scripts:
+True-random mode uses `getrandom` on Linux, `getentropy` where available, and
+`BCryptGenRandom` on Windows, with an exact-read `/dev/urandom` fallback on
+Unix. Any short read or source error fails closed. `--random-source PATH`
+selects an explicit byte source, chiefly for deterministic testing;
+`--no-wait` requests Linux `GRND_NONBLOCK` behavior.
 
-```sh
-export DRANDOM_CONTEXT=$$
-```
+The CLI never persists deterministic state. Reusing a seed restarts the same
+stream; omitting it prints a replayable seed. `DRANDOM_SEED` is the only
+deterministic environment variable.
 
-State lives under `DRANDOM_STATE_HOME` (default `/tmp`).
+The vendored LuaJIT BLAKE3 implementation is by Egor Skriptunoff. Its header
+preserves the author's MIT notice from the verified earlier `pure_lua_SHA`
+ancestor and records the chronology, source commits, and the fact that the
+LuaJIT-only gist has no separately visible license.
 
 ## Install
 
@@ -128,15 +145,16 @@ A dev shell with LuaJIT and the test tooling is provided:
 direnv allow      # or: nix develop
 ./test            # FAST mode (quick, quiet on success)
 FAST= ./test      # full statistical run
-nix flake check   # hermetic CI check (runs all 6 suites, but FORCES FAST=1 --
+nix flake check   # hermetic CI check (runs all 9 suites, but FORCES FAST=1 --
                    # kernel_jit_diff's 60000-iteration deep JIT differential
                    # is deep-mode-only by design and is SKIPPED here, not run;
                    # run `FAST= ./test` locally for the full non-FAST suite)
 ```
 
-`./test` runs every suite under `tests/` (CLI behavior, kernel unit tests, golden
-vectors, the `bc` sweep, and the deep-mode-only JIT differential). Each suite is
-hermetic and concurrency-safe — every run isolates its own state directory.
+`./test` runs every suite under `tests/` (official BLAKE3 vectors, an independent
+Zig DRBG reference check, CLI behavior, kernel unit tests, golden vectors, the `bc`
+sweep, and the deep-mode-only JIT differential). The suites are hermetic and
+concurrency-safe.
 
 ## Layout
 

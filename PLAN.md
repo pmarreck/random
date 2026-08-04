@@ -1,5 +1,32 @@
 # PLAN
 
+## Completed: BLAKE3 DRBG before the Zig FFI
+
+- [x] Replace PCG32 in `bin/random` with the LuaJIT-specific BLAKE3 keyed XOF;
+      retain Egor Skriptunoff's MIT notice and document the verified
+      `pure_lua_SHA` ancestry plus the pending-license-clarification caveat.
+- [x] Accept only unsigned decimal and `0x`-prefixed hexadecimal seeds, each
+      no wider than 256 bits; canonicalize both forms to the same 32-byte
+      big-endian seed material and reject every other spelling.
+- [x] Derive every deterministic key through the versioned BLAKE3 KDF. For an
+      omitted seed, obtain 32 bytes from the OS, print the corresponding
+      replayable `0x` seed, and fail closed if entropy is unavailable.
+- [x] Remove PCG32, `now_seed`, legacy state parsing, implicit state files,
+      `DRANDOM_CONTEXT`, and `DRANDOM_STATE_HOME`. A CLI invocation performs no
+      persistent writes; reproducibility comes from an explicit seed.
+- [x] Replace the true-random entropy path with OS CSPRNG APIs plus an exact-read
+      `/dev/urandom` fallback; add `--random-source=PATH` for explicit/testable
+      input and a no-wait option where the OS API supports it.
+- [x] Gate the Lua implementation directly against the upstream BLAKE3
+      `test_vectors.json`; retain extra boundary and seek checks as separate
+      Lua-vs-Zig independent reference controls, while retaining LuaJIT as the
+      behavioral oracle for the later Zig port.
+- [x] Pin big-endian draw assembly, exact byte-consumption rules, seek limits,
+      range rejection, and raw/default versus ranged `--binaryoutput`
+      semantics before re-blessing deterministic golden vectors.
+- [x] Extend `./crossarch`, update CLI/README/spec documentation, mutation-test
+      every new control, run the complete suite, and commit only green units.
+
 ## Done
 - [x] Fix `pcg32_range` infinite loop for ranges > 2^32 (2026-08-01 EST)
 - [x] Golden vectors for the integer paths, blessed pre-conversion (2026-08-01 EST)
@@ -111,19 +138,10 @@ internals with superior ones. Behavior changes no longer need per-change
 sign-off (this supersedes the "awaits Peter's approval" boundary Einstein
 recorded on 2026-08-04).
 
-- [ ] **Entropy: fail closed, via `getrandom(2)`/`getentropy()`.** Delete the
-      time-derived stage-3 fallback in `get_random_bytes`
-      (`bin/random:312-317`) entirely — it emits an arithmetic progression
-      mod 256 (measured: constant step ≈58, two same-second draws differ by a
-      constant), ~10-15 bits of real entropy. Reach the syscalls by FFI;
-      devices become the fail-closed fallback with a read-retry loop (a
-      partial read must re-read the same source, never demote to a weaker
-      one). Blocking-until-seeded is the DEFAULT and is free — it is
-      `getrandom`'s behavior absent `GRND_NONBLOCK`. Add a flag for callers
-      who prefer a loud error to a wait (Peter's explicit request); a
-      `--random-source=PATH` option à la `shuf` also makes the failure path
-      naturally testable without the code knowing it is under test.
-- [ ] **Make `drandom` itself a CSPRNG — NOW, BEFORE the FFI/CLI port
+- [x] **Entropy: fail closed, via `getrandom(2)`/`getentropy()`.** Implemented
+      with partial/EINTR retry, `BCryptGenRandom` on Windows, exact-read
+      `/dev/urandom` fallback, `--no-wait`, and `--random-source=PATH`.
+- [x] **Make `drandom` itself a CSPRNG — NOW, BEFORE the FFI/CLI port
       (resequenced 2026-08-04 by Peter).** Rationale: porting PCG32 to Zig in
       Task 8 and then deleting it the same day for BLAKE3 is pure waste; replace
       the generator first, then port the result, so the Zig core implements
@@ -138,37 +156,21 @@ recorded on 2026-08-04).
       originally scheduled last; moving it first means the FFI/CLI port and the
       CLI-level differential are built against the FINAL generator, not a
       throwaway one — the goldens still move exactly once.)
-      DESIGN: being brainstormed 2026-08-04 (superpowers:brainstorming); spec
-      will land in docs/superpowers/specs/. Open forks: XOF-seek vs
-      keyed-hash-of-counter; --seed → key mapping (BLAKE3 KDF vs derive_key vs
-      keyed hash); new persisted-state format (key + counter); counter/byte
-      endianness (pin cross-platform); vendor pure_lua_SHA whole vs strip to
-      LuaJIT-only BLAKE3.
-      SPEED NOTE (measured, not assumed): BLAKE3 in LuaJIT yields ~1.8M u64
-      draws/s vs PCG32's far higher rate — acceptable, because the LuaJIT
-      side is the ORACLE; Zig's SIMD BLAKE3 is the production path. If a
-      fast-but-predictable generator is ever wanted back, it returns as an
-      explicit opt-in, never the default.
-- [ ] **New functionality lands in LuaJIT first**, then ports to Zig using
+      Implemented contract: versioned KDF, keyed empty-message XOF, big-endian
+      32/64-bit draws, strict 256-bit integer seeds, no persistent state, and
+      direct full-range binary bytes. See the implemented design spec.
+- [x] **New functionality lands in LuaJIT first**, then ports to Zig using
       LuaJIT as the differential oracle — the established pattern. (The
-      kernel-port tasks are the reverse direction: existing LuaJIT functions
-      being ported to Zig.)
+      LuaJIT half and its independent controls are complete; the Zig port is
+      the next plan section.)
 
-## Future goals (recorded 2026-08-03, Peter)
-- [ ] **Cryptographically-secure mode** (deferred by Peter's call; priority for
-      now is fast, identical cross-platform seeded output with optional
-      nonlinear distributions). Design sketch when picked up: a seeded DRBG —
-      keyed stream cipher (ChaCha20, as in libsodium's deterministic
-      randombytes, or NIST CTR-DRBG) behind the same generator interface, so
-      reproducibility is preserved (a keyed PRF is deterministic per key).
-      PCG32 stays the fast default and must be documented as PREDICTABLE
-      (state recoverable from a few outputs); a `--secure` flag swaps the
-      generator. Distributions layer unchanged on top of either.
-      PRIMITIVE SETTLED (2026-08-04): BLAKE3 from Egor Skriptunoff's
-      MIT-licensed pure_lua_SHA on the LuaJIT side, std.crypto.hash.Blake3
-      on the Zig side -- both verified bit-exact against the official
-      test-vector methodology (246/246, all three modes, seekable XOF).
-      See docs/research/2026-08-04-pure-lua-blake3-evaluation.md.
+## Superseded future goal (recorded 2026-08-03, completed 2026-08-04)
+- [x] **Cryptographically secure deterministic generator.** Peter superseded
+      the deferred `--secure` opt-in: BLAKE3 is now the only deterministic
+      generator, PCG32 is removed, and distributions layer over it unchanged.
+      The faster LuaJIT-specific Egor Skriptunoff implementation is vendored
+      with the documented provenance/licensing caveat; Zig will use
+      `std.crypto.hash.Blake3`.
 
 ## Inbox-driven (additive, after current Zig-port task)
 - [ ] **Einstein 2026-08-04: assess `random` as entropy source for
@@ -178,9 +180,9 @@ recorded on 2026-08-04).
       (cite code+tests), smallest stable call for uniform [0, dict_size),
       security delta vs GNU `shuf --random-source=/dev/random`, and
       platform/fork/partial-read caveats for secret generation. Reply via
-      LLMsend with evidence and known-green SHA. NOTE: current PCG32 seeded
-      mode is NOT cryptographically secure (recorded under Future goals);
-      only the true-random path is candidate material here.
+      LLMsend with evidence and known-green SHA. The true-random path is the
+      natural password-generation source; seeded mode is unpredictable only
+      when its seed is both high-entropy and secret.
 
 ## TODO
 - [ ] Drop `flake.nix`'s `luajitFixed` override (and its `28084004` pin) once
@@ -206,10 +208,8 @@ recorded on 2026-08-04).
   `pkgs.luajit` and asserts `jit.version`'s roll number against the constant
   in both directions.
 - `./test`'s exit code is the raw suite-failure count, unclamped — wraps
-  modulo 256 past 255 failing suites. With 6 suites total today (fixed_test,
-  golden_test, random_test, random_jit_diff_test, kernel_bc_sweep,
-  kernel_jit_diff — plus, as of this audit round, a required-suite manifest
-  that fails loudly if any of the 6 goes missing or non-executable) this is
+  modulo 256 past 255 failing suites. With 9 suites today and a required-suite
+  manifest that fails loudly if any goes missing or non-executable, this is
   unreachable in practice; not worth guarding until the suite count grows by
   two orders of magnitude.
 - `./test`'s `for suite in ... ; do [ -x "$suite" ] || continue; ...` glob
@@ -221,9 +221,9 @@ recorded on 2026-08-04).
   2^33..2^52, not the full 2^33..2^62 the original finding specified.
   `M.parse_int_safe`'s later 2^53 CLI ceiling (finding #3 in
   `docs/codex-fix-report.md`) makes spans above 2^53 unreachable through
-  positional CLI arguments at all -- not a weakening of the `pcg32_range`
-  fix itself, which is unconditional u64 arithmetic with no reference to
+  positional CLI arguments at all -- not a weakening of the range-rejection
+  fix now carried by `drbg_range`, which uses unconditional u64 arithmetic with no reference to
   that ceiling. Recovering full coverage to 2^62 would need a Lua-level
-  test entry point into `pcg32_range` (currently a local, unexported
+  test entry point into `drbg_range` (currently a local, unexported
   function in `bin/random`); not worth the refactor for a range no CLI
   invocation can produce.

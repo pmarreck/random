@@ -1,37 +1,44 @@
 # BLAKE3 keyed-DRBG replacement for PCG32 — design
 
-**Date:** 2026-08-04 · **Status:** approved design, pre-implementation ·
+**Date:** 2026-08-04 · **Status:** implemented and gated in LuaJIT ·
 **Supersedes:** the PCG32 deterministic generator in `bin/random`
 
 ## Why
 
-`random`'s deterministic path (`-d`/`--seed`/`drandom`) currently uses PCG32
+`random`'s deterministic path (`-d`/`--seed`/`drandom`) formerly used PCG32
 (XSH-RR 64/32). PCG32 is fast and cross-platform-reproducible, but **trivially
 predictable** — its full state is recoverable from a handful of outputs, so it
 can never back a secure use. Peter's decision (2026-08-04): the deterministic
-path becomes a **BLAKE3 keyed DRBG outright**, not a `--secure` opt-in. There is
-nothing lost by making the reproducible generator also unpredictable — a keyed
-PRF is deterministic per key, so reproducibility and secrecy coexist.
+path becomes a **BLAKE3 keyed DRBG outright**, not a `--secure` opt-in. A
+keyed PRF is deterministic per key, so reproducibility and secrecy can
+coexist when the seed itself is secret and has enough entropy. A public or
+guessable seed remains guessable after any KDF; the KDF supplies domain
+separation and a uniform key representation, not additional entropy.
 
 This is sequenced **before** the Zig FFI/CLI port (Tasks 8–10): porting PCG32 to
 Zig and deleting it the same day is waste. The Zig core implements BLAKE3
-directly (`std.crypto.hash.Blake3`, already verified 246/246 against the official
-vectors); **PCG32 is never ported.** `bin/random` (LuaJIT) is the differential
-oracle, so it changes first.
+directly (`std.crypto.hash.Blake3`, already compared byte-for-byte with Lua over
+246 generated cases); **PCG32 is never ported.** `bin/random` (LuaJIT) is the
+differential oracle, so it changes first. Both implementations still require a
+direct gate against the published official expected outputs.
 
-BLAKE3 correctness/perf/licensing were settled in
+Terminology is important here: LuaJIT is the original implementation and the
+behavioral oracle the later Zig port must match. The small Zig-stdlib program
+used during this LuaJIT work is only an independent reference check on the
+written KDF/XOF construction; it does not define or supersede the Lua contract.
+
+BLAKE3 correctness and performance were established in
 `docs/research/2026-08-04-pure-lua-blake3-evaluation.md` (246/246 vs the Zig
-stdlib, seekable XOF verified, MIT via `pure_lua_SHA`).
+stdlib, seekable XOF verified). Licensing is handled as the documented
+best-effort inference described under Vendoring & attribution below.
 
 ## Scope
 
-**In:** the deterministic generator only — replace `pcg32_*` with a BLAKE3 DRBG,
-preserve the public API, re-bless deterministic golden vectors.
+**In:** replace `pcg32_*` with a BLAKE3 DRBG, preserve the useful public API,
+re-bless deterministic golden vectors, and replace the coupled true-random and
+auto-seed entropy paths with fail-closed OS APIs.
 
-**Out (separate, coupled tasks):** the true-random path's entropy fix
-(`getrandom`, fail-closed, delete the `now_seed()` time fallback) is its own
-work item; this design only *depends* on it for the DRBG's auto-seed. The Zig
-port is downstream.
+**Out:** the Zig port is downstream.
 
 ## The generator: keyed XOF + seek
 
@@ -39,20 +46,25 @@ Construction chosen (over keyed-hash-of-counter) for its single-position
 resumable state:
 
 ```
-state = { key: [32]u8, pos: u64 }          # pos is a BYTE offset into the keystream
+state = { key: [32]u8, pos: exact_integer } # pos is a BYTE offset into the keystream
 
-keystream = BLAKE3_keyed(key).xof()        # infinite output, seekable
+keystream = BLAKE3_keyed(key).xof()        # extendable output, seekable
 draw_bytes(n): b = keystream.seek(pos).read(n); pos += n; return b
 seek_to_draw(n, width): pos = n * width    # O(1) random access to draw N
 ```
 
-- LuaJIT: `pure_lua_SHA`'s `blake3(message="", key, -1)` returns the seekable
-  closure (`f("seek", pos)` / `f(nbytes)`), verified 6/6 out-of-order this
-  session.
-- Zig: `std.crypto.hash.Blake3` keyed, XOF via `rootBytes(seek, out)`.
-- The keyed-hash *message* is empty; the key alone determines the stream. (A
-  fixed domain-separation label in the message is possible but unnecessary —
-  the KDF context string below already domain-separates at the key layer.)
+- LuaJIT: the vendored LuaJIT-specific implementation's
+  `blake3(message="", key, -1)` returns the seekable closure
+  (`f("seek", pos)` / `f(nbytes)`), verified against official output and the
+  Zig stdlib.
+- Zig: `std.crypto.hash.Blake3` keyed, XOF via the public
+  `finalizeSeek(seek, out)` API in Zig 0.16.
+- The keyed-hash *message* is empty; the key alone determines the stream. The
+  KDF context string below domain-separates keys derived through this CLI.
+- LuaJIT numbers represent integers exactly only through 2^53. The Lua oracle
+  therefore rejects any seek or consumption that would make `pos > 2^53`.
+  Zig may support a wider internal position later, but the shared public
+  contract remains capped until both implementations can represent it exactly.
 
 ### Endianness: BIG-ENDIAN, one rule everywhere
 
@@ -77,94 +89,81 @@ draw_u64(): be_u64(draw_bytes(8))
 ## Seed → key
 
 The 256-bit key is derived via BLAKE3's **KDF (derive_key) mode** with a
-versioned context string, so a low-entropy human seed still yields a
-well-distributed key and the derivation is domain-separated:
+versioned context string. This produces a domain-separated key without claiming
+to strengthen the entropy of a guessable seed:
 
 ```
 KDF_CONTEXT = "random drbg 2026-08-04 v1"           # bump on any wire change
 key = BLAKE3_derive_key(seed_material, KDF_CONTEXT, 32)
 ```
 
-`seed_material` depends on how `--seed` was given. **`--seed` accepts full-width
-seeds** (Peter's decision), disambiguated by an explicit rule so there is no
-ambiguity:
+`--seed` accepts one unsigned integer in either decimal or `0x`-prefixed
+hexadecimal notation. Both forms are parsed as a mathematical integer no wider
+than 256 bits and serialized canonically as exactly 32 big-endian bytes before
+the KDF. Equivalent spellings such as `42`, `0x2a`, and `0x002A` deliberately
+select the same stream.
 
 | `--seed` form | rule | `seed_material` |
 |---|---|---|
-| all decimal digits, fits u64 | today's behaviour (compat) | the integer, big-endian 8 bytes |
-| `0x`-prefixed hex | even length, ≤ 64 hex digits (≤ 32 bytes) | the decoded bytes |
-| anything else | treated as a passphrase | the UTF-8 bytes verbatim |
+| decimal | one or more ASCII digits, value < 2^256 | 32-byte big-endian integer |
+| hexadecimal | `0x` or `0X`, then 1–64 ASCII hex digits | the same 32-byte big-endian integer |
 
-So bare `deadbeef` is a **passphrase**, not hex — the `0x` prefix is required for
-raw bytes. This keeps `--seed 42` identical to today while allowing
-`--seed 0x<64 hex>` for a full-strength reproducible-and-unguessable stream, or
-`--seed "any passphrase"`.
+Signs, whitespace, separators, bare hex, passphrases, empty hex, and values at
+or above 2^256 are rejected. A uniformly generated 256-bit value is suitable
+for an unguessable reproducible stream; a small decimal seed is suitable only
+for reproducibility.
 
-**No-seed path:** draw 32 bytes from `getrandom`/`getentropy` and use them
-**directly** as the key (already uniform; no KDF needed). This replaces the
-current `now_seed()` time-derived fallback and couples to the entropy fix — the
-DRBG must fail closed if entropy is unavailable, never fall back to a clock.
+**No-seed path:** draw 32 bytes from `getrandom`/`getentropy` (or the documented
+OS fallback), print them as a replayable `0x` seed, and feed the same canonical
+32 bytes through the KDF. This replaces `now_seed()` and fails closed if entropy
+is unavailable. Re-running with the printed seed must reproduce the stream.
 
 `DRANDOM_SEED` (env) follows the same rules as `--seed`.
 
-## State persistence
+## State and persistence
 
-Continuity across calls is preserved (the "successive `drandom` calls continue
-the sequence" behaviour). The persisted state changes from a single u64 to
-`(key, pos)`:
-
-- **Path unchanged:** `$DRANDOM_STATE_HOME/drandom/$USER/$context.seed`, keyed by
-  `DRANDOM_CONTEXT` (or PPID) exactly as today.
-- **Format:** version-tagged, e.g. a first line `random-drbg-v1`, then
-  `hex(key)` and decimal `pos`. Exact layout finalized in implementation; it
-  must be parse-unambiguous and self-identifying.
-- **Old / unparseable files** (including every existing single-u64 PCG32 state
-  file) are treated as **absent** → reseed fresh. Safe because the stream
-  changes entirely regardless; there is no meaningful migration of a PCG32
-  position into a BLAKE3 keystream.
+The CLI performs no persistent writes. PCG32 state files, legacy seed files,
+`DRANDOM_CONTEXT`, and `DRANDOM_STATE_HOME` are removed without migration.
+Every invocation starts at byte position zero from an explicit seed or a newly
+generated seed printed to stderr. Consumers that later need continuation may
+store `(key, pos)` outside the core through an explicit API, but implicit disk
+state is not part of this CLI contract.
 
 ## Draw operations (API-preserving)
 
 The three consumption shapes keep their exact external behaviour; only the bit
 source changes from PCG32 to the BLAKE3 keystream:
 
-- **`range(a, b)`** — the existing rejection-sampling logic is generator-
-  agnostic and stays byte-for-byte (including the ≥2^33 power-of-two short-
-  circuit fixed earlier). It just calls `draw_u32`/`draw_u64` instead of
-  `pcg32_random`.
+- **`range(a, b)`** — deterministic sampling retains the rejection logic
+  (including the ≥2^33 power-of-two short-circuit fixed earlier), calling
+  `draw_u32`/`draw_u64` instead of `pcg32_random`. The true-random wide path
+  now uses the same exact u64 arithmetic rather than assembling 7–8 bytes in
+  an inexact Lua number.
 - **`uniform [0,1)`** — keeps the `from_int(u32) / 2^32` soft-float shape
   (`pcg32_uniform`'s structure), so every distribution built on it (normal,
   exponential, …) keeps its arithmetic structure; only the uniform bits differ.
-- **raw bytes / `--binaryoutput`** in deterministic mode emit `draw_bytes`
-  directly.
+- **default `--binaryoutput`** over the full byte range `[0,255]` emits
+  `draw_bytes(count)` directly. A custom byte range or a non-uniform
+  distribution retains the ordinary sampling path and its corresponding draw
+  consumption. These two cases are separate frozen contracts.
 
 ## Public API preserved
 
-`-d`/`--deterministic`, `--seed`, `DRANDOM_SEED`, `DRANDOM_CONTEXT`,
-`DRANDOM_STATE_HOME`, the `drandom` argv[0] symlink, and cross-call state
-continuity all behave as before. New surface is strictly additive: `--seed` now
-*also* accepts hex/passphrase forms.
+`-d`/`--deterministic`, `--seed`, `DRANDOM_SEED`, and the `drandom` argv[0]
+symlink remain. Seed grammar and deterministic streams deliberately change.
+Implicit cross-call state continuity and its two state environment variables
+are removed.
 
 ## Vendoring & attribution
 
-Derive `lib/blake3.lua` **from `pure_lua_SHA`'s `sha2.lua`** (MIT, © 2018–2022
-Egor Skriptunoff) by stripping its multi-engine (Lua 5.1–5.4 / Luau) dispatch
-down to the LuaJIT BLAKE3 path — the author's own path, per the chronology
-(BLAKE3 landed in the MIT repo 2022-01-09; the LuaJIT gist was published
-2022-03-05, i.e. it is the *derivative*). Modifying MIT code is explicitly
-permitted, so the derived file stays MIT with the header and copyright retained
-and the upstream repo credited by name and URL — **real chain of title, not
-inferred**. The derived file is re-verified against the same 246 official
-test-vectors before use.
-
-Rejected: copying the unlicensed gist's bytes and relabeling them MIT — the
-gist carries no license, and an author is not bound by his own MIT grant on a
-separately-published file, so that attribution would be inference, not a grant.
-
-Honest caveat: stripping may not perfectly reproduce the gist's ~44% small-call
-speed edge if the gist has hand-tuning beyond dispatch removal; it will be close,
-and this is the oracle/CLI, where bulk throughput (a measured wash) is what
-matters most.
+Vendor the author's faster LuaJIT-specific `blake3_for_luajit.lua` at its
+verified commit. Preserve Egor Skriptunoff's authorship, the complete MIT notice
+from the earlier `pure_lua_SHA` work, both upstream URLs, both commit IDs, and
+this provenance statement: source history and direct comparison show that the
+gist derives from the same author's MIT-licensed BLAKE3 implementation, but the
+gist itself carries no visible license and clarification is presently
+unavailable. This is a deliberate best-effort licensing inference, not a claim
+that the gist contains an explicit MIT grant.
 
 ## Golden vectors
 
@@ -176,14 +175,21 @@ goldens for `lib/fixed.lua` are unaffected (the kernel is unchanged).
 
 ## MFIC controls
 
-- **Differential oracle (external):** the 246 official BLAKE3 test-vectors gate
-  the derived `lib/blake3.lua` — an oracle authored by the algorithm's
-  designers, not by us. Re-run in `./test`.
-- **Cross-architecture:** `./crossarch` already sweeps `bin/random`; a seeded
-  BLAKE3 stream digest is added to its payload so the DRBG's cross-platform
-  identity is proven on the four-platform matrix, not assumed.
-- **Round-trip / resumption:** persisting state, reloading, and continuing must
-  produce the same stream as an uninterrupted run — a metamorphic check.
+- **Official external oracle:** vendor the upstream BLAKE3
+  `test_vectors.json` unchanged and check all 35 published cases in hash,
+  keyed, and derive-key modes at both 32-byte and 131-byte output lengths.
+- **Additional independent reference:** compare 4 seed classes at output
+  lengths 1, 31, 32, 63, 64, 65, and 131 against Zig 0.16's stdlib. This can
+  catch a self-consistent Lua construction mistake, but LuaJIT remains the
+  behavioral oracle for the port. Keep seek/chunk probes against published
+  official expected bytes.
+- **Cross-architecture:** `./crossarch` compares 512 contiguous seeded BLAKE3
+  bytes plus ranged and alternate-distribution CLI outputs on its platform
+  matrix, so the DRBG's cross-platform identity is measured, not assumed.
+- **Seed replay:** an auto-generated printed seed, supplied explicitly on the
+  next invocation, must reproduce the exact stream.
+- **Consumption:** chunked XOF reads must concatenate to the same bytes as one
+  uninterrupted read, including block-boundary crossings.
 - **Mutation:** each new control is mutation-verified (break it, watch it fire,
   restore) per project discipline.
 
@@ -198,8 +204,6 @@ both.
 
 ## Open items (finalize in implementation, not blocking)
 
-- Exact byte layout of the state file (self-identifying, version-tagged).
-- Whether `--binaryoutput` deterministic mode draws from the same `pos` stream
-  as numeric draws (default: yes, one stream per key).
-- Draw width for `range` on wide spans (keep today's u32-narrow / u64-wide
-  split; it is generator-agnostic).
+- Exact C FFI shape for caller-owned `(key, pos)` state.
+- Whether the later Zig implementation should expose positions beyond the
+  Lua oracle's exact-integer ceiling through a Zig-only API.
