@@ -644,10 +644,12 @@ local function read_command_line(command)
 	return value and trim(value) or nil
 end
 
-local function terminal_program_is_kitty_capable(value)
-	if not value then return false end
+local function terminal_program_kind(value)
+	if not value then return nil end
 	value = value:lower()
-	return value == "wezterm" or value == "ghostty" or value == "kitty"
+	if value == "wezterm" then return "wezterm" end
+	if value == "ghostty" or value == "kitty" then return "kitty" end
+	return nil
 end
 
 local function environment_present(name)
@@ -655,21 +657,22 @@ local function environment_present(name)
 	return value ~= nil and value ~= ""
 end
 
-local function known_kitty_terminal()
-	if os.getenv("TERM") == "xterm-kitty" or environment_present("KITTY_WINDOW_ID") or
-		environment_present("WEZTERM_PANE") or environment_present("WEZTERM_EXECUTABLE") or
-		environment_present("GHOSTTY_RESOURCES_DIR") then
-		return true
+local function terminal_kind()
+	if environment_present("WEZTERM_PANE") or environment_present("WEZTERM_EXECUTABLE") then
+		return "wezterm"
 	end
-	if terminal_program_is_kitty_capable(os.getenv("TERM_PROGRAM")) then return true end
+	if os.getenv("TERM") == "xterm-kitty" or environment_present("KITTY_WINDOW_ID") or
+		environment_present("GHOSTTY_RESOURCES_DIR") then return "kitty" end
+	local direct = terminal_program_kind(os.getenv("TERM_PROGRAM"))
+	if direct then return direct end
 	if environment_present("TMUX") then
 		local outer = read_command_line("tmux show-environment -g TERM_PROGRAM 2>/dev/null")
 		if outer then
 			outer = outer:match("^[^=]+=(.*)$") or outer
-			return terminal_program_is_kitty_capable(outer)
+			return terminal_program_kind(outer)
 		end
 	end
-	return false
+	return nil
 end
 
 local function tmux_allows_passthrough()
@@ -682,12 +685,41 @@ local function stdout_is_tty()
 	return ffi.C.isatty(1) == 1
 end
 
-local function use_kitty_graphics()
-	local requested = (os.getenv("RANDOM_HELP_GRAPHICS") or "auto"):lower()
-	if requested == "unicode" then return false end
-	if requested == "kitty" then return true end
-	if not stdout_is_tty() or not known_kitty_terminal() then return false end
-	return not environment_present("TMUX") or tmux_allows_passthrough()
+local function tmux_supports_sixel()
+	return read_command_line("tmux display-message -p '#{sixel_support}' 2>/dev/null") == "1"
+end
+
+local function chart_renderer_flag()
+	local selected
+	for _, value in ipairs(argv) do
+		if value == "--kitty" then selected = "kitty"
+		elseif value == "--sixel" then selected = "sixel"
+		elseif value == "--utf8-graphics" then selected = "utf8" end
+	end
+	return selected
+end
+
+local function chart_renderer()
+	local selected = chart_renderer_flag()
+	if selected then return selected end
+	local requested = os.getenv("RANDOMZ_CHART_TYPE")
+	if requested and requested ~= "" then
+		requested = requested:lower()
+		if requested == "utf8" or requested == "kitty" or requested == "sixel" then
+			return requested
+		end
+		stderr_write("Error: RANDOMZ_CHART_TYPE must be utf8, kitty, or sixel\n")
+		os.exit(1)
+	end
+	if not stdout_is_tty() then return "utf8" end
+	local kind = terminal_kind()
+	if kind == "wezterm" then
+		if environment_present("TMUX") and not tmux_supports_sixel() then return "utf8" end
+		return "sixel"
+	end
+	if kind == "kitty" and
+		(not environment_present("TMUX") or tmux_allows_passthrough()) then return "kitty" end
+	return "utf8"
 end
 
 local function write_kitty_sequence(control, payload, tmux)
@@ -698,6 +730,13 @@ local function write_kitty_sequence(control, payload, tmux)
 	io.write(sequence)
 end
 
+local function write_sixel(data)
+	-- Sixel is a DCS protocol. tmux 3.4+ parses it natively when built with
+	-- Sixel support, so unlike Kitty APC it must not be passthrough-wrapped.
+	io.write("\27" .. "7\27P0;1;0q", data, "\27\\\27" .. "8")
+	io.write(string.rep("\r\n", 12))
+end
+
 local function print_distribution_help(key)
 	local chart = key and distribution_charts[key]
 	if not chart then return end
@@ -705,7 +744,8 @@ local function print_distribution_help(key)
 	print("Distribution: " .. chart.title)
 	print(chart.parameters)
 	print("")
-	if use_kitty_graphics() then
+	local renderer = chart_renderer()
+	if renderer == "kitty" then
 		local encoded = chart.png_base64
 		local tmux = environment_present("TMUX")
 		for offset = 1, #encoded, 4096 do
@@ -719,6 +759,8 @@ local function print_distribution_help(key)
 			write_kitty_sequence(control, encoded:sub(offset, offset + 4095), tmux)
 		end
 		io.write(string.rep("\r\n", 12))
+	elseif renderer == "sixel" then
+		write_sixel(chart.sixel_data)
 	else
 		io.write(chart.fallback)
 	end
@@ -775,6 +817,9 @@ local function print_help(invocation, distribution)
 	print("      --seed N|0xHEX  Set unsigned 256-bit integer seed (implies -d)")
 	print("      --random-source PATH  Read entropy from PATH instead of the OS")
 	print("      --no-wait       Fail rather than wait for Linux getrandom initialization")
+	print("      --kitty         Force Kitty graphics for a distribution help chart")
+	print("      --sixel         Force Sixel graphics for a distribution help chart")
+	print("      --utf8-graphics Force the UTF-8 Braille distribution help chart")
 	print("      --mean M        Set mean for normal/poisson")
 	print("      --stddev S      Set stddev for normal/log-normal")
 	print("      --alpha A       Set alpha for beta distribution")
@@ -787,7 +832,7 @@ local function print_help(invocation, distribution)
 	print("")
 	print("Environment variables:")
 	print("  DRANDOM_SEED      Unsigned decimal or 0x-prefixed seed (implies -d)")
-	print("  RANDOM_HELP_GRAPHICS  auto (default), kitty, or unicode for distribution help")
+	print("  RANDOMZ_CHART_TYPE  utf8, kitty, or sixel; command-line flags override it")
 	print("")
 	print("Deterministic mode never persists state. Every invocation starts at")
 	print("stream position zero. Without an explicit seed it obtains 32 bytes")
@@ -858,6 +903,7 @@ local function parse_args()
 		seed_provided = false,
 		random_source = nil,
 		no_wait = false,
+		chart_renderer_flag = false,
 		start_val = nil,
 		end_val = nil,
 		mean = nil,
@@ -922,6 +968,9 @@ local function parse_args()
 			options.weighted = true
 		elseif arg_val == "--no-wait" then
 			options.no_wait = true
+		elseif arg_val == "--kitty" or arg_val == "--sixel" or
+			arg_val == "--utf8-graphics" then
+			options.chart_renderer_flag = true
 		elseif arg_val:match("^%-%-random%-source=") then
 			options.random_source = arg_val:sub(#"--random-source=" + 1)
 			if options.random_source == "" then
@@ -1071,6 +1120,10 @@ local function parse_args()
 	if options.poisson then dist_count = dist_count + 1 end
 	if options.log_normal then dist_count = dist_count + 1 end
 	if options.beta then dist_count = dist_count + 1 end
+	if options.chart_renderer_flag then
+		stderr_write("Error: --kitty, --sixel, and --utf8-graphics require --help\n")
+		os.exit(1)
+	end
 	if dist_count > 1 then
 		stderr_write("Error: only one distribution type can be specified\n")
 		os.exit(1)

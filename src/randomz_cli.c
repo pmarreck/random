@@ -41,6 +41,18 @@ typedef enum distribution {
 	DIST_BETA
 } distribution;
 
+typedef enum chart_renderer {
+	CHART_UTF8,
+	CHART_KITTY,
+	CHART_SIXEL
+} chart_renderer;
+
+typedef enum terminal_kind {
+	TERMINAL_UNKNOWN,
+	TERMINAL_KITTY,
+	TERMINAL_WEZTERM
+} terminal_kind;
+
 #include "distribution_charts.inc"
 
 typedef struct options {
@@ -55,6 +67,7 @@ typedef struct options {
 	bool shuffle;
 	bool weighted;
 	bool no_wait;
+	bool chart_renderer_flag;
 	const char *delimiter;
 	const char *random_source;
 	bool count_set;
@@ -200,11 +213,12 @@ static bool equals_case_insensitive(const char *left, const char *right)
 	return *left == '\0' && *right == '\0';
 }
 
-static bool terminal_program_is_kitty_capable(const char *value)
+static terminal_kind terminal_program_kind(const char *value)
 {
-	return equals_case_insensitive(value, "WezTerm") ||
-		equals_case_insensitive(value, "ghostty") ||
-		equals_case_insensitive(value, "kitty");
+	if (equals_case_insensitive(value, "WezTerm")) return TERMINAL_WEZTERM;
+	if (equals_case_insensitive(value, "ghostty") ||
+		equals_case_insensitive(value, "kitty")) return TERMINAL_KITTY;
+	return TERMINAL_UNKNOWN;
 }
 
 static bool environment_present(const char *name)
@@ -227,24 +241,27 @@ static bool read_command_line(const char *command, char *buffer, size_t capacity
 }
 #endif
 
-static bool known_kitty_terminal(void)
+static terminal_kind detected_terminal_kind(void)
 {
 	const char *term = getenv("TERM");
+	if (environment_present("WEZTERM_PANE") || environment_present("WEZTERM_EXECUTABLE"))
+		return TERMINAL_WEZTERM;
 	if ((term != NULL && strcmp(term, "xterm-kitty") == 0) ||
-		environment_present("KITTY_WINDOW_ID") || environment_present("WEZTERM_PANE") ||
-		environment_present("WEZTERM_EXECUTABLE") || environment_present("GHOSTTY_RESOURCES_DIR") ||
-		terminal_program_is_kitty_capable(getenv("TERM_PROGRAM"))) return true;
+		environment_present("KITTY_WINDOW_ID") || environment_present("GHOSTTY_RESOURCES_DIR"))
+		return TERMINAL_KITTY;
+	terminal_kind direct = terminal_program_kind(getenv("TERM_PROGRAM"));
+	if (direct != TERMINAL_UNKNOWN) return direct;
 #if !defined(_WIN32)
 	if (environment_present("TMUX")) {
 		char outer[128];
 		if (read_command_line("tmux show-environment -g TERM_PROGRAM 2>/dev/null", outer,
 			sizeof(outer))) {
 			char *equals = strchr(outer, '=');
-			return terminal_program_is_kitty_capable(equals == NULL ? outer : equals + 1);
+			return terminal_program_kind(equals == NULL ? outer : equals + 1);
 		}
 	}
 #endif
-	return false;
+	return TERMINAL_UNKNOWN;
 }
 
 static bool tmux_allows_passthrough(void)
@@ -267,13 +284,51 @@ static bool stdout_is_tty(void)
 #endif
 }
 
-static bool use_kitty_graphics(void)
+static bool tmux_supports_sixel(void)
 {
-	const char *requested = getenv("RANDOM_HELP_GRAPHICS");
-	if (equals_case_insensitive(requested, "unicode")) return false;
-	if (equals_case_insensitive(requested, "kitty")) return true;
-	if (!stdout_is_tty() || !known_kitty_terminal()) return false;
-	return !environment_present("TMUX") || tmux_allows_passthrough();
+#if defined(_WIN32)
+	return false;
+#else
+	char value[16];
+	return read_command_line("tmux display-message -p '#{sixel_support}' 2>/dev/null",
+		value, sizeof(value)) && strcmp(value, "1") == 0;
+#endif
+}
+
+static bool chart_renderer_for_help(int argc, char **argv, chart_renderer *out)
+{
+	bool flag_seen = false;
+	for (int i = 1; i < argc; ++i) {
+		if (strcmp(argv[i], "--kitty") == 0) { *out = CHART_KITTY; flag_seen = true; }
+		else if (strcmp(argv[i], "--sixel") == 0) { *out = CHART_SIXEL; flag_seen = true; }
+		else if (strcmp(argv[i], "--utf8-graphics") == 0) {
+			*out = CHART_UTF8; flag_seen = true;
+		}
+	}
+	if (flag_seen) return true;
+	const char *requested = getenv("RANDOMZ_CHART_TYPE");
+	if (requested != NULL && *requested != '\0') {
+		if (equals_case_insensitive(requested, "utf8")) *out = CHART_UTF8;
+		else if (equals_case_insensitive(requested, "kitty")) *out = CHART_KITTY;
+		else if (equals_case_insensitive(requested, "sixel")) *out = CHART_SIXEL;
+		else {
+			print_error("RANDOMZ_CHART_TYPE must be utf8, kitty, or sixel");
+			return false;
+		}
+		return true;
+	}
+	if (!stdout_is_tty()) { *out = CHART_UTF8; return true; }
+	terminal_kind terminal = detected_terminal_kind();
+	if (terminal == TERMINAL_WEZTERM) {
+		*out = environment_present("TMUX") && !tmux_supports_sixel()
+			? CHART_UTF8 : CHART_SIXEL;
+	} else if (terminal == TERMINAL_KITTY &&
+		(!environment_present("TMUX") || tmux_allows_passthrough())) {
+		*out = CHART_KITTY;
+	} else {
+		*out = CHART_UTF8;
+	}
+	return true;
 }
 
 static const distribution_chart *chart_for_distribution(distribution dist)
@@ -296,12 +351,12 @@ static void write_kitty_sequence(const char *control, const char *payload, size_
 	else fputs("\033\\", stdout);
 }
 
-static void print_distribution_help(distribution dist)
+static void print_distribution_help(distribution dist, chart_renderer renderer)
 {
 	const distribution_chart *chart = chart_for_distribution(dist);
 	if (chart == NULL) return;
 	printf("\nDistribution: %s\n%s\n\n", chart->title, chart->parameters);
-	if (use_kitty_graphics()) {
+	if (renderer == CHART_KITTY) {
 		size_t length = strlen(chart->png_base64);
 		bool tmux = environment_present("TMUX");
 		for (size_t offset = 0; offset < length; offset += 4096) {
@@ -317,13 +372,19 @@ static void print_distribution_help(distribution dist)
 			write_kitty_sequence(control, chart->png_base64 + offset, count, tmux);
 		}
 		for (int row = 0; row < 12; ++row) fputs("\r\n", stdout);
+	} else if (renderer == CHART_SIXEL) {
+		/* tmux 3.4+ parses Sixel DCS natively when built with Sixel support. */
+		fputs("\033" "7\033P0;1;0q", stdout);
+		fputs(chart->sixel_data, stdout);
+		fputs("\033\\\033" "8", stdout);
+		for (int row = 0; row < 12; ++row) fputs("\r\n", stdout);
 	} else {
 		fputs(chart->fallback, stdout);
 	}
 	puts(chart->axis);
 }
 
-static void print_help(distribution dist)
+static void print_help(distribution dist, chart_renderer renderer)
 {
 	printf("Usage: %s [options] [start] [end]\n", program_name);
 	printf("       echo 'items' | %s --choose\n", program_name);
@@ -357,6 +418,9 @@ static void print_help(distribution dist)
 	puts("      --seed N|0xHEX  Set unsigned 256-bit integer seed (implies -d)");
 	puts("      --random-source PATH  Read entropy from PATH instead of the OS");
 	puts("      --no-wait       Fail rather than wait for Linux getrandom initialization");
+	puts("      --kitty         Force Kitty graphics for a distribution help chart");
+	puts("      --sixel         Force Sixel graphics for a distribution help chart");
+	puts("      --utf8-graphics Force the UTF-8 Braille distribution help chart");
 	puts("      --mean M        Set mean for normal/poisson");
 	puts("      --stddev S      Set stddev for normal/log-normal");
 	puts("      --alpha A       Set alpha for beta distribution");
@@ -369,12 +433,12 @@ static void print_help(distribution dist)
 	puts("");
 	puts("Environment variables:");
 	puts("  DRANDOMZ_SEED     Unsigned decimal or 0x-prefixed seed (implies -d)");
-	puts("  RANDOM_HELP_GRAPHICS  auto (default), kitty, or unicode for distribution help");
+	puts("  RANDOMZ_CHART_TYPE  utf8, kitty, or sixel; command-line flags override it");
 	puts("");
 	puts("Deterministic mode never persists state. Every invocation starts at");
 	puts("stream position zero. Without an explicit seed it obtains 32 bytes");
 	puts("from the entropy source and prints the replayable seed to stderr.");
-	print_distribution_help(dist);
+	print_distribution_help(dist, renderer);
 }
 
 static distribution help_distribution_from_args(int argc, char **argv)
@@ -563,7 +627,11 @@ static int parse_arguments(int argc, char **argv, options *opts)
 			print_about();
 			exit(0);
 		} else if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0) {
-			print_help(help_distribution_from_args(argc, argv));
+			distribution help_dist = help_distribution_from_args(argc, argv);
+			chart_renderer renderer = CHART_UTF8;
+			if (help_dist != DIST_UNIFORM &&
+				!chart_renderer_for_help(argc, argv, &renderer)) return 1;
+			print_help(help_dist, renderer);
 			exit(0);
 		} else if (strcmp(arg, "--test") == 0) {
 			exit(run_test_suite());
@@ -595,6 +663,9 @@ static int parse_arguments(int argc, char **argv, options *opts)
 			opts->weighted = true;
 		} else if (strcmp(arg, "--no-wait") == 0) {
 			opts->no_wait = true;
+		} else if (strcmp(arg, "--kitty") == 0 || strcmp(arg, "--sixel") == 0 ||
+			strcmp(arg, "--utf8-graphics") == 0) {
+			opts->chart_renderer_flag = true;
 		} else if (strncmp(arg, "--random-source=", 16) == 0) {
 			opts->random_source = arg + 16;
 			if (*opts->random_source == '\0') {
@@ -694,6 +765,10 @@ static int parse_arguments(int argc, char **argv, options *opts)
 
 	if (opts->dist_count > 1) {
 		print_error("only one distribution type can be specified");
+		return 1;
+	}
+	if (opts->chart_renderer_flag) {
+		print_error("--kitty, --sixel, and --utf8-graphics require --help");
 		return 1;
 	}
 	if (positional_count > 2) {

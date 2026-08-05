@@ -30,10 +30,10 @@
 
 ## Done
 - [x] Distribution-qualified help (`--normalized --help`, etc.) renders
-      deterministic embedded PNG plots through the Kitty graphics protocol in
-      Kitty, WezTerm, and Ghostty; tmux-aware passthrough is used only when
-      enabled, with byte-identical Braille fallback and output from Lua/C
-      (2026-08-04 EDT)
+      deterministic embedded plots through Kitty graphics in Kitty/Ghostty and
+      Sixel in WezTerm; tmux uses native Sixel or explicitly enabled Kitty
+      passthrough, with `RANDOMZ_CHART_TYPE`/CLI overrides, byte-identical
+      Braille fallback, and matching Lua/C output (2026-08-05 EDT)
 - [x] Fix the legacy range sampler's infinite loop for ranges > 2^32 (2026-08-01 EST)
 - [x] Golden vectors for the integer paths, blessed pre-conversion (2026-08-01 EST)
 - [x] Integer-only soft-float kernel: mul/add/div/ln/exp/cos/sqrt/pow (2026-08-01 EST)
@@ -182,6 +182,20 @@ recorded on 2026-08-04).
 
 ## Post-shipment distribution enhancements
 
+- [ ] Add `--view` as a chart-only action for exactly one selected
+      distribution. Distribution-qualified `--help` keeps showing the frozen
+      default shape; `--view` renders the parameters actually supplied (for
+      example `--beta --alpha 1 --beta-param 3 --view`) through the same
+      UTF-8/Kitty/Sixel selector.
+- [ ] Complete the customization vocabulary before `--view`: add `--rate` for
+      exponential and `--lambda` as a clearer Poisson alias while retaining
+      `--mean`; normal/log-normal continue to use `--mean` + `--stddev`, and
+      beta uses `--alpha` + `--beta-param`.
+- [ ] Implement parameter-aware curve generation LuaJIT-first using the fixed
+      numeric kernel, then expose a protocol-neutral curve-sampling API from
+      the Zig core through the C ABI. Keep PNG/Sixel/Braille rasterization in
+      the CLIs so distribution math enters the reusable core without terminal
+      protocols or a Lua/ImageMagick runtime dependency entering `randomz`.
 - [ ] Expose `--gamma`, reusing the Marsaglia-Tsang sampler already required by beta.
 - [ ] Add `--weibull` for lifetime and latency models.
 - [ ] Add `--pareto` and discrete `--zipf` for heavy-tailed values/frequencies.

@@ -2,6 +2,7 @@
 # C-FFI CLI acceptance and LuaJIT-oracle differential suite.
 # No set -e: failures are accumulated so one run reports the whole matrix.
 set -u
+set -o pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$here/.."
@@ -57,21 +58,48 @@ echo "Testing generated distribution help parity and terminal framing..."
 if ! luajit "$root/tools/generate_distribution_charts.lua" --check; then
 	fails=$((fails + 1))
 fi
+if command -v sixel2png >/dev/null 2>&1 && command -v magick >/dev/null 2>&1; then
+	echo "Checking Sixel charts through the independent libsixel decoder..."
+	for chart_name in normal exponential poisson log_normal beta; do
+		png="$tmp/$chart_name.png"
+		decoded="$tmp/$chart_name-sixel.png"
+		if ! env CHART_LIB="$root/lib" CHART_NAME="$chart_name" luajit -e \
+			'package.path=os.getenv("CHART_LIB").."/?.lua;"..package.path; io.write(require("distribution_charts")[os.getenv("CHART_NAME")].png_base64)' |
+			base64 -d >"$png"; then
+			echo "Sixel decode control FAILED: could not extract $chart_name PNG" >&2
+			fails=$((fails + 1))
+			continue
+		fi
+		if ! env CHART_LIB="$root/lib" CHART_NAME="$chart_name" luajit -e \
+			'package.path=os.getenv("CHART_LIB").."/?.lua;"..package.path; io.write("\27P0;1;0q", require("distribution_charts")[os.getenv("CHART_NAME")].sixel_data, "\27\\")' |
+			sixel2png - "$decoded"; then
+			echo "Sixel decode control FAILED: libsixel rejected $chart_name" >&2
+			fails=$((fails + 1))
+			continue
+		fi
+		if ! magick compare -metric AE -fuzz 1% "$png" "$decoded" null: >/dev/null 2>&1; then
+			echo "Sixel decode control FAILED: $chart_name differs from its PNG canvas" >&2
+			fails=$((fails + 1))
+		fi
+	done
+else
+	echo "Skipping independent Sixel decode control (libsixel/ImageMagick unavailable)"
+fi
 
 compare_help() {
-	local label="$1" renderer="$2" tmux_value="$3"
-	shift 3
+	local label="$1" expected="$2" requested="$3" tmux_value="$4"
+	shift 4
 	cases=$((cases + 1))
 	local lua_raw="$tmp/help-lua-raw.$cases" c_raw="$tmp/help-c-raw.$cases"
 	local lua_out="$tmp/help-lua.$cases" c_out="$tmp/help-c.$cases"
 	if [ -n "$tmux_value" ]; then
-		env RANDOM_HELP_GRAPHICS="$renderer" TMUX="$tmux_value" \
+		env RANDOMZ_CHART_TYPE="$requested" TMUX="$tmux_value" \
 			"$lua_cli" "$@" >"$lua_raw"
-		env RANDOM_HELP_GRAPHICS="$renderer" TMUX="$tmux_value" \
+		env RANDOMZ_CHART_TYPE="$requested" TMUX="$tmux_value" \
 			"$c_cli" "$@" >"$c_raw"
 	else
-		env -u TMUX RANDOM_HELP_GRAPHICS="$renderer" "$lua_cli" "$@" >"$lua_raw"
-		env -u TMUX RANDOM_HELP_GRAPHICS="$renderer" "$c_cli" "$@" >"$c_raw"
+		env -u TMUX RANDOMZ_CHART_TYPE="$requested" "$lua_cli" "$@" >"$lua_raw"
+		env -u TMUX RANDOMZ_CHART_TYPE="$requested" "$c_cli" "$@" >"$c_raw"
 	fi
 	# The frontends intentionally advertise different invocation and seed-env
 	# names in their generic help. The distribution-qualified block below its
@@ -83,9 +111,17 @@ compare_help() {
 		cmp "$lua_out" "$c_out" >&2 || true
 		fails=$((fails + 1))
 	fi
-	if [ "$renderer" = "unicode" ]; then
-		if ! grep -Fq 'Distribution: ' "$lua_out" || grep -Fq $'\033_G' "$lua_out"; then
-			echo "randomz help framing FAILED: $label did not use Unicode-only output" >&2
+	if [ "$expected" = "utf8" ]; then
+		if ! grep -Fq 'Distribution: ' "$lua_out" ||
+		   ! grep -Fq '⡇' "$lua_out" || grep -Fq $'\033_G' "$lua_out" ||
+		   grep -Fq $'\033P0;1;0q' "$lua_out"; then
+			echo "randomz help framing FAILED: $label did not use UTF-8-only output" >&2
+			fails=$((fails + 1))
+		fi
+	elif [ "$expected" = "sixel" ]; then
+		if ! grep -Fq $'\0337\033P0;1;0q"1;1;336;144#0;2;5;6;9' "$lua_out" ||
+		   ! grep -Fq $'\033\\\0338' "$lua_out" || grep -Fq $'\033_G' "$lua_out"; then
+			echo "randomz help framing FAILED: $label lacks direct Sixel DCS framing" >&2
 			fails=$((fails + 1))
 		fi
 	elif [ -z "$tmux_value" ]; then
@@ -103,10 +139,14 @@ compare_help() {
 }
 
 for help_dist in --normalized --exponential --poisson --log-normal --beta; do
-	compare_help "Unicode $help_dist" unicode "" "$help_dist" --help
+	compare_help "UTF-8 $help_dist" utf8 utf8 "" "$help_dist" --help
 done
-compare_help "direct Kitty PNG" kitty "" --help --normalized
-compare_help "tmux-wrapped Kitty PNG" kitty fake --normalized --help
+compare_help "direct Kitty PNG" kitty kitty "" --help --normalized
+compare_help "tmux-wrapped Kitty PNG" kitty kitty fake --normalized --help
+compare_help "direct Sixel" sixel sixel "" --normalized --help
+compare_help "--utf8-graphics overrides env" utf8 kitty "" --normalized --utf8-graphics --help
+compare_help "--kitty overrides env" kitty utf8 "" --help --kitty --normalized
+compare_help "--sixel overrides env" sixel utf8 "" --sixel --normalized --help
 
 compare_args() {
 	local label="$1"

@@ -104,7 +104,10 @@
         # LuaJIT is the only runtime dependency (ffi + bit are built in).
         runtimeTools = [ luajitFixed ];
         # External tools the executable shells out to / the test suite needs.
-        testTools = with pkgs; [ bashInteractive coreutils gnugrep gawk bc xxd binutils gnutar stdenv.cc ];
+        testTools = with pkgs; [
+          bashInteractive coreutils gnugrep gawk bc xxd binutils gnutar
+          stdenv.cc libsixel imagemagick
+        ];
 
         # Zig 0.16 for the port (docs/plans/2026-08-02-zig-port.md). Pinned to
         # the explicit `zig_0_16` attribute rather than the rolling `zig`, so a

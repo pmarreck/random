@@ -165,7 +165,7 @@ local function map_point(chart, point, ymax, left, right, top, bottom)
 	return x, y
 end
 
-local function make_png(chart)
+local function make_canvas(chart)
 	local canvas = new_canvas(WIDTH, HEIGHT)
 	for division = 1, 3 do
 		local y = TOP + (BOTTOM - TOP) * division / 4
@@ -202,6 +202,10 @@ local function make_png(chart)
 		end
 	end
 
+	return canvas
+end
+
+local function make_png(canvas)
 	local scanlines = {}
 	for y = 1, HEIGHT do
 		local packed = { string.char(0) }
@@ -221,6 +225,57 @@ local function make_png(chart)
 		100, 213, 210)
 	return signature .. png_chunk("IHDR", ihdr) .. png_chunk("PLTE", palette) ..
 		png_chunk("IDAT", zlib_store(table.concat(scanlines))) .. png_chunk("IEND", "")
+end
+
+local function sixel_run(mask, count)
+	local pixel = string.char(63 + mask)
+	if count >= 4 then return "!" .. count .. pixel end
+	return pixel:rep(count)
+end
+
+-- Encode the same four-colour canvas directly as SIXEL. The DCS framing is
+-- deliberately added by each frontend so the generated table remains plain
+-- ASCII and the renderer can save/restore the cursor around it. Every colour
+-- paints a complete six-pixel band; unset bits are transparent, while colour
+-- zero explicitly supplies the chart background.
+local function make_sixel(canvas)
+	local palette = {
+		{ 12, 16, 24 },
+		{ 37, 50, 71 },
+		{ 28, 93, 103 },
+		{ 100, 213, 210 },
+	}
+	local out = { ('"1;1;%d;%d'):format(WIDTH, HEIGHT) }
+	for index, rgb in ipairs(palette) do
+		local function percent(value) return math.floor(value * 100 / 255 + 0.5) end
+		out[#out + 1] = ("#%d;2;%d;%d;%d"):format(index - 1,
+			percent(rgb[1]), percent(rgb[2]), percent(rgb[3]))
+	end
+	for band_y = 1, HEIGHT, 6 do
+		for color = 0, #palette - 1 do
+			out[#out + 1] = "#" .. color
+			local previous, run_length
+			for x = 1, WIDTH do
+				local mask = 0
+				for bit_index = 0, 5 do
+					local row = canvas[band_y + bit_index]
+					if row and row[x] == color then mask = mask + 2 ^ bit_index end
+				end
+				if previous == nil then
+					previous, run_length = mask, 1
+				elseif mask == previous then
+					run_length = run_length + 1
+				else
+					out[#out + 1] = sixel_run(previous, run_length)
+					previous, run_length = mask, 1
+				end
+			end
+			out[#out + 1] = sixel_run(previous, run_length)
+			out[#out + 1] = color == #palette - 1 and
+				(band_y + 5 < HEIGHT and "-" or "") or "$"
+		end
+	end
+	return table.concat(out)
 end
 
 local base64_alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
@@ -315,7 +370,9 @@ local function wrapped_literal(value, indent, quote)
 end
 
 for _, chart in ipairs(charts) do
-	chart.png_base64 = base64(make_png(chart))
+	local canvas = make_canvas(chart)
+	chart.png_base64 = base64(make_png(canvas))
+	chart.sixel_data = make_sixel(canvas)
 	chart.fallback = make_braille(chart)
 end
 
@@ -333,6 +390,10 @@ local function lua_source()
 		local literal = wrapped_literal(chart.png_base64, "\t\t\t", lua_quote)
 		literal = literal:gsub("\n", " ..\n", select(2, literal:gsub("\n", "")))
 		out[#out + 1] = literal .. ","
+		out[#out + 1] = "\t\tsixel_data ="
+		local sixel_literal = wrapped_literal(chart.sixel_data, "\t\t\t", lua_quote)
+		sixel_literal = sixel_literal:gsub("\n", " ..\n", select(2, sixel_literal:gsub("\n", "")))
+		out[#out + 1] = sixel_literal .. ","
 		out[#out + 1] = "\t\tfallback = " .. lua_quote(chart.fallback) .. ","
 		out[#out + 1] = "\t},"
 	end
@@ -350,6 +411,7 @@ local function c_source()
 		"\tconst char *parameters;",
 		"\tconst char *axis;",
 		"\tconst char *png_base64;",
+		"\tconst char *sixel_data;",
 		"\tconst char *fallback;",
 		"} distribution_chart;",
 		"",
@@ -366,6 +428,7 @@ local function c_source()
 		out[#out + 1] = "\t\t" .. c_quote(chart.parameters) .. ","
 		out[#out + 1] = "\t\t" .. c_quote(chart.axis) .. ","
 		out[#out + 1] = wrapped_literal(chart.png_base64, "\t\t", c_quote) .. ","
+		out[#out + 1] = wrapped_literal(chart.sixel_data, "\t\t", c_quote) .. ","
 		out[#out + 1] = "\t\t" .. c_quote(chart.fallback)
 		out[#out + 1] = "\t},"
 	end

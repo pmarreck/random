@@ -119,7 +119,7 @@ test_random() {
 		'--beta:Beta'; do
 		local distribution_flag="${distribution_spec%%:*}"
 		local distribution_title="${distribution_spec#*:}"
-		distribution_output=$(env RANDOM_HELP_GRAPHICS=unicode random \
+		distribution_output=$(env RANDOMZ_CHART_TYPE=utf8 random \
 			"$distribution_flag" --help)
 		distribution_status=$?
 		if [ "$distribution_status" -ne 0 ] ||
@@ -130,13 +130,17 @@ test_random() {
 		fi
 	done
 	local help_before_distribution help_after_distribution normal_alias_help
-	help_before_distribution=$(env RANDOM_HELP_GRAPHICS=unicode random --help --normalized)
-	help_after_distribution=$(env RANDOM_HELP_GRAPHICS=unicode random --normalized --help)
-	normal_alias_help=$(env RANDOM_HELP_GRAPHICS=unicode nrandom --help)
+	help_before_distribution=$(env RANDOMZ_CHART_TYPE=utf8 random --help --normalized)
+	help_after_distribution=$(env RANDOMZ_CHART_TYPE=invalid random --utf8-graphics --normalized --help)
+	normal_alias_help=$(env RANDOMZ_CHART_TYPE=utf8 nrandom --help)
 	if [ "$help_before_distribution" != "$help_after_distribution" ] ||
 	   ! grep -Fq 'Distribution: Normal (Gaussian)' <<<"$normal_alias_help"; then
 		distribution_help_ok=0
 	fi
+	env RANDOMZ_CHART_TYPE=invalid random --normalized --help >/dev/null 2>&1
+	if [ "$?" -eq 0 ]; then distribution_help_ok=0; fi
+	random --kitty >/dev/null 2>&1
+	if [ "$?" -eq 0 ]; then distribution_help_ok=0; fi
 	if [ "$distribution_help_ok" -eq 1 ]; then
 		echo "✓ Distribution-qualified help charts passed"
 	else
