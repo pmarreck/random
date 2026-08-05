@@ -213,7 +213,7 @@ static void print_help(void)
 	puts("  -b, --binaryoutput  Output binary bytes");
 	puts("  -c, --count N       Output N numbers (default: 1, or 1024 with -b)");
 	puts("  -d, --deterministic Use the deterministic BLAKE3 keyed XOF");
-	puts("      --true-random   Force OS/source entropy; ignore DRANDOM_SEED");
+	puts("      --true-random   Force OS/source entropy; ignore DRANDOMZ_SEED");
 	puts("      --delimiter S   Set delimiter for output/input (default: newline)");
 	puts("  -h, --help          Show this help message");
 	puts("      --hex           Output as hexadecimal");
@@ -232,7 +232,7 @@ static void print_help(void)
 	puts("  'drandomz' -> implies --deterministic");
 	puts("");
 	puts("Environment variables:");
-	puts("  DRANDOM_SEED      Unsigned decimal or 0x-prefixed seed (implies -d)");
+	puts("  DRANDOMZ_SEED     Unsigned decimal or 0x-prefixed seed (implies -d)");
 	puts("");
 	puts("Deterministic mode never persists state. Every invocation starts at");
 	puts("stream position zero. Without an explicit seed it obtains 32 bytes");
@@ -574,7 +574,7 @@ static int parse_arguments(int argc, char **argv, options *opts)
 		print_error("--mean must be positive for --poisson (it is the rate parameter)");
 		return 1;
 	}
-	const char *env_seed = getenv("DRANDOM_SEED");
+	const char *env_seed = getenv("DRANDOMZ_SEED");
 	if (!opts->force_true_random && !opts->deterministic && env_seed != NULL && *env_seed != '\0') {
 		opts->deterministic = true;
 	}
@@ -1151,10 +1151,10 @@ int main(int argc, char **argv)
 		if (opts.seed_set) {
 			memcpy(seed, opts.seed, 32);
 		} else {
-			const char *env_seed = getenv("DRANDOM_SEED");
+			const char *env_seed = getenv("DRANDOMZ_SEED");
 			if (env_seed != NULL && *env_seed != '\0') {
 				if (!parse_seed(env_seed, seed)) {
-					fprintf(stderr, "Error: DRANDOM_SEED must be an unsigned decimal or "
+					fprintf(stderr, "Error: DRANDOMZ_SEED must be an unsigned decimal or "
 						"0x-prefixed hexadecimal integer smaller than 2^256, got: %s\n", env_seed);
 					return 1;
 				}

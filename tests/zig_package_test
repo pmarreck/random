@@ -6,7 +6,12 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/random-zig-package.XXXXXX")" || exit 1
 trap 'rm -rf -- "$tmp"' EXIT
 
-hash=$(zig fetch --global-cache-dir "$tmp/cache" "$root") || exit 1
+# Zig 0.16 materializes a local-path fetch under ./zig-pkg as well as filling
+# the requested cache. Run it inside the disposable root so the package
+# integrity check cannot leave generated state in the source checkout.
+mkdir -p "$tmp/fetch-driver" || exit 1
+cp "$root/build.zig" "$root/build.zig.zon" "$tmp/fetch-driver/" || exit 1
+hash=$(cd "$tmp/fetch-driver" && zig fetch --global-cache-dir "$tmp/cache" "$root") || exit 1
 archive="$tmp/cache/p/$hash.tar.gz"
 mkdir -p "$tmp/unpacked"
 tar -xzf "$archive" -C "$tmp/unpacked" || exit 1

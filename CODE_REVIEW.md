@@ -158,9 +158,11 @@ correctness blockers.
 
 ## 4. Security
 
-- **Fixed:** `--true-random` overrides ambient `DRANDOM_SEED` and rejects
-  deterministic conflicts, giving security-sensitive callers an explicit
-  fail-safe entropy mode.
+- **Fixed:** `--true-random` overrides the frontend-specific seed environment
+  (`DRANDOM_SEED` for LuaJIT, `DRANDOMZ_SEED` for C) and rejects deterministic
+  conflicts. Each frontend ignores the other's variable, giving
+  security-sensitive callers an explicit fail-safe entropy mode without
+  cross-frontend namespace coupling.
 - **Fixed:** panic-capable fixed arithmetic was removed from the public ABI.
   Public conversions and samplers validate canonical values/domains and return
   statuses; extreme log-normal input now returns `RANDOMZ_NUMERIC_ERROR` rather

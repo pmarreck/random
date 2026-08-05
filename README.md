@@ -126,12 +126,12 @@ Unix. Any short read or source error fails closed. `--random-source PATH`
 selects an explicit byte source, chiefly for deterministic testing;
 `--no-wait` requests Linux `GRND_NONBLOCK` behavior.
 
-The CLI never persists deterministic state. Reusing a seed restarts the same
-stream; omitting it prints a replayable seed. `DRANDOM_SEED` is the only
-deterministic environment variable. Because an inherited `DRANDOM_SEED` makes
-plain `random` deterministic, security-sensitive callers should use
-`--true-random`, which overrides the environment and rejects deterministic
-flags.
+The CLIs never persist deterministic state. Reusing a seed restarts the same
+stream; omitting it prints a replayable seed. The LuaJIT CLI uses
+`DRANDOM_SEED`; the C/FFI CLI uses the separately namespaced `DRANDOMZ_SEED`.
+An inherited frontend-specific seed variable makes a plain invocation
+deterministic, so security-sensitive callers should use `--true-random`, which
+overrides that frontend's environment variable and rejects deterministic flags.
 
 The vendored LuaJIT BLAKE3 implementation is by Egor Skriptunoff. Its header
 preserves the author's MIT notice from the verified earlier `pure_lua_SHA`

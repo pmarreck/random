@@ -119,7 +119,8 @@ OS fallback), print them as a replayable `0x` seed, and feed the same canonical
 32 bytes through the KDF. This replaces `now_seed()` and fails closed if entropy
 is unavailable. Re-running with the printed seed must reproduce the stream.
 
-`DRANDOM_SEED` (env) follows the same rules as `--seed`.
+`DRANDOM_SEED` (LuaJIT CLI) and `DRANDOMZ_SEED` (C/FFI CLI) follow the same
+rules as `--seed`. Each frontend ignores the other frontend's variable.
 
 ## State and persistence
 
@@ -150,8 +151,9 @@ source changes from PCG32 to the BLAKE3 keystream:
 
 ## Public API preserved
 
-`-d`/`--deterministic`, `--seed`, `DRANDOM_SEED`, and the `drandom` argv[0]
-symlink remain. Seed grammar and deterministic streams deliberately change.
+`-d`/`--deterministic`, `--seed`, the frontend-specific seed environment
+variable, and the `drandom`/`drandomz` argv[0] aliases remain. Seed grammar and
+deterministic streams deliberately change.
 Implicit cross-call state continuity and its two state environment variables
 are removed.
 

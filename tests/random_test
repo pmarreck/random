@@ -766,9 +766,10 @@ test_random() {
 	echo "Testing drandom symlink implies --deterministic..."
 
 	if command -v drandom >/dev/null 2>&1; then
-		# drandom with DRANDOM_SEED should be deterministic
-		local dr_seq1=$(DRANDOM_SEED=77777 drandom --count 3 2>/dev/null | tr '\n' ' ')
-		local dr_seq2=$(DRANDOM_SEED=77777 drandom --count 3 2>/dev/null | tr '\n' ' ')
+		# The selected frontend's seed environment should be deterministic.
+		local dr_seq1 dr_seq2
+		dr_seq1=$(env "$RANDOM_TEST_SEED_ENV=77777" drandom --count 3 2>/dev/null | tr '\n' ' ')
+		dr_seq2=$(env "$RANDOM_TEST_SEED_ENV=77777" drandom --count 3 2>/dev/null | tr '\n' ' ')
 
 		if [ "$dr_seq1" = "$dr_seq2" ] && [ -n "$dr_seq1" ]; then
 			echo "✓ drandom symlink test passed"
@@ -781,43 +782,50 @@ test_random() {
 		(( fails++ ))
 	fi
 
-	# Test 25b: DRANDOM_SEED alone (no -d, not invoked as drandom) implies
-	# deterministic mode, matching -h's own documented contract
-	# ("DRANDOM_SEED  Seed value (overrides state file, implies -d)").
-	# Confirmed directly before this fix: `DRANDOM_SEED=42 random -c 3`
+	# Test 25b: the frontend-specific seed environment alone (no -d, not
+	# invoked as drandom) implies
+	# deterministic mode, matching -h's documented seed-environment contract.
+	# Confirmed directly before the original LuaJIT fix:
+	# `DRANDOM_SEED=42 random -c 3`
 	# drew from /dev/urandom and differed on every run -- the env var was
 	# only ever read INSIDE the already-deterministic branch, so setting
 	# it alone had no effect at all on plain `random` (Test 25 above
 	# only ever exercised this via the `drandom` symlink, which already
 	# forces deterministic mode by invocation name regardless of
-	# DRANDOM_SEED, so it could not have caught this).
+	# the environment seed, so it could not have caught this).
 	(( tests++ ))
-	echo "Testing DRANDOM_SEED alone implies deterministic mode..."
+	echo "Testing $RANDOM_TEST_SEED_ENV alone implies deterministic mode..."
 
 	local envseed_seq1 envseed_seq2 explicit_seq
-	envseed_seq1=$(DRANDOM_SEED=424242 random -c 3 2>/dev/null | tr '\n' ' ')
-	envseed_seq2=$(DRANDOM_SEED=424242 random -c 3 2>/dev/null | tr '\n' ' ')
+	envseed_seq1=$(env "$RANDOM_TEST_SEED_ENV=424242" random -c 3 2>/dev/null | tr '\n' ' ')
+	envseed_seq2=$(env "$RANDOM_TEST_SEED_ENV=424242" random -c 3 2>/dev/null | tr '\n' ' ')
 	explicit_seq=$(random -d --seed 424242 -c 3 2>/dev/null | tr '\n' ' ')
 
-	if [ -n "$envseed_seq1" ] && [ "$envseed_seq1" = "$envseed_seq2" ] && [ "$envseed_seq1" = "$explicit_seq" ]; then
-		echo "✓ DRANDOM_SEED alone implies deterministic mode"
+	if [ -n "$envseed_seq1" ] && [ "$envseed_seq1" = "$envseed_seq2" ] && \
+	   [ "$envseed_seq1" = "$explicit_seq" ] && \
+	   [[ "$help_output" == *"$RANDOM_TEST_SEED_ENV"* ]] && \
+	   [[ "$help_output" != *"$RANDOM_TEST_OTHER_SEED_ENV"* ]]; then
+		echo "✓ $RANDOM_TEST_SEED_ENV alone implies deterministic mode"
 	else
-		echo "✗ DRANDOM_SEED alone did not imply deterministic mode: run1='$envseed_seq1' run2='$envseed_seq2' explicit='$explicit_seq'" >&2
+		echo "✗ $RANDOM_TEST_SEED_ENV contract failed: run1='$envseed_seq1' run2='$envseed_seq2' explicit='$explicit_seq'" >&2
 		(( fails++ ))
 	fi
 
 	(( tests++ ))
-	echo "Testing --true-random overrides ambient DRANDOM_SEED..."
-	local entropy_fixture true_bytes
+	echo "Testing --true-random and frontend seed-environment separation..."
+	local entropy_fixture true_bytes other_seed_bytes
 	entropy_fixture=$(mktemp "${TMPDIR:-/tmp}/random-entropy.XXXXXX")
 	dd if=/dev/zero of="$entropy_fixture" bs=32 count=1 status=none
-	true_bytes=$(DRANDOM_SEED=424242 random --true-random --random-source "$entropy_fixture" -b -c 32 2>/dev/null | xxd -p -c 256)
+	true_bytes=$(env "$RANDOM_TEST_SEED_ENV=424242" random --true-random --random-source "$entropy_fixture" -b -c 32 2>/dev/null | xxd -p -c 256)
+	other_seed_bytes=$(env -u "$RANDOM_TEST_SEED_ENV" "$RANDOM_TEST_OTHER_SEED_ENV=424242" \
+		random --random-source "$entropy_fixture" -b -c 32 2>/dev/null | xxd -p -c 256)
 	rm -f -- "$entropy_fixture"
 	if [ "$true_bytes" = "$(printf '00%.0s' {1..32})" ] && \
+	   [ "$other_seed_bytes" = "$(printf '00%.0s' {1..32})" ] && \
 	   ! random --true-random -d --seed 1 -c 1 >/dev/null 2>&1; then
-		echo "✓ --true-random overrides the environment and rejects deterministic conflicts"
+		echo "✓ --true-random overrides $RANDOM_TEST_SEED_ENV; $RANDOM_TEST_OTHER_SEED_ENV is inert"
 	else
-		echo "✗ --true-random did not enforce the true-entropy mode" >&2
+		echo "✗ true-random/seed-environment separation failed: true='$true_bytes' other='$other_seed_bytes'" >&2
 		(( fails++ ))
 	fi
 
@@ -1656,8 +1664,8 @@ verycommon:100"
 	seed_reject_check "seed 2^256 (dec)"   random --seed "115792089237316195423570985008687907853269984665640564039457584007913129639936" -c 1 0 0
 	seed_reject_check "seed 2^256 (hex)"   random --seed "0x10000000000000000000000000000000000000000000000000000000000000000" -c 1 0 0
 	seed_reject_check "'--seed --count 3'" random --seed --count 3
-	seed_reject_check "DRANDOM_SEED=-1"    env DRANDOM_SEED=-1 random -c 1 0 0
-	seed_reject_check "DRANDOM_SEED=nan"   env DRANDOM_SEED=nan random -c 1 0 0
+	seed_reject_check "$RANDOM_TEST_SEED_ENV=-1"  env "$RANDOM_TEST_SEED_ENV=-1" random -c 1 0 0
+	seed_reject_check "$RANDOM_TEST_SEED_ENV=nan" env "$RANDOM_TEST_SEED_ENV=nan" random -c 1 0 0
 
 	if [ "$seed_grammar_fail" -eq 0 ]; then
 		echo "✓ Malformed seed classifier passed (14 cases)"
