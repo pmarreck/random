@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# C-FFI CLI acceptance and LuaJIT-oracle differential suite.
+# No set -e: failures are accumulated so one run reports the whole matrix.
+set -u
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$here/.."
+lua_cli="$root/bin/random"
+c_cli="${RANDOMZ_TEST_CLI:-$root/zig-out/bin/randomz}"
+fails=0
+cases=0
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/randomz-differential.XXXXXX")" || exit 1
+trap 'rm -rf -- "$tmp"' EXIT
+
+# The repository-default target is always rebuilt. Otherwise source edits can
+# be "verified" against a stale zig-out executable left by an earlier run.
+if [ -z "${RANDOMZ_TEST_CLI:-}" ]; then
+	zig build -Doptimize=ReleaseFast >/dev/null || exit 1
+fi
+if [ ! -x "$c_cli" ]; then
+	echo "randomz test FAILED: C CLI is not executable: $c_cli" >&2
+	exit 1
+fi
+
+echo "Testing the shared CLI contract through the Zig/C FFI..."
+RANDOM_TEST_CLI="$c_cli" RANDOM_TEST_DEPTH=0 "$here/random_test"
+rc=$?
+if [ "$rc" -ne 0 ]; then fails=$((fails + 1)); fi
+
+RANDOM_TEST_CLI="$c_cli" "$here/drbg_test"
+rc=$?
+if [ "$rc" -ne 0 ]; then fails=$((fails + 1)); fi
+
+if [ -e /dev/full ]; then
+	echo "Testing C frontend write failures are reported..."
+	for spec in "-b -c 64" "-b --hex -c 64" "-b --base64 -c 64"; do
+		read -r -a argv <<<"$spec"
+		"$c_cli" -d --seed 42 "${argv[@]}" >/dev/full 2>/dev/null
+		if [ "$?" -eq 0 ]; then
+			echo "randomz I/O control FAILED: success writing '$spec' to /dev/full" >&2
+			fails=$((fails + 1))
+		fi
+	done
+	printf 'alpha\nbeta\n' | "$c_cli" -d --seed 42 --choose >/dev/full 2>/dev/null
+	if [ "$?" -eq 0 ]; then
+		echo "randomz I/O control FAILED: stdin operation succeeded writing to /dev/full" >&2
+		fails=$((fails + 1))
+	fi
+	"$c_cli" -d -c 1 >/dev/null 2>/dev/full
+	if [ "$?" -eq 0 ]; then
+		echo "randomz I/O control FAILED: auto-seed succeeded without reporting replay seed" >&2
+		fails=$((fails + 1))
+	fi
+fi
+
+compare_args() {
+	local label="$1"
+	shift
+	cases=$((cases + 1))
+	local lua_out="$tmp/lua.$cases" c_out="$tmp/c.$cases"
+	local lua_err="$tmp/lua.$cases.err" c_err="$tmp/c.$cases.err"
+	"$lua_cli" "$@" >"$lua_out" 2>"$lua_err"
+	local lua_rc=$?
+	"$c_cli" "$@" >"$c_out" 2>"$c_err"
+	local c_rc=$?
+	if [ "$lua_rc" -ne 0 ] || [ "$c_rc" -ne 0 ] || \
+	   [ ! -s "$lua_out" ] || [ ! -s "$c_out" ] || ! cmp -s "$lua_out" "$c_out"; then
+		echo "randomz differential FAILED: $label (Lua=$lua_rc C=$c_rc; bytes=$(wc -c <"$lua_out")/$(wc -c <"$c_out"))" >&2
+		echo "  args: $*" >&2
+		diff -u <(xxd -p -c 32 <"$lua_out") <(xxd -p -c 32 <"$c_out") >&2 || true
+		if [ "$lua_rc" -ne 0 ]; then sed 's/^/  Lua stderr: /' <"$lua_err" >&2; fi
+		if [ "$c_rc" -ne 0 ]; then sed 's/^/  C stderr: /' <"$c_err" >&2; fi
+		fails=$((fails + 1))
+	fi
+}
+
+compare_stdin() {
+	local label="$1"
+	local input="$2"
+	shift 2
+	cases=$((cases + 1))
+	local lua_out c_out lua_rc c_rc
+	lua_out="$(printf '%s' "$input" | "$lua_cli" "$@" 2>/dev/null)"
+	lua_rc=$?
+	c_out="$(printf '%s' "$input" | "$c_cli" "$@" 2>/dev/null)"
+	c_rc=$?
+	if [ "$lua_rc" -ne 0 ] || [ "$c_rc" -ne 0 ] || [ "$lua_out" != "$c_out" ]; then
+		echo "randomz stdin differential FAILED: $label (Lua=$lua_rc C=$c_rc)" >&2
+		printf '  Lua: %q\n  C:   %q\n' "$lua_out" "$c_out" >&2
+		fails=$((fails + 1))
+	fi
+}
+
+echo "Testing exact LuaJIT-vs-C output over the seed/flag matrix..."
+max_seed=0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+for seed in 0 1 42 "$max_seed"; do
+	compare_args "raw XOF boundaries, seed=$seed" -d --seed "$seed" -b -c 131
+	compare_args "raw XOF hex, seed=$seed" -d --seed "$seed" -b --hex -c 65
+	compare_args "raw XOF base64, seed=$seed" -d --seed "$seed" -b --base64 -c 65
+	compare_args "narrow range, seed=$seed" -d --seed "$seed" -c 32 -17 981
+	compare_args "wide range, seed=$seed" -d --seed "$seed" -c 32 -4000000000 4000000000
+	compare_args "power-of-two wide range, seed=$seed" -d --seed "$seed" -c 32 0 1099511627775
+	compare_args "normal integer, seed=$seed" -d --seed "$seed" -n -c 32 -18 0
+	compare_args "normal fixed, seed=$seed" -d --seed "$seed" -n --mean -7.25 --stddev 2.5 -c 32
+	compare_args "exponential, seed=$seed" -d --seed "$seed" --exponential -c 32
+	compare_args "poisson, seed=$seed" -d --seed "$seed" --poisson --mean 5.5 -c 32
+	compare_args "log-normal, seed=$seed" -d --seed "$seed" --log-normal --mean -0.25 --stddev 1.75 -c 32
+	compare_args "beta, seed=$seed" -d --seed "$seed" --beta --alpha 2.5 --beta-param 7.75 -c 32
+	compare_args "beta alpha below one, seed=$seed" -d --seed "$seed" --beta --alpha 0.5 --beta-param 2 -c 32
+	compare_args "beta both below one, seed=$seed" -d --seed "$seed" --beta --alpha 0.5 --beta-param 0.75 -c 32
+	compare_args "ranged binary, seed=$seed" -d --seed "$seed" -b --hex -c 65 64 192
+	compare_args "normal binary, seed=$seed" -d --seed "$seed" -b --hex -n -c 65 0 255
+	compare_args "exponential binary, seed=$seed" -d --seed "$seed" -b --hex --exponential -c 65
+	compare_args "poisson binary, seed=$seed" -d --seed "$seed" -b --hex --poisson --mean 5 -c 65
+	compare_args "log-normal binary, seed=$seed" -d --seed "$seed" -b --hex --log-normal -c 65
+	compare_args "beta binary, seed=$seed" -d --seed "$seed" -b --hex --beta --alpha 2 --beta-param 5 -c 65
+	compare_args "delimiter, seed=$seed" -d --seed "$seed" --delimiter '::' -c 17 0 100
+done
+
+stdin_lines=$'alpha\nbeta\ngamma\ndelta\nepsilon\n'
+stdin_csv='alpha,beta,gamma,delta,epsilon'
+stdin_weighted=$'rare:1\ncommon:10\nverycommon:100\n'
+for seed in 1 42 "$max_seed"; do
+	compare_stdin "choose, seed=$seed" "$stdin_lines" --choose -d --seed "$seed"
+	compare_stdin "choose delimiter, seed=$seed" "$stdin_csv" --choose --delimiter , -d --seed "$seed"
+	compare_stdin "shuffle, seed=$seed" "$stdin_lines" --shuffle -d --seed "$seed"
+	compare_stdin "weighted, seed=$seed" "$stdin_weighted" --weighted -d --seed "$seed"
+done
+compare_stdin "CRLF item normalization" $'alpha\r\nbeta\r\ngamma\r\n' --shuffle -d --seed 42
+
+if [ "$fails" -ne 0 ]; then
+	echo "randomz test FAILED: $fails control(s) failed across $cases exact differential cases" >&2
+	exit "$fails"
+fi
+
+echo "randomz test PASSED: shared contract + $cases exact differential cases"

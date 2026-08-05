@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# One byte-framed deterministic CLI payload for cross-target comparisons.
+set -u
+
+cli="${1:?usage: randomz_cross_payload /path/to/randomz}"
+shift
+runner=()
+if [ -n "${RANDOMZ_RUNNER:-}" ]; then
+	read -r -a runner <<<"$RANDOMZ_RUNNER"
+fi
+
+run_cli() {
+	"${runner[@]}" "$cli" "$@"
+}
+
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/randomz-cross-payload.XXXXXX")" || exit 1
+trap 'rm -rf -- "$tmp"' EXIT
+
+emit_case() {
+	local output="$tmp/case.$case_no"
+	if [ -n "$stdin_data" ]; then
+		printf '%s\n' "$stdin_data" | run_cli --seed "$seed" "${argv[@]}" >"$output" 2>/dev/null
+	else
+		run_cli --seed "$seed" "${argv[@]}" >"$output" 2>/dev/null
+	fi
+	local rc=$?
+	if [ "$rc" -ne 0 ] || [ ! -s "$output" ]; then
+		echo "randomz cross payload case $case_no failed or emitted no bytes (exit=$rc)" >&2
+		return 1
+	fi
+	printf '\nRANDOMZ-CASE %d SEED %s ARGS %s BYTES %d\n' \
+		"$case_no" "$seed" "$spec" "$(wc -c <"$output")"
+	cat "$output"
+}
+
+cases=(
+	"-b -c 512"
+	"--hex -c 200 0 4294967295"
+	"-c 200 0 1000000000000"
+	"-c 200 -1000000000000 1000000000000"
+	"--exponential -c 200"
+	"--log-normal -c 200 --stddev 2"
+	"--beta --alpha 2 --beta-param 5 -c 200"
+	"--poisson --mean 40 -c 200"
+	"--normalized --mean 1000000 --stddev 250000 -c 200"
+	"--normalized -c 200 0 1000000000000"
+	"--exponential -c 200 --delimiter ,"
+)
+
+stdin_shuf="$(seq 1 200)"
+stdin_weighted="alpha:1,beta:10,gamma:100,delta:1000"
+case_no=0
+for spec in "${cases[@]}" "@stdin:--shuffle" "@stdin:--choose -c 50" \
+	"@weighted:--weighted -c 50 --delimiter ,"; do
+	for seed in 1 42 987654321; do
+		case_no=$((case_no + 1))
+		stdin_data=""
+		args="$spec"
+		case "$spec" in
+			"@stdin:"*) stdin_data="$stdin_shuf"; args="${spec#@stdin:}" ;;
+			"@weighted:"*) stdin_data="$stdin_weighted"; args="${spec#@weighted:}" ;;
+		esac
+		read -r -a argv <<<"$args"
+		emit_case || exit 1
+	done
+done

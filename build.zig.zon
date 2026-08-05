@@ -8,6 +8,11 @@
     .paths = .{
         "build.zig",
         "build.zig.zon",
+        "include",
+        "LICENSE",
+        "README.md",
         "src",
+        "tests/random_test",
+        "tests/cli_test_setup.sh",
     },
 }

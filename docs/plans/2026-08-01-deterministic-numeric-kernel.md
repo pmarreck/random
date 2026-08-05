@@ -1,6 +1,7 @@
 # Deterministic Numeric Kernel Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Follow the checked task sequence and preserve its
+> mechanically falsifiable controls. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** Make `bin/random` produce bit-identical seeded streams on every platform by replacing all libm floating-point math with an integer-only normalized soft-float kernel.
 
@@ -58,7 +59,7 @@ Full hexagonal separation (pure core / adapters) is deliberately **not** done he
 
 ---
 
-### Task 1: Fix the `pcg32_range` infinite loop
+### Task 1: Fix the legacy range-sampler infinite loop
 
 `bin/random:172-182` computes `bound = 4294967296 - (4294967296 % range)`. For any `range > 2^32` that is `4294967296 - 4294967296 = 0`, so `r < bound` is never true and the loop never terminates.
 
@@ -68,11 +69,11 @@ Full hexagonal separation (pure core / adapters) is deliberately **not** done he
 
 **Interfaces:**
 - Consumes: nothing
-- Produces: `pcg32_range(start_val, end_val)` unchanged in signature; now terminates for all ranges.
+- Produces: the deterministic `range(start_val, end_val)` operation unchanged in behavior; now terminates for all ranges.
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `tests/random_test`, immediately after Test 20 (the PCG32 known-output test, around line 354):
+Add to `tests/random_test`, immediately after Test 20 (the then-current known-output test, around line 354):
 
 ```bash
 	# Test 20b: ranges wider than 2^32 must terminate (regression: infinite loop)
@@ -104,20 +105,20 @@ Expected: FAIL with "timed out (infinite loop)" after 5 seconds. If it passes, t
 
 - [ ] **Step 3: Implement the fix**
 
-Replace `pcg32_range` (`bin/random:172-182`) with:
+Replace the legacy range sampler (`bin/random:172-182`) with:
 
 ```lua
 -- Uniform integer in [start_val, end_val] by rejection sampling.
 -- Ranges up to 2^32 use a single 32-bit draw; wider ranges compose two draws
 -- into 64 bits. The original single-draw form computed bound = 0 for any
 -- range > 2^32 and looped forever.
-local function pcg32_range(start_val, end_val)
+local function deterministic_range(start_val, end_val)
 	local range = end_val - start_val + 1
 	if range <= 1 then return start_val end
 	if range <= 4294967296 then
 		local bound = 4294967296 - (4294967296 % range)
 		while true do
-			local r = pcg32_random()
+			local r = deterministic_u32()
 			if r < bound then
 				return start_val + (r % range)
 			end
@@ -136,8 +137,8 @@ local function pcg32_range(start_val, end_val)
 	local remainder = (ffi.cast(u64, 0) - urange) % urange   -- 2^64 mod range
 	local bound = ffi.cast(u64, 0) - remainder               -- 2^64 - (2^64 mod range)
 	while true do
-		local hi = ffi.cast(u64, pcg32_random())
-		local lo = ffi.cast(u64, pcg32_random())
+		local hi = ffi.cast(u64, deterministic_u32())
+		local lo = ffi.cast(u64, deterministic_u32())
 		local r = hi * 4294967296ULL + lo
 		if r < bound then
 			return start_val + tonumber(r % urange)
@@ -162,7 +163,7 @@ Expected: all tests pass, including Test 20 (`seed 42 â†’ 26`). The narrow path 
 
 ```bash
 git add bin/random tests/random_test
-git commit -m "fix: pcg32_range looped forever for ranges wider than 2^32
+git commit -m "fix: deterministic range sampling looped for spans wider than 2^32
 
 bound = 2^32 - (2^32 % range) evaluates to 0 whenever range > 2^32, so
 the rejection test r < bound was never satisfied. Ranges up to 2^32 keep
@@ -1896,15 +1897,15 @@ local fx = require("fixed")
 
 - [ ] **Step 4: Convert the uniform-to-soft-float bridge**
 
-Replace `pcg32_uniform` and `urandom_uniform` (lines 184-187 and 234-238) so they return soft-floats:
+Replace the deterministic and OS-entropy uniform bridges (lines 184-187 and 234-238) so they return soft-floats:
 
 ```lua
 local TWO32_M, TWO32_E = fx.from_int(4294967296)
 
 -- Uniform in [0,1) as a soft-float. The draw is an exact integer k, so k/2^32
 -- is exact too; no rounding happens here at all.
-local function pcg32_uniform()
-	local km, ke = fx.from_int(pcg32_random())
+local function deterministic_uniform()
+	local km, ke = fx.from_int(deterministic_u32())
 	return fx.div(km, ke, TWO32_M, TWO32_E)
 end
 
@@ -2282,9 +2283,9 @@ domain, `log` differs on 0.006% of inputs, `cos` on 3.06%, and `exp` on 8.85% â€
 which meant roughly 3% of seeded "normal" values differed between two builds of
 the same source at the same seed.
 
-The algorithm is PCG32 (XSH-RR 64/32), multiplier 6364136223846793005,
-increment 1442695040888963407, seeded by `state = 0; advance; state += seed;
-advance`. A stream is reproducible from that description alone.
+The deterministic generator's final wire contract is the versioned BLAKE3 KDF
+plus keyed empty-message seekable XOF documented in
+`docs/specs/2026-08-04-blake3-drbg-design.md`.
 ```
 
 Update the Layout block to include `lib/fixed.lua` and the new test files.
@@ -2297,7 +2298,7 @@ Add a CHANGELOG note that seeded values from `--normalized`, `--exponential`, `-
 # PLAN
 
 ## Done
-- [x] Fix `pcg32_range` infinite loop for ranges > 2^32 (2026-08-01 EST)
+- [x] Fix the legacy range sampler's infinite loop for ranges > 2^32 (2026-08-01 EST)
 - [x] Golden vectors for the integer paths, blessed pre-conversion (2026-08-01 EST)
 - [x] Integer-only soft-float kernel: mul/add/div/ln/exp/cos/sqrt/pow (2026-08-01 EST)
 - [x] Integer-only decimal parse and format (2026-08-01 EST)

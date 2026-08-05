@@ -38,11 +38,11 @@
 //! here), so a shipped artifact that trusts its own callers is the right
 //! trade; a contract violation is a bug in this repository, not a user error.
 //!
-//! Port status: Tasks 1–7 of docs/plans/2026-08-02-zig-port.md. `norm`,
+//! Port status: Tasks 1–9 of docs/plans/2026-08-02-zig-port.md. `norm`,
 //! `fromInt`, `mul128`, `mul`, `toIntTrunc`, `add`, `sub`, `neg`, `cmp`,
 //! `frac`, `div`, `ln`, `exp`, `cosTurns`, `sqrt`, `pow`, `parse`, `parseInt`,
-//! `parseIntSafe`, `toString`. The kernel port is COMPLETE; the C FFI
-//! (Task 8) and `randomz` CLI (Task 9) remain. Every function is verified
+//! `parseIntSafe`, `toString`. The kernel port, checked C FFI (Task 8), and
+//! C-only `randomz` CLI (Task 9) are complete. Every function is verified
 //! against `lib/fixed.lua` by tests/zig_differential.
 
 const std = @import("std");
@@ -1221,9 +1221,9 @@ test "mul128 agrees with a manual 32-bit partial synthesis" {
     // Independent check of the native u128 path against the shape the
     // reference uses, so this is not just the same expression twice.
     const cases = [_][2]u64{
-        .{ 0, 0 },                     .{ 1, 1 },
-        .{ 0xFFFFFFFFFFFFFFFF, 1 },    .{ 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF },
-        .{ 0x8000000000000000, 2 },    .{ 0x4000000000000000, 0x4000000000000000 },
+        .{ 0, 0 },                                   .{ 1, 1 },
+        .{ 0xFFFFFFFFFFFFFFFF, 1 },                  .{ 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF },
+        .{ 0x8000000000000000, 2 },                  .{ 0x4000000000000000, 0x4000000000000000 },
         .{ 0x123456789ABCDEF0, 0x0FEDCBA987654321 },
     };
     for (cases) |c| {

@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="$here/../bin:$PATH"
+# shellcheck source=cli_test_setup.sh
+source "$here/cli_test_setup.sh"
+if ! cli_test_setup; then exit 1; fi
+trap cli_test_cleanup EXIT
+
 if [ "$RANDOM_TEST_DEPTH" = "1" ]; then
 	exit 0
 fi
@@ -100,16 +107,28 @@ test_random() {
 	(( tests++ ))
 	echo "Testing --test flag..."
 
-	local test_output
-	test_output=$(RANDOM_TEST_DEPTH=1 random --test 2>&1)
-	local test_status=$?
+	local probe_dir probe marker test_output test_status rejected_status
+	probe_dir=$(mktemp -d "${TMPDIR:-/tmp}/random-test-probe.XXXXXX")
+	probe="$probe_dir/probe"
+	marker="$probe_dir/invoked"
+	printf '#!%s\n%s\n%s\n' "$(command -v bash)" \
+		'printf invoked >"$RANDOM_TEST_PROBE_MARK"' \
+		'exit "${RANDOM_TEST_PROBE_EXIT:-0}"' >"$probe"
+	chmod +x "$probe"
+	test_output=$(RANDOM_TEST_DEPTH=0 RANDOM_TEST_FILE="$probe" \
+		RANDOM_TEST_PROBE_MARK="$marker" RANDOM_TEST_PROBE_EXIT=0 random --test 2>&1)
+	test_status=$?
+	RANDOM_TEST_DEPTH=0 RANDOM_TEST_FILE="$probe" \
+		RANDOM_TEST_PROBE_MARK="$marker" RANDOM_TEST_PROBE_EXIT=23 random --test >/dev/null 2>&1
+	rejected_status=$?
 
-	if [ $test_status -eq 0 ] && [ -z "$test_output" ]; then
+	if [ "$test_status" -eq 0 ] && [ -f "$marker" ] && [ "$rejected_status" -ne 0 ]; then
 		echo "✓ --test flag test passed"
 	else
-		echo "✗ --test flag test failed: status=$test_status, output='$test_output'" >&2
+		echo "✗ --test flag failed to invoke/propagate probe: success=$test_status rejected=$rejected_status output='$test_output'" >&2
 		(( fails++ ))
 	fi
+	rm -rf -- "$probe_dir"
 
 	# Test 4: Basic execution
 	(( tests++ ))
@@ -787,6 +806,36 @@ test_random() {
 		(( fails++ ))
 	fi
 
+	(( tests++ ))
+	echo "Testing --true-random overrides ambient DRANDOM_SEED..."
+	local entropy_fixture true_bytes
+	entropy_fixture=$(mktemp "${TMPDIR:-/tmp}/random-entropy.XXXXXX")
+	dd if=/dev/zero of="$entropy_fixture" bs=32 count=1 status=none
+	true_bytes=$(DRANDOM_SEED=424242 random --true-random --random-source "$entropy_fixture" -b -c 32 2>/dev/null | xxd -p -c 256)
+	rm -f -- "$entropy_fixture"
+	if [ "$true_bytes" = "$(printf '00%.0s' {1..32})" ] && \
+	   ! random --true-random -d --seed 1 -c 1 >/dev/null 2>&1; then
+		echo "✓ --true-random overrides the environment and rejects deterministic conflicts"
+	else
+		echo "✗ --true-random did not enforce the true-entropy mode" >&2
+		(( fails++ ))
+	fi
+
+	(( tests++ ))
+	echo "Testing conflicting and surplus arguments are rejected..."
+	local invalid_surface=0
+	for spec in "1 2 3" "--choose --shuffle" "--base64" \
+		"-b --hex --base64" "--exponential --mean 2" "--alpha 2"; do
+		read -r -a argv <<<"$spec"
+		if random "${argv[@]}" >/dev/null 2>&1; then invalid_surface=$((invalid_surface + 1)); fi
+	done
+	if [ "$invalid_surface" -eq 0 ]; then
+		echo "✓ Conflicting/surplus argument validation passed"
+	else
+		echo "✗ $invalid_surface conflicting/surplus argument case(s) were silently accepted" >&2
+		(( fails++ ))
+	fi
+
 	# ===== SECTION 7: Binary output with modes =====
 	echo ""
 	echo "--- Section 7: Binary output with modes ---"
@@ -918,6 +967,21 @@ test_random() {
 		echo "✓ --delimiter output test passed"
 	else
 		echo "✗ --delimiter output test failed: expected 4 commas, got $comma_count" >&2
+		(( fails++ ))
+	fi
+
+	# Empty used to form Lua's malformed `[^]+` pattern and expose a raw
+	# traceback on stdin operations. Both CLIs reject it during parsing.
+	(( tests++ ))
+	echo "Testing empty --delimiter is rejected cleanly..."
+	local empty_delim_output empty_delim_status
+	empty_delim_output=$(printf 'a,b\n' | random --choose --delimiter "" -d --seed 42 2>&1)
+	empty_delim_status=$?
+	if [ "$empty_delim_status" -ne 0 ] && [[ "$empty_delim_output" == Error:* ]] && \
+	   [[ "$empty_delim_output" != *"traceback"* ]]; then
+		echo "✓ Empty --delimiter rejection test passed"
+	else
+		echo "✗ Empty --delimiter rejection was not clean: status=$empty_delim_status output='$empty_delim_output'" >&2
 		(( fails++ ))
 	fi
 
@@ -1452,19 +1516,48 @@ verycommon:100"
 		(( fails++ ))
 	fi
 
-	# Test 51: no floating-point math remains on the deterministic path
+	# Test 51: no floating-point math remains on the deterministic path.
+	# Source implementations are scanned for float declarations/conversions;
+	# compiled implementations are independently checked for libm dependencies.
 	(( tests++ ))
-	echo "Testing bin/random contains no libm calls..."
+	echo "Testing selected implementation contains no libm calls..."
 
-	local libm_hits
-	libm_hits=$(grep -nE 'math\.(log|cos|sin|exp|pow|sqrt|pi)|tonumber\(argv|string\.format\("%\.?[0-9]*f' \
-		"$(command -v random)" | grep -v '^[0-9]*:--' || true)
-
-	if [ -z "$libm_hits" ]; then
-		echo "✓ No libm calls remain"
+	local libm_hits float_hits
+	float_hits=""
+	if [ -f "$here/../src/fixed.zig" ] && [ -f "$here/../src/randomz.zig" ] && \
+	   [ -f "$here/../src/randomz_cli.c" ]; then
+		float_hits=$(grep -nE '\b(f16|f32|f64|f80|f128|float|double)\b|@float' \
+			"$here/../src/fixed.zig" "$here/../src/randomz.zig" "$here/../src/randomz_cli.c" | \
+			grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|/\*|\*)' || true)
+	fi
+	if [ -z "${RANDOM_TEST_CLI:-}" ]; then
+		libm_hits=$(grep -nE 'math\.(log|cos|sin|exp|pow|sqrt|pi)|tonumber\(argv|string\.format\("%\.?[0-9]*f' \
+			"$(command -v random)" | grep -v '^[0-9]*:--' || true)
 	else
-		echo "✗ libm calls still present:" >&2
-		echo "$libm_hits" >&2
+		libm_hits=""
+		local libm_inspected=false
+		if command -v ldd >/dev/null 2>&1; then
+			libm_inspected=true
+			libm_hits+=$(ldd "$CLI_TEST_TARGET" 2>/dev/null | grep -E '(^|[[:space:]/])libm([.]|[[:space:]])' || true)
+		elif command -v otool >/dev/null 2>&1; then
+			libm_inspected=true
+			libm_hits+=$(otool -L "$CLI_TEST_TARGET" 2>/dev/null | grep -E '/libm([.]|[[:space:]])' || true)
+		fi
+		if command -v nm >/dev/null 2>&1; then
+			libm_inspected=true
+			libm_hits+=$(nm -u "$CLI_TEST_TARGET" 2>/dev/null | \
+				grep -E '(^|[[:space:]_])(log|cos|sin|exp|pow|sqrt)([[:space:]@]|$)' || true)
+		fi
+		if ! $libm_inspected; then
+			libm_hits="no ldd, otool, or nm available; compiled no-libm control did not run"
+		fi
+	fi
+
+	if [ -z "$libm_hits" ] && [ -z "$float_hits" ]; then
+		echo "✓ No float tokens or libm calls remain"
+	else
+		echo "✗ floating-point tokens or libm calls still present:" >&2
+		printf '%s\n%s\n' "$float_hits" "$libm_hits" >&2
 		(( fails++ ))
 	fi
 

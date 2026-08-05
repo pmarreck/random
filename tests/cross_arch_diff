@@ -15,7 +15,7 @@
 #   x86_64-glibc    baseline
 #   x86_64-musl     libc differs,         architecture held fixed
 #   aarch64-glibc   architecture differs, libc family held fixed
-# over four payloads:
+# over the Lua payloads plus the independently implemented Zig/C path:
 #   kernel   tests/kernel_jit_diff.lua      (div/mul/add/sub/norm/ln/exp/
 #                                            cos_turns/sqrt/pow, ~720k values)
 #   decimal  tests/cross_arch_decimal.lua   (parse/tostring/parse_int/from_int/
@@ -23,6 +23,10 @@
 #   drbg     tests/cross_arch_drbg.lua      (BLAKE3 KDF/keyed XOF, chunk/seek)
 #   cli      bin/random end to end          (byte-exact stdout over a seed x
 #                                            flag matrix)
+#   zig-core differential-driver            (raw fixed-point mantissa/exponent
+#                                            results, not CLI-quantized output)
+#   randomz  C CLI through the public ABI    (same framed seed x flag matrix,
+#                                            also compared to the Lua oracle)
 # The kernel payload is reused verbatim from the JIT differential rather than
 # written for this suite. That is deliberate: it is code that was not authored
 # to make this test pass, so it cannot have been tuned to.
@@ -87,6 +91,11 @@ fi
 
 QEMU="$tc/bin/qemu-aarch64"
 LEG_NAMES=(x86_64-glibc x86_64-musl aarch64-glibc)
+if [ "${LEG_NAMES[*]}" != "x86_64-glibc x86_64-musl aarch64-glibc" ] || \
+	[ "${#LEG_NAMES[@]}" -ne 3 ]; then
+	echo "cross_arch_diff: FAIL -- required Lua platform manifest changed or shrank" >&2
+	exit 1
+fi
 # Runner prefix per leg. The aarch64 binary's ELF interpreter is an absolute
 # /nix/store path, so `-L /` resolves it without a staged sysroot.
 leg_cmd() {
@@ -108,11 +117,7 @@ done
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/xarch.XXXXXX")"
 # shellcheck disable=SC2329 # Invoked indirectly by the EXIT trap below.
 cleanup_cross_tmp() {
-	if [ -x /run/current-system/sw/bin/rm ]; then
-		/run/current-system/sw/bin/rm -rf "$tmp"
-	else
-		/bin/rm -rf "$tmp"
-	fi
+	command rm -rf -- "$tmp"
 }
 trap cleanup_cross_tmp EXIT
 
@@ -120,6 +125,43 @@ note ""
 note "Cross-architecture differential (FAST=${fast:-0})"
 note "  toolchains: $tc"
 note "============================================"
+
+# Build the Zig core/C CLI for the same local architecture/libc axes. Static
+# musl binaries keep the aarch64 runner self-contained under qemu. These are
+# the shipped ReleaseFast artifacts; the ordinary Zig unit graph separately
+# retains ReleaseSafe checks.
+ZIG="$tc/bin/zig"
+if [ ! -x "$ZIG" ]; then
+	echo "cross_arch_diff: FAIL -- pinned Zig compiler missing from $tc" >&2
+	exit 1
+fi
+note "Building Zig/C cross-target artifacts..."
+(cd "$root" && "$ZIG" build -Doptimize=ReleaseFast --prefix "$tmp/zig-native") || exit 1
+(cd "$root" && "$ZIG" build -Doptimize=ReleaseFast -Dtarget=x86_64-linux-musl \
+	--prefix "$tmp/zig-x86_64-musl") || exit 1
+(cd "$root" && "$ZIG" build -Doptimize=ReleaseFast -Dtarget=aarch64-linux-musl \
+	--prefix "$tmp/zig-aarch64-musl") || exit 1
+
+ZIG_LEG_NAMES=(x86_64-glibc x86_64-musl aarch64-musl)
+if [ "${ZIG_LEG_NAMES[*]}" != "x86_64-glibc x86_64-musl aarch64-musl" ] || \
+	[ "${#ZIG_LEG_NAMES[@]}" -ne 3 ]; then
+	echo "cross_arch_diff: FAIL -- required Zig/C platform manifest changed or shrank" >&2
+	exit 1
+fi
+zig_artifact() {
+	local leg="$1" name="$2"
+	case "$leg" in
+		x86_64-glibc) printf '%s' "$tmp/zig-native/bin/$name" ;;
+		x86_64-musl) printf '%s' "$tmp/zig-x86_64-musl/bin/$name" ;;
+		aarch64-musl) printf '%s' "$tmp/zig-aarch64-musl/bin/$name" ;;
+	esac
+}
+zig_runner() {
+	case "$1" in
+		aarch64-musl) printf '%s' "$QEMU" ;;
+		*) printf '%s' "" ;;
+	esac
+}
 
 # run_payload <leg> <outfile> <script> [args...]
 # Returns non-zero on a dead run (bad exit or empty stdout) -- the liveness
@@ -167,6 +209,13 @@ note "CONTROL 2: sensitivity (constructs known to diverge must be SEEN to diverg
 for leg in "${LEG_NAMES[@]}"; do
 	run_payload "$leg" "$tmp/libm.$leg"  "$here/cross_arch_controls.lua" libm
 	run_payload "$leg" "$tmp/f2i.$leg"   "$here/cross_arch_controls.lua" float2int
+done
+
+for required_control in libm.x86_64-glibc libm.x86_64-musl \
+		f2i.x86_64-glibc f2i.aarch64-glibc; do
+	if [ ! -s "$tmp/$required_control" ]; then
+		bad "SENSITIVITY LOST: required control output missing: $required_control"
+	fi
 done
 
 # libc axis: glibc vs musl transcendentals must differ.
@@ -223,6 +272,40 @@ compare_payload() {
 compare_payload kernel  "$here/kernel_jit_diff.lua"
 compare_payload decimal "$here/cross_arch_decimal.lua"
 compare_payload drbg    "$here/cross_arch_drbg.lua"
+
+# =============================================================================
+# ZIG CORE -- raw mantissa/exponent payload, before CLI formatting can hide a
+# one-ulp defect. The local Zig-vs-Lua differential controls correctness; this
+# section controls cross-target identity of that same independent Zig driver.
+# =============================================================================
+note ""
+note "PAYLOAD: Zig fixed-point core (raw differential-driver output)"
+zig_count="${ZIG_CROSS_COUNT:-$([ -n "$fast" ] && echo 200 || echo 2000)}"
+zig_core_fail=0
+for leg in "${ZIG_LEG_NAMES[@]}"; do
+	driver="$(zig_artifact "$leg" differential-driver)"
+	runner="$(zig_runner "$leg")"
+	if [ -n "$runner" ]; then
+		"$runner" "$driver" "$zig_count" >"$tmp/zig-core.$leg" 2>"$tmp/zig-core.$leg.err"
+	else
+		"$driver" "$zig_count" >"$tmp/zig-core.$leg" 2>"$tmp/zig-core.$leg.err"
+	fi
+	rc=$?
+	if [ "$rc" -ne 0 ] || [ ! -s "$tmp/zig-core.$leg" ]; then
+		bad "Zig core on $leg: exit $rc or empty output"
+		zig_core_fail=$((zig_core_fail + 1))
+	fi
+done
+zig_base="${ZIG_LEG_NAMES[0]}"
+for leg in "${ZIG_LEG_NAMES[@]:1}"; do
+	if ! cmp -s "$tmp/zig-core.$zig_base" "$tmp/zig-core.$leg"; then
+		bad "Zig core: $zig_base != $leg -- raw kernel determinism violated"
+		zig_core_fail=$((zig_core_fail + 1))
+	fi
+done
+if [ "$zig_core_fail" -eq 0 ]; then
+	ok "${#ZIG_LEG_NAMES[@]} Zig targets bit-identical over raw kernel output"
+fi
 
 # =============================================================================
 # CLI LEVEL -- byte-exact stdout from bin/random itself
@@ -303,6 +386,42 @@ if [ "$cli_fail" -eq 0 ]; then
 fi
 
 # =============================================================================
+# C CLI / PUBLIC FFI -- one framed payload across native glibc, native musl,
+# emulated aarch64-musl, and the native Lua oracle.
+# =============================================================================
+note ""
+note "PAYLOAD: randomz C CLI through include/randomz.h"
+randomz_fail=0
+for leg in "${ZIG_LEG_NAMES[@]}"; do
+	cli="$(zig_artifact "$leg" randomz)"
+	runner="$(zig_runner "$leg")"
+	RANDOMZ_RUNNER="$runner" "$here/randomz_cross_payload" "$cli" \
+		>"$tmp/randomz.$leg" 2>"$tmp/randomz.$leg.err"
+	rc=$?
+	if [ "$rc" -ne 0 ] || [ ! -s "$tmp/randomz.$leg" ]; then
+		bad "randomz on $leg: exit $rc or empty output"
+		randomz_fail=$((randomz_fail + 1))
+	fi
+done
+RANDOMZ_RUNNER="$tc/bin/luajit-x86_64-glibc" \
+	"$here/randomz_cross_payload" "$root/bin/random" \
+	>"$tmp/randomz.lua-oracle" 2>"$tmp/randomz.lua-oracle.err"
+rc=$?
+if [ "$rc" -ne 0 ] || [ ! -s "$tmp/randomz.lua-oracle" ]; then
+	bad "Lua CLI oracle for randomz cross payload: exit $rc or empty output"
+	randomz_fail=$((randomz_fail + 1))
+fi
+for leg in "${ZIG_LEG_NAMES[@]}"; do
+	if ! cmp -s "$tmp/randomz.lua-oracle" "$tmp/randomz.$leg"; then
+		bad "randomz $leg != LuaJIT oracle -- public CLI contract violated"
+		randomz_fail=$((randomz_fail + 1))
+	fi
+done
+if [ "$randomz_fail" -eq 0 ]; then
+	ok "42 invocations: Lua oracle == ${#ZIG_LEG_NAMES[@]} Zig/C targets"
+fi
+
+# =============================================================================
 # OPTIONAL NATIVE-HARDWARE LEG
 # =============================================================================
 # The three legs above are all hosted on this machine, and the aarch64 one is
@@ -325,7 +444,8 @@ if [ -n "${CROSS_ARCH_REMOTE-}" ]; then
 		rfail=1
 	fi
 	if [ "$rfail" -eq 0 ]; then
-		rsync -az "$root/lib" "$root/tests" "$root/bin" "$root/flake.nix" "$root/flake.lock" \
+		rsync -az "$root/lib" "$root/tests" "$root/bin" "$root/src" "$root/include" \
+			"$root/build.zig" "$root/build.zig.zon" "$root/flake.nix" "$root/flake.lock" \
 			"$CROSS_ARCH_REMOTE:$rd/" >/dev/null 2>&1 || { bad "rsync to $CROSS_ARCH_REMOTE failed"; rfail=1; }
 	fi
 	rlj=""
@@ -336,6 +456,16 @@ if [ -n "${CROSS_ARCH_REMOTE-}" ]; then
 		[ -n "$rlj" ] || { bad "could not build .#luajitPinned on $CROSS_ARCH_REMOTE"; rfail=1; }
 		# --print-out-paths yields the store DIRECTORY, not the executable.
 		rlj="$rlj/bin/luajit"
+	fi
+	if [ "$rfail" -eq 0 ]; then
+		note "  building Zig/C artifacts natively on the remote..."
+		ssh -n -o BatchMode=yes "$CROSS_ARCH_REMOTE" \
+			"cd $rd && nix develop 'path:.' --command zig build -Doptimize=ReleaseSafe" \
+			>/dev/null 2>"$tmp/remote.zig-build.err" || {
+			bad "remote Zig/C build failed"
+			sed 's/^/      /' <"$tmp/remote.zig-build.err" >&2
+			rfail=1
+		}
 	fi
 
 	if [ "$rfail" -eq 0 ]; then
@@ -366,8 +496,22 @@ if [ -n "${CROSS_ARCH_REMOTE-}" ]; then
 		rfetch drbg     tests/cross_arch_drbg.lua
 		rfetch libm     tests/cross_arch_controls.lua libm
 		rfetch f2i      tests/cross_arch_controls.lua float2int
+		ssh -n -o BatchMode=yes "$CROSS_ARCH_REMOTE" \
+			"cd $rd && zig-out/bin/differential-driver '$zig_count'" \
+			>"$tmp/remote.zig_core" 2>"$tmp/remote.zig_core.err"
+		zig_core_remote_rc=$?
+		if [ "$zig_core_remote_rc" -ne 0 ]; then
+			bad "remote Zig core payload exited $zig_core_remote_rc"
+		fi
+		ssh -n -o BatchMode=yes "$CROSS_ARCH_REMOTE" \
+			"cd $rd && bash tests/randomz_cross_payload zig-out/bin/randomz" \
+			>"$tmp/remote.randomz" 2>"$tmp/remote.randomz.err"
+		randomz_remote_rc=$?
+		if [ "$randomz_remote_rc" -ne 0 ]; then
+			bad "remote randomz payload exited $randomz_remote_rc"
+		fi
 
-		for t in kernel_a decimal drbg libm f2i; do
+		for t in kernel_a decimal drbg libm f2i zig_core randomz; do
 			[ -s "$tmp/remote.$t" ] || bad "remote payload '$t' produced EMPTY output"
 		done
 
@@ -421,6 +565,16 @@ if [ -n "${CROSS_ARCH_REMOTE-}" ]; then
 				diff "$tmp/$t.x86_64-glibc" "$src" | head -12 | sed 's/^/      /' >&2
 			fi
 		done
+		if cmp -s "$tmp/zig-core.x86_64-glibc" "$tmp/remote.zig_core"; then
+			ok "Zig core: x86_64-linux == $CROSS_ARCH_REMOTE (native hardware)"
+		else
+			bad "Zig core differs on native remote hardware"
+		fi
+		if cmp -s "$tmp/randomz.lua-oracle" "$tmp/remote.randomz"; then
+			ok "randomz: Lua oracle == $CROSS_ARCH_REMOTE (native hardware)"
+		else
+			bad "randomz differs from Lua oracle on native remote hardware"
+		fi
 	fi
 	ssh -o BatchMode=yes "$CROSS_ARCH_REMOTE" "rm -rf $rd" >/dev/null 2>&1
 fi

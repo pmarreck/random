@@ -23,10 +23,21 @@ local argv = arg or {}
 ffi.cdef[[
 	long getrandom(void *buf, size_t buflen, unsigned int flags);
 	int getentropy(void *buffer, size_t length);
+	int _setmode(int fd, int mode);
 	typedef long NTSTATUS;
 	NTSTATUS BCryptGenRandom(void *algorithm, unsigned char *buffer,
 		unsigned long length, unsigned long flags);
 ]]
+
+if jit.os == "Windows" then
+	-- The Microsoft CRT otherwise expands every LF byte written to stdout and
+	-- treats stdin as text, corrupting deterministic and true-random streams.
+	local O_BINARY = 0x8000
+	if ffi.C._setmode(1, O_BINARY) == -1 or ffi.C._setmode(0, O_BINARY) == -1 then
+		io.stderr:write("Error: could not put standard streams in binary mode\n")
+		os.exit(1)
+	end
+end
 
 local u64 = ffi.typeof("uint64_t")
 
@@ -41,7 +52,13 @@ end
 
 local function exec_status(cmd)
 	local ok, reason, code = os.execute(cmd)
-	if type(ok) == "number" then return ok end
+	if type(ok) == "number" then
+		if jit.os == "Windows" then return ok end
+		if ok == -1 then return 1 end
+		local signal = bit.band(ok, 0x7f)
+		if signal ~= 0 then return 128 + signal end
+		return bit.rshift(ok, 8)
+	end
 	if ok == true then return 0 end
 	if reason == "exit" and type(code) == "number" then return code end
 	return 1
@@ -640,6 +657,7 @@ local function print_help(invocation)
 	print("  -b, --binaryoutput  Output binary bytes")
 	print("  -c, --count N       Output N numbers (default: 1, or 1024 with -b)")
 	print("  -d, --deterministic Use the deterministic BLAKE3 keyed XOF")
+	print("      --true-random   Force OS/source entropy; ignore DRANDOM_SEED")
 	print("      --delimiter S   Set delimiter for output/input (default: newline)")
 	print("  -h, --help          Show this help message")
 	print("      --hex           Output as hexadecimal")
@@ -683,6 +701,7 @@ local function read_stdin_items(delimiter)
 	local items = {}
 	if delimiter == "\n" then
 		for line in content:gmatch("[^\n]+") do
+			line = line:gsub("\r$", "")
 			table.insert(items, line)
 		end
 	else
@@ -709,6 +728,7 @@ local function parse_args()
 
 	local options = {
 		deterministic = (invocation == "drandom"),
+		force_true_random = false,
 		normalized = (invocation == "nrandom"),
 		exponential = false,
 		poisson = false,
@@ -751,8 +771,6 @@ local function parse_args()
 			local candidates = {}
 			if os.getenv("RANDOM_TEST_FILE") then candidates[#candidates+1] = os.getenv("RANDOM_TEST_FILE") end
 			if self_dir then candidates[#candidates+1] = self_dir .. "/../tests/random_test"; candidates[#candidates+1] = self_dir .. "/tests/random_test" end
-			candidates[#candidates+1] = (os.getenv("HOME") or "") .. "/Documents-CloudManaged/random/tests/random_test"
-			candidates[#candidates+1] = (os.getenv("HOME") or "") .. "/dotfiles/bin/test/random_test"
 			local test_file, f
 			for _, p in ipairs(candidates) do local fh = io.open(p, "r"); if fh then test_file = p; f = fh; break end end
 			if f then
@@ -761,11 +779,13 @@ local function parse_args()
 				local status = exec_status(cmd)
 				os.exit(status)
 			else
-				stderr_write("Test file not found (searched RANDOM_TEST_FILE, script-relative, ~/Documents-CloudManaged/random, ~/dotfiles)\n")
+				stderr_write("Test file not found (searched RANDOM_TEST_FILE and executable-relative paths)\n")
 				os.exit(1)
 			end
 		elseif arg_val == "--deterministic" or arg_val == "-d" then
 			options.deterministic = true
+		elseif arg_val == "--true-random" then
+			options.force_true_random = true
 		elseif arg_val == "--normalized" or arg_val == "-n" then
 			options.normalized = true
 		elseif arg_val == "--exponential" then
@@ -807,6 +827,10 @@ local function parse_args()
 			i = i + 1
 			if i > #argv then
 				stderr_write("Error: --delimiter requires a value\n")
+				os.exit(1)
+			end
+			if argv[i] == "" then
+				stderr_write("Error: --delimiter must not be empty\n")
 				os.exit(1)
 			end
 			options.delimiter = argv[i]
@@ -939,6 +963,36 @@ local function parse_args()
 		stderr_write("Error: only one distribution type can be specified\n")
 		os.exit(1)
 	end
+	if #positionals > 2 then
+		stderr_write("Error: expected at most start and end positional arguments\n")
+		os.exit(1)
+	end
+	local stdin_modes = (options.choose and 1 or 0) + (options.shuffle and 1 or 0) +
+		(options.weighted and 1 or 0)
+	if stdin_modes > 1 then
+		stderr_write("Error: only one stdin operation can be specified\n")
+		os.exit(1)
+	end
+	if options.base64_output and not options.binary_output then
+		stderr_write("Error: --base64 requires --binaryoutput\n")
+		os.exit(1)
+	end
+	if options.hex_output and options.base64_output then
+		stderr_write("Error: --hex and --base64 are mutually exclusive\n")
+		os.exit(1)
+	end
+	if options.mean and not (options.normalized or options.poisson or options.log_normal) then
+		stderr_write("Error: --mean is not used by the selected distribution\n")
+		os.exit(1)
+	end
+	if options.stddev and not (options.normalized or options.log_normal) then
+		stderr_write("Error: --stddev is not used by the selected distribution\n")
+		os.exit(1)
+	end
+	if (options.alpha or options.beta_param) and not options.beta then
+		stderr_write("Error: --alpha and --beta-param require --beta\n")
+		os.exit(1)
+	end
 
 	-- --mean is the poisson rate parameter (lambda), undefined at <= 0 --
 	-- but shared with --normalized/--log-normal, where negative and zero
@@ -968,9 +1022,14 @@ local function parse_args()
 		options.delimiter = "\n"
 	end
 
+	if options.force_true_random and options.deterministic then
+		stderr_write("Error: --true-random cannot be combined with --deterministic, --seed, or drandom\n")
+		os.exit(1)
+	end
+
 	-- DRANDOM_SEED implies deterministic mode, just like --seed. The value
 	-- is parsed in main so a malformed environment value fails explicitly.
-	if not options.deterministic then
+	if not options.force_true_random and not options.deterministic then
 		local env_seed_raw = os.getenv("DRANDOM_SEED")
 		if env_seed_raw and env_seed_raw ~= "" then
 			options.deterministic = true

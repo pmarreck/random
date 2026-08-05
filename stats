@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Standalone statistical sanity analysis. This is evidence against gross
+# implementation mistakes, not evidence of cryptographic security.
+set -u
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+lua_cli="$root/bin/random"
+c_cli="$root/zig-out/bin/randomz"
+
+usage() {
+	cat <<'EOF'
+Usage: ./stats [--all | --lua | --c | --cli PATH]
+
+Runs raw-stream and distribution sanity checks without writing sample data to
+disk. Default: both the LuaJIT oracle and the C CLI over the Zig FFI.
+
+Environment:
+  RANDOM_STATS_BYTES=N       raw bytes per stream (default 4194304)
+  RANDOM_STATS_SAMPLES=N     values per distribution (default 50000)
+  RANDOM_STATS_SKIP_TRUE=1   omit the nondeterministic OS-CSPRNG sample
+  FAST=1                     use 262144 bytes / 10000 distribution values
+EOF
+}
+
+targets=()
+case "${1:---all}" in
+	--all)
+		targets=("LuaJIT oracle:$lua_cli" "Zig core / C FFI:$c_cli") ;;
+	--lua)
+		targets=("LuaJIT oracle:$lua_cli") ;;
+	--c)
+		targets=("Zig core / C FFI:$c_cli") ;;
+	--cli)
+		if [ "$#" -ne 2 ]; then usage >&2; exit 2; fi
+		targets=("selected CLI:$2") ;;
+	-h|--help)
+		usage; exit 0 ;;
+	*)
+		usage >&2; exit 2 ;;
+esac
+
+if [ "${1:---all}" = "--all" ] || [ "${1:---all}" = "--c" ]; then
+	zig build -Doptimize=ReleaseFast >/dev/null || exit 1
+fi
+
+failed=0
+for entry in "${targets[@]}"; do
+	label="${entry%%:*}"
+	cli="${entry#*:}"
+	if [ ! -x "$cli" ]; then
+		echo "stats: executable not found: $cli" >&2
+		failed=$((failed + 1))
+		continue
+	fi
+	echo ""
+	echo "=== $label ($cli) ==="
+	luajit "$root/tests/stats.lua" "$cli"
+	rc=$?
+	if [ "$rc" -ne 0 ]; then failed=$((failed + 1)); fi
+done
+
+if [ "$failed" -ne 0 ]; then
+	echo "" >&2
+	echo "Statistical sanity analysis FAILED for $failed target(s)" >&2
+	exit "$failed"
+fi
+
+echo ""
+echo "Statistical sanity analysis PASSED for ${#targets[@]} target(s)"
+echo "This detects gross bias/shape regressions; it does not certify CSPRNG security."

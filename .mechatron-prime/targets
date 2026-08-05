@@ -7,7 +7,14 @@
 # run, and the mitigation it guards is already covered deterministically in the
 # default run by fixed_test's jit.attach check).
 checks.x86_64-linux.random-test
+checks.x86_64-linux.stats-smoke
+checks.x86_64-linux.package-smoke
+checks.x86_64-linux.random-crossarch
+checks.x86_64-linux.windows-x64-smoke
 
-# The packaged CLI: proves bin/ + lib/ install together and the binary can find
-# the integer kernel at runtime.
+# The combined package: proves the Lua CLI, C CLI, static Zig library and public
+# header install together.
 packages.x86_64-linux.default
+
+# Explicit C-CLI package surface (same combined output, randomz app entrypoint).
+packages.x86_64-linux.randomz

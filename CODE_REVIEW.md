@@ -106,3 +106,162 @@ project Zig/C FFI has not been implemented yet and was not reviewed here.
 ## 13. Database access patterns
 
 Not applicable; the project has no database.
+
+---
+
+# Zig/C milestone addendum
+
+**Date:** 2026-08-04
+**Scope:** the pure Zig DRBG/distribution core, public C ABI, C CLI, shared
+LuaJIT oracle, package surfaces, statistics harness, and cross-target controls.
+**Method:** thirteen independent review passes covering functionality, coverage,
+test validity, security, performance, reliability, architecture,
+maintainability, API design, developer operations, dependencies, test strategy,
+and product completeness.
+**Result:** all reproduced critical findings were fixed. The remaining findings
+are explicit limitations or post-shipment engineering work, not silent
+correctness blockers.
+
+## 1. Functionality and cross-platform behavior
+
+- **Fixed — CRITICAL:** both CLIs now switch Windows stdout to binary mode, so
+  LF bytes in deterministic/raw output are not expanded by the Microsoft CRT.
+  The C path also normalizes CRLF stdin items; the Lua oracle does the same.
+- **Fixed — WARNING:** `.exe` suffixes participate in `nrandomz`/`drandomz`
+  argv[0] dispatch, and repeated selection of the same distribution is
+  idempotent.
+- **Remaining — WARNING:** Windows ARM64 is compiled and its PE machine field
+  is checked, but no Windows ARM64 runtime is available. Windows x86_64 is
+  executed under Wine in CI and compared byte-for-byte with the Lua oracle.
+
+## 2. Coverage adequacy
+
+- **Fixed:** a real C11 consumer now checks struct layout, statuses, callbacks,
+  state replay, every public symbol, malformed values, and numeric limits.
+- **Fixed:** scripted byte sources force both u32 and u64 rejection retries,
+  exact-divisor paths, and failure on a retry. Beta vectors and statistics
+  cover the distinct `alpha < 1` gamma branch.
+- **Remaining — WARNING:** syscall-level EINTR/ENOSYS/EAGAIN/getentropy and
+  native BCrypt failure branches need an injectable platform adapter for
+  deterministic branch coverage.
+
+## 3. Test validity / non-vacuity
+
+- **Fixed — WARNING:** Lua/C differentials now require both processes to exit
+  zero and emit nonempty bytes before comparison. Cross payloads similarly
+  validate every framed case's status and byte count.
+- **Fixed — WARNING:** `--test` uses executable probes that prove invocation
+  and success/failure propagation. LuaJIT 5.1's encoded POSIX wait status is
+  decoded before `os.exit`; the installed C self-test runs the actual suite.
+- **Fixed:** uniform and log-normal evaluators gained deliberately bad
+  sensitivity fixtures. Seven bad generators must now be rejected.
+
+## 4. Security
+
+- **Fixed:** `--true-random` overrides ambient `DRANDOM_SEED` and rejects
+  deterministic conflicts, giving security-sensitive callers an explicit
+  fail-safe entropy mode.
+- **Fixed:** panic-capable fixed arithmetic was removed from the public ABI.
+  Public conversions and samplers validate canonical values/domains and return
+  statuses; extreme log-normal input now returns `RANDOMZ_NUMERIC_ERROR` rather
+  than aborting the embedding process.
+- **Fixed:** the header documents single-thread/fork clone semantics and state
+  sensitivity; `randomz_drbg_zeroize` provides a non-optimizable wipe.
+- **Remaining — ADVISORY:** the CLI does not attempt comprehensive secure
+  erasure across every early-return path; applications still own seed/key
+  lifetime and must use the zeroize API.
+
+## 5. Performance and scalability
+
+- **Remaining — WARNING:** small deterministic sampler draws reconstruct a
+  keyed BLAKE3 XOF and cross C→Zig→C→Zig per 4/8-byte draw. A buffered source or
+  prepared/batch sampler ABI is the principal optimization opportunity.
+- **Mitigated — WARNING:** Poisson's exact sum-of-exponentials algorithm is
+  linear in lambda. The public ABI now caps its exponent/resource domain;
+  a transformed-rejection large-lambda implementation remains post-shipment.
+- **Remaining — ADVISORY:** hex/base64 use per-character stdio and `./stats`
+  retains distribution samples in Lua tables. Neither affects correctness at
+  the documented default sizes.
+
+## 6. Reliability and error handling
+
+- **Fixed — WARNING:** raw, hex, base64, text, choose, shuffle, and weighted
+  paths all flush/check stdout. Auto-seeded deterministic mode refuses to emit
+  output when its replay seed cannot be written to stderr.
+- **Fixed:** callback status identities are preserved for known
+  `randomz_status` values; unknown nonzero failures map to entropy/source error.
+
+## 7. Architecture
+
+- **Fixed:** the ReleaseSafe randomz test graph imports a separately
+  ReleaseSafe fixed module rather than a ReleaseFast dependency.
+- **Fixed:** the public boundary now contains checked constructors,
+  conversions, samplers, and state operations; the raw invariant-dependent
+  arithmetic kernel remains internal.
+- **Remaining — ADVISORY:** `differential-driver` is installed by ordinary
+  `zig build` because cross/oracle scripts consume its stable installed path,
+  though the Nix product package deliberately omits it.
+
+## 8. Maintainability
+
+- **Remaining — WARNING:** `src/randomz_cli.c` is a large multi-domain
+  translation unit. Entropy, option parsing, encoding, and stdin operations
+  should become private modules when the post-shipment distributions land.
+- **Remaining — WARNING:** distribution metadata and the cross-CLI corpus have
+  manually synchronized owners. A descriptor table/shared corpus should
+  precede the planned expansion in modes.
+- **Fixed:** stale references to the removed migration document and unavailable
+  agent skills were removed from active plans.
+
+## 9. Public API design
+
+- **Fixed:** `randomz_fixed`'s representation and construction rule,
+  callback-status behavior, formatting's unterminated-span contract, thread
+  ownership, cloning, and zeroization are documented in the header.
+- **Remaining — ADVISORY:** package, header, and Zig manifest versions still
+  have separate literals; release automation should enforce one source.
+
+## 10. Developer experience and operations
+
+- **Fixed:** Zig and Nix installations include the shared self-test and license.
+  Nix wraps the test with its tool closure; manual/Windows Bash requirements
+  are documented. Package checks exercise all six invocation names and both
+  installed `--test` paths.
+- **Fixed:** README now distinguishes the three default cross legs from the
+  optional native macOS leg and provides a C embedding quick start.
+- **Remaining — ADVISORY:** two tracked developer-doc symlinks resolve into the
+  maintainer's adjacent directories and dangle in a clean clone. The active
+  plan is now substantially self-contained, but repository-local snapshots
+  would improve outside onboarding.
+
+## 11. Dependency management
+
+- **Fixed:** the Zig package allowlist includes the header, license, README,
+  self-test, and all build inputs. An isolated `zig fetch` reconstruction must
+  build/test/install successfully.
+- **Fixed:** both Zig and Nix product installs carry the MIT license; Nix's
+  unused wrapper dependency was either removed or put to actual use for the
+  installed test closure.
+- **Remaining — ADVISORY:** LuaJIT's pinned revision and the runtime mitigation
+  roll-number constant are manually coupled and should gain a mechanical
+  release check when the pin next moves.
+
+## 12. Testing strategy
+
+- **Fixed:** CI now has separate correctness, deterministic stats-smoke,
+  installed-package/ABI, ReleaseFast cross-architecture, and Windows x86_64
+  runtime checks. Required platform manifests cannot silently shrink.
+- **Fixed:** the full pre-push analysis separately samples true OS entropy at
+  4 MiB and 50,000 values/distribution for each implementation.
+- **Remaining — WARNING:** native macOS remains an SSH-controlled optional leg,
+  and Windows ARM64 remains compile-only. CI must not describe those as native
+  runtime evidence.
+
+## 13. Product completeness
+
+- **Fixed:** surplus positional arguments, conflicting stdin operations,
+  incompatible encodings, and irrelevant distribution parameters are rejected
+  consistently by both CLIs.
+- **Remaining — planned:** the benchmark suite is intentionally still open;
+  gamma, Weibull, Pareto/Zipf, geometric/binomial, Cauchy/Student-t,
+  edge-biased, and log-uniform modes are recorded as post-shipment work.

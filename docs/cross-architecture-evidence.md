@@ -65,6 +65,31 @@ payload; it does not currently rerun the full CLI matrix remotely.
 
 **The claim holds.** Every payload row is constant across all four platforms.
 
+## Zig/C extension (2026-08-04)
+
+The same suite now builds and executes the independent Zig/C implementation in
+ReleaseSafe mode. Its local matrix is:
+
+| leg | architecture | libc | execution |
+|---|---|---|---|
+| `x86_64-glibc` | x86_64 | glibc | native |
+| `x86_64-musl` | x86_64 | musl, static | native |
+| `aarch64-musl` | aarch64 | musl, static | qemu user-mode |
+
+Two new payloads passed:
+
+- The raw `differential-driver` fixed-point output is byte-identical on all
+  three targets. This is load-bearing because a CLI-only comparison can hide a
+  one-ULP kernel defect through decimal formatting or integer quantization.
+- `randomz`, the C CLI linked only through `include/randomz.h`, runs the same 42
+  seed/flag/stdin cases on all three targets. Every framed payload is
+  byte-identical both across the targets and against the native LuaJIT oracle.
+
+The required suite also cross-compiles the frontend for aarch64-macOS,
+x86_64-Windows-GNU, and aarch64-Windows-GNU. Compilation is not counted as
+execution evidence; the optional native-remote leg builds and executes the
+Zig/C payloads when supplied.
+
 ## Why the control rows are the important part
 
 A negative assertion — "these outputs are identical" — is unfalsifiable
@@ -154,7 +179,12 @@ reflexivity cheerfully passed on a leg that had produced nothing. Both are now
 - **Only two architectures.** x86_64 and aarch64. No 32-bit, no big-endian,
   no RISC-V. The big-endian case is not merely untested: the controls'
   bit-extraction unions assert little-endianness and refuse to run.
-- **Only three libcs** (glibc, musl, Apple libSystem), and Windows is untested.
+- **Only three Unix libcs** (glibc, musl, Apple libSystem). The C frontend
+  compiles for both x86_64 and ARM64 Windows. Windows x86_64 additionally runs
+  under Wine in CI: its 131 raw deterministic bytes match the Lua oracle,
+  `.exe` alias dispatch matches the explicit flag, true-random output has the
+  requested byte count, and binary stdout is not CRLF-expanded. Windows ARM64
+  runtime remains untested; its gate is compile plus PE-machine validation.
 - **One LuaJIT revision.** Held fixed on purpose, so this says nothing about
   behaviour across LuaJIT versions.
 - The `aarch64-darwin` leg is opt-in (`CROSS_ARCH_REMOTE=<host>`) and needs

@@ -1,6 +1,6 @@
 # BLAKE3 keyed-DRBG replacement for PCG32 — design
 
-**Date:** 2026-08-04 · **Status:** implemented and gated in LuaJIT ·
+**Date:** 2026-08-04 · **Status:** implemented and gated in LuaJIT and Zig/C ·
 **Supersedes:** the PCG32 deterministic generator in `bin/random`
 
 ## Why
@@ -15,12 +15,12 @@ coexist when the seed itself is secret and has enough entropy. A public or
 guessable seed remains guessable after any KDF; the KDF supplies domain
 separation and a uniform key representation, not additional entropy.
 
-This is sequenced **before** the Zig FFI/CLI port (Tasks 8–10): porting PCG32 to
-Zig and deleting it the same day is waste. The Zig core implements BLAKE3
-directly (`std.crypto.hash.Blake3`, already compared byte-for-byte with Lua over
-246 generated cases); **PCG32 is never ported.** `bin/random` (LuaJIT) is the
-differential oracle, so it changes first. Both implementations still require a
-direct gate against the published official expected outputs.
+This was sequenced **before** the Zig FFI/CLI port (Tasks 8–10): porting the
+former generator and deleting it the same day would have been waste. The Zig
+core implements BLAKE3 directly (`std.crypto.hash.Blake3`); the legacy generator
+was never ported. `bin/random` (LuaJIT) remains the differential oracle. The C
+CLI now passes the same Bash contract plus an exact seed/flag/stdin matrix, and
+the construction remains directly gated against published official outputs.
 
 Terminology is important here: LuaJIT is the original implementation and the
 behavioral oracle the later Zig port must match. The small Zig-stdlib program
@@ -38,7 +38,8 @@ best-effort inference described under Vendoring & attribution below.
 re-bless deterministic golden vectors, and replace the coupled true-random and
 auto-seed entropy paths with fail-closed OS APIs.
 
-**Out:** the Zig port is downstream.
+**Also implemented downstream:** the pure Zig core, caller-owned C ABI, and C
+CLI. Benchmarking and additional distributions remain separate work.
 
 ## The generator: keyed XOF + seek
 
@@ -193,17 +194,21 @@ goldens for `lib/fixed.lua` are unaffected (the kernel is unchanged).
 - **Mutation:** each new control is mutation-verified (break it, watch it fire,
   restore) per project discipline.
 
-## Zig port implication
+## Implemented Zig/C boundary
 
-When Task 8 (FFI) arrives, the Zig core's deterministic generator is
-`std.crypto.hash.Blake3` keyed-XOF, occupying the exact slot PCG32 would have.
-The FFI exposes DRBG state `(key, pos)`, not PCG32 state. The CLI-level
-differential (Task 10) then compares two BLAKE3 implementations that must agree
-bit-for-bit — with the official vectors as an additional independent check on
-both.
+`src/randomz.zig` uses `std.crypto.hash.Blake3` keyed-XOF and exports the API in
+`include/randomz.h`. The caller owns `(key[32], byte_position)` state; the core
+does no I/O and distribution samplers obtain bytes only through a caller-supplied
+callback. `src/randomz_cli.c` is compiled as C and links the static library, so
+bypassing the public ABI is inexpressible. The CLI-level differential compares
+the two BLAKE3 implementations bit-for-bit, with official vectors and the
+independent Zig reference retaining control over a self-consistent mistake.
 
-## Open items (finalize in implementation, not blocking)
+## Finalized boundary decisions
 
-- Exact C FFI shape for caller-owned `(key, pos)` state.
-- Whether the later Zig implementation should expose positions beyond the
-  Lua oracle's exact-integer ceiling through a Zig-only API.
+- The public C ABI uses caller-owned `{ key[32], position }` state, explicit
+  get/set/fill/u32/u64 calls, checked fixed-format conversions, and
+  callback-fed one-shot samplers. Panic-capable low-level arithmetic remains
+  internal.
+- C and Zig share the Lua oracle's exact-integer position ceiling of 2^53 so
+  one serialized state has one meaning on every supported implementation.

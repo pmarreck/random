@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Prove Zig's declared package archive contains every input downstream builds need.
+set -u
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/random-zig-package.XXXXXX")" || exit 1
+trap 'rm -rf -- "$tmp"' EXIT
+
+hash=$(zig fetch --global-cache-dir "$tmp/cache" "$root") || exit 1
+archive="$tmp/cache/p/$hash.tar.gz"
+mkdir -p "$tmp/unpacked"
+tar -xzf "$archive" -C "$tmp/unpacked" || exit 1
+package="$tmp/unpacked/$hash"
+prefix="$tmp/install"
+
+for input in build.zig build.zig.zon include/randomz.h LICENSE README.md \
+		tests/random_test tests/cli_test_setup.sh \
+		src/fixed.zig src/randomz.zig src/randomz_cli.c; do
+	if [ ! -s "$package/$input" ]; then
+		echo "Zig package input missing: $input" >&2
+		exit 1
+	fi
+done
+
+(cd "$package" && export ZIG_GLOBAL_CACHE_DIR="$tmp/build-global" && \
+	export ZIG_LOCAL_CACHE_DIR="$tmp/build-local" && zig build test && \
+	zig build -Doptimize=ReleaseFast --prefix "$prefix") || exit 1
+
+for artifact in bin/randomz lib/librandomz.a include/randomz.h \
+		share/licenses/random/LICENSE tests/random_test tests/cli_test_setup.sh; do
+	if [ ! -s "$prefix/$artifact" ]; then
+		echo "Zig packaged build artifact missing: $artifact" >&2
+		exit 1
+	fi
+done
+
+echo "Zig package integrity PASSED: isolated archive builds and installs"

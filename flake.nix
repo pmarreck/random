@@ -1,5 +1,5 @@
 {
-  description = "random — a unified CLI random number generator in LuaJIT (uniform/normal/exponential/poisson/log-normal/beta; true + deterministic; stdin ops; multiple output formats)";
+  description = "random — matching LuaJIT and Zig/C random CLIs (BLAKE3 DRBG, OS entropy, alternate distributions)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -38,7 +38,7 @@
         # NOTE on the exact commit pinned here, empirically determined,
         # NOT the bare fix commit's own hash -- see docs/luajit-1499-pin-
         # investigation.md for the full investigation, including two
-        # SEPARATE LuaJIT bugs this pin exposed in bin/random's PCG32 code
+        # SEPARATE LuaJIT bugs this pin exposed in the former deterministic code
         # and how they were isolated and fixed. Short version: Mike Pall's
         # actual #1499 fix is commit 5ed524c09fec64bed46b4bf74fa03be9083b0963
         # ("Don't fold -a / -b for unsigned operands"), but it lives on
@@ -98,12 +98,13 @@
           ln -s ${pinLuajit pkgs.pkgsCross.aarch64-multiplatform.luajit}/bin/luajit \
                 $out/bin/luajit-aarch64-glibc
           ln -s ${pkgs.qemu-user}/bin/qemu-aarch64 $out/bin/qemu-aarch64
+          ln -s ${pkgs.zig_0_16}/bin/zig $out/bin/zig
         '';
 
         # LuaJIT is the only runtime dependency (ffi + bit are built in).
         runtimeTools = [ luajitFixed ];
         # External tools the executable shells out to / the test suite needs.
-        testTools = with pkgs; [ bashInteractive coreutils gnugrep gawk bc xxd ];
+        testTools = with pkgs; [ bashInteractive coreutils gnugrep gawk bc xxd binutils gnutar stdenv.cc ];
 
         # Zig 0.16 for the port (docs/plans/2026-08-02-zig-port.md). Pinned to
         # the explicit `zig_0_16` attribute rather than the rolling `zig`, so a
@@ -115,28 +116,44 @@
           pname = "random";
           version = "0.1.0";
           src = ./.;
-          nativeBuildInputs = [ pkgs.makeWrapper ];
+          nativeBuildInputs = [ pkgs.makeWrapper pkgs.zig_0_16 ];
           buildInputs = runtimeTools;
-          dontBuild = true;
+          buildPhase = ''
+            runHook preBuild
+            export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
+            export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-local"
+            mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
+            zig build -Doptimize=ReleaseFast
+            runHook postBuild
+          '';
           installPhase = ''
             runHook preInstall
-            mkdir -p $out/bin $out/lib $out/share/random/tests
+            mkdir -p $out/bin $out/lib $out/include $out/tests $out/share/licenses/random
             cp bin/random $out/bin/random
             # bin/random resolves '../lib/?.lua' relative to itself -- without
             # this, the packaged binary can find lib/fixed.lua only inside the
             # build sandbox, not from $out/bin.
             cp lib/*.lua $out/lib/
-            cp tests/random_test $out/share/random/tests/random_test
-            chmod +x $out/bin/random $out/share/random/tests/random_test
+            cp tests/random_test tests/cli_test_setup.sh $out/tests/
+            cp zig-out/bin/randomz $out/bin/randomz
+            cp zig-out/lib/librandomz.a $out/lib/
+            cp zig-out/include/randomz.h $out/include/
+            cp LICENSE $out/share/licenses/random/LICENSE
+            chmod +x $out/bin/random $out/bin/randomz $out/tests/random_test
             # Mode-by-invocation-name: nrandom => normalized, drandom => deterministic
             ln -s random $out/bin/nrandom
             ln -s random $out/bin/drandom
+            # The C frontend dogfoods librandomz exclusively through randomz.h.
+            ln -s randomz $out/bin/nrandomz
+            ln -s randomz $out/bin/drandomz
             # Resolve '#!/usr/bin/env luajit' to the store luajit
-            patchShebangs $out/bin/random
+            patchShebangs $out/bin/random $out/tests/random_test
+            wrapProgram $out/tests/random_test \
+              --prefix PATH : ${pkgs.lib.makeBinPath (runtimeTools ++ testTools ++ zigTools)}
             runHook postInstall
           '';
           meta = with pkgs.lib; {
-            description = "Unified CLI random number generator (LuaJIT)";
+            description = "Cross-platform-identical random CLIs in LuaJIT and Zig/C";
             license = licenses.mit;
             platforms = platforms.unix;
             mainProgram = "random";
@@ -153,6 +170,7 @@
         packages = {
           default = random;
           random = random;
+          randomz = random;
 
           # Exposed so a machine of ANY architecture can build the exact
           # interpreter tests/cross_arch_diff pins, without also needing the
@@ -169,6 +187,12 @@
           # Only meaningful on x86_64-linux: pkgsCross/pkgsMusl and qemu-user are
           # what make the aarch64 and musl legs buildable from this host at all.
           crossToolchains = crossToolchains;
+        };
+
+        apps.randomz = {
+          type = "app";
+          program = "${random}/bin/randomz";
+          meta.description = "Run the C CLI over the Zig randomz library";
         };
 
         # Hermetic CI check: runs the FULL suite runner (./test), not just
@@ -199,8 +223,86 @@
             touch $out
           '';
 
+        checks.stats-smoke = pkgs.runCommand "random-stats-smoke"
+          { nativeBuildInputs = runtimeTools ++ testTools ++ zigTools; } ''
+            cp -r ${./.} work
+            chmod -R u+w work
+            cd work
+            export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
+            export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-local"
+            mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
+            patchShebangs bin tests stats
+            export HOME="$TMPDIR"
+            export PATH="$PWD/bin:$PATH"
+            FAST=1 RANDOM_STATS_SKIP_TRUE=1 bash ./stats --all
+            touch $out
+          '';
+
+        checks.package-smoke = pkgs.runCommand "random-package-smoke"
+          { nativeBuildInputs = [ pkgs.stdenv.cc ]; } ''
+            test -s ${random}/share/licenses/random/LICENSE
+            cc -std=c11 -Wall -Wextra -Werror -I${random}/include \
+              ${./tests/randomz_abi_test.c} ${random}/lib/librandomz.a \
+              -o randomz-abi-test
+            ./randomz-abi-test
+            ${random}/bin/randomz --about >/dev/null
+            ${random}/bin/drandomz --seed 42 -c 1 >/dev/null
+            ${random}/bin/nrandomz --seed 42 -c 1 >/dev/null
+            ${random}/bin/drandom --seed 42 -c 1 >/dev/null
+            ${random}/bin/nrandom --seed 42 -c 1 >/dev/null
+            test "$(${random}/bin/random --seed 42 -c 8)" = \
+              "$(${random}/bin/randomz --seed 42 -c 8)"
+            ${random}/bin/random --test
+            ${random}/bin/randomz --test
+            touch $out
+          '';
+
+        checks.random-crossarch = if crossSupported then
+          pkgs.runCommand "random-crossarch"
+            { nativeBuildInputs = testTools; } ''
+              cp -r ${./.} work
+              chmod -R u+w work
+              cd work
+              patchShebangs bin tests crossarch
+              export HOME="$TMPDIR"
+              export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
+              export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-local"
+              mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
+              CROSS_TOOLCHAINS=${crossToolchains} FAST=1 bash ./crossarch
+              touch $out
+            ''
+          else pkgs.runCommand "random-crossarch-not-applicable" { } "touch $out";
+
+        checks.windows-x64-smoke = if crossSupported then
+          pkgs.runCommand "random-windows-x64-smoke"
+            { nativeBuildInputs = runtimeTools ++ zigTools ++
+                [ pkgs.wineWow64Packages.stable pkgs.coreutils ]; } ''
+              cp -r ${./.} work
+              chmod -R u+w work
+              cd work
+              patchShebangs bin
+              export HOME="$TMPDIR/home"
+              export WINEPREFIX="$TMPDIR/wine"
+              export WINEDEBUG=-all
+              export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
+              export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-local"
+              mkdir -p "$HOME" "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
+              zig build -Doptimize=ReleaseFast -Dtarget=x86_64-windows-gnu \
+                --prefix "$TMPDIR/windows"
+              bin/random -d --seed 42 -b -c 131 > lua.raw
+              wine "$TMPDIR/windows/bin/randomz.exe" -d --seed 42 -b -c 131 > windows.raw
+              cmp lua.raw windows.raw
+              wine "$TMPDIR/windows/bin/nrandomz.exe" -d --seed 42 -c 8 > alias.out
+              wine "$TMPDIR/windows/bin/randomz.exe" -n -d --seed 42 -c 8 > flag.out
+              cmp alias.out flag.out
+              wine "$TMPDIR/windows/bin/randomz.exe" --true-random -b -c 32 > true.raw
+              test "$(wc -c < true.raw)" -eq 32
+              touch $out
+            ''
+          else pkgs.runCommand "random-windows-x64-smoke-not-applicable" { } "touch $out";
+
         devShells.default = pkgs.mkShell {
-          packages = runtimeTools ++ testTools ++ zigTools;
+          packages = runtimeTools ++ testTools ++ zigTools ++ [ pkgs.openssh pkgs.rsync ];
         };
       });
 }

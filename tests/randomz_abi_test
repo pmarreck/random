@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Compile and execute a consumer that knows the public header, not Zig internals.
+set -u
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/randomz-abi.XXXXXX")" || exit 1
+trap 'rm -rf -- "$tmp"' EXIT
+
+(cd "$root" && zig build -Doptimize=ReleaseFast) >/dev/null || exit 1
+compiler="${CC:-cc}"
+"$compiler" -std=c11 -Wall -Wextra -Werror -I"$root/include" \
+	"$root/tests/randomz_abi_test.c" "$root/zig-out/lib/librandomz.a" \
+	-o "$tmp/randomz-abi-test" || exit 1
+"$tmp/randomz-abi-test"

@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Compile-only portability gate. Execution identity lives in ./crossarch; this
+# suite ensures every promised OS/architecture frontend continues to compile.
+set -u
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/randomz-cross-compile.XXXXXX")"
+trap 'rm -rf -- "$tmp"' EXIT
+
+targets=(
+	x86_64-linux-musl
+	aarch64-linux-musl
+	aarch64-macos
+	x86_64-windows-gnu
+	aarch64-windows-gnu
+)
+required_target_manifest="x86_64-linux-musl aarch64-linux-musl aarch64-macos x86_64-windows-gnu aarch64-windows-gnu"
+if [ "${targets[*]}" != "$required_target_manifest" ] || [ "${#targets[@]}" -ne 5 ]; then
+	echo "randomz cross-compile target manifest changed or shrank" >&2
+	exit 1
+fi
+fails=0
+
+echo "Cross-compiling randomz for ${#targets[@]} promised targets..."
+for target in "${targets[@]}"; do
+	prefix="$tmp/$target"
+	log="$tmp/$target.log"
+	(cd "$root" && zig build -Doptimize=ReleaseFast -Dtarget="$target" --prefix "$prefix") \
+		>"$log" 2>&1
+	rc=$?
+	case "$target" in
+		*-windows-*)
+			artifacts=(bin/randomz.exe bin/nrandomz.exe bin/drandomz.exe lib/randomz.lib include/randomz.h)
+			;;
+		*)
+			artifacts=(bin/randomz bin/nrandomz bin/drandomz lib/librandomz.a include/randomz.h)
+			;;
+	esac
+	missing=""
+	for artifact in "${artifacts[@]}"; do
+		if [ ! -s "$prefix/$artifact" ]; then missing+=" $artifact"; fi
+	done
+	if [[ "$target" == *-windows-* ]] && [ -s "$prefix/bin/randomz.exe" ]; then
+		pe_offset=$(od -An -tu4 -j 60 -N 4 "$prefix/bin/randomz.exe" | tr -d '[:space:]')
+		machine=$(od -An -tx2 -j "$((pe_offset + 4))" -N 2 "$prefix/bin/randomz.exe" | tr -d '[:space:]')
+		case "$target:$machine" in
+			x86_64-windows-gnu:8664|aarch64-windows-gnu:aa64) ;;
+			*) missing+=" wrong-PE-machine($machine)" ;;
+		esac
+	fi
+	if [ "$rc" -ne 0 ] || [ -n "$missing" ]; then
+		echo "  ✗ $target (exit=$rc; missing:${missing:- none})" >&2
+		sed 's/^/      /' <"$log" >&2
+		fails=$((fails + 1))
+	else
+		echo "  ✓ $target"
+	fi
+done
+
+if [ "$fails" -ne 0 ]; then
+	echo "randomz cross-compile test FAILED: $fails target(s)" >&2
+	exit 1
+fi
+echo "randomz cross-compile test PASSED: ${#targets[@]} targets"

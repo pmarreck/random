@@ -2,7 +2,8 @@
 
 ## Completed: BLAKE3 DRBG before the Zig FFI
 
-- [x] Replace PCG32 in `bin/random` with the LuaJIT-specific BLAKE3 keyed XOF;
+- [x] Replace the legacy deterministic generator in `bin/random` with the
+      LuaJIT-specific BLAKE3 keyed XOF;
       retain Egor Skriptunoff's MIT notice and document the verified
       `pure_lua_SHA` ancestry plus the pending-license-clarification caveat.
 - [x] Accept only unsigned decimal and `0x`-prefixed hexadecimal seeds, each
@@ -11,7 +12,7 @@
 - [x] Derive every deterministic key through the versioned BLAKE3 KDF. For an
       omitted seed, obtain 32 bytes from the OS, print the corresponding
       replayable `0x` seed, and fail closed if entropy is unavailable.
-- [x] Remove PCG32, `now_seed`, legacy state parsing, implicit state files,
+- [x] Remove the legacy generator, `now_seed`, legacy state parsing, implicit state files,
       `DRANDOM_CONTEXT`, and `DRANDOM_STATE_HOME`. A CLI invocation performs no
       persistent writes; reproducibility comes from an explicit seed.
 - [x] Replace the true-random entropy path with OS CSPRNG APIs plus an exact-read
@@ -28,7 +29,7 @@
       every new control, run the complete suite, and commit only green units.
 
 ## Done
-- [x] Fix `pcg32_range` infinite loop for ranges > 2^32 (2026-08-01 EST)
+- [x] Fix the legacy range sampler's infinite loop for ranges > 2^32 (2026-08-01 EST)
 - [x] Golden vectors for the integer paths, blessed pre-conversion (2026-08-01 EST)
 - [x] Integer-only soft-float kernel: mul/add/div/ln/exp/cos/sqrt/pow (2026-08-01 EST)
 - [x] Integer-only decimal parse and format (2026-08-01 EST)
@@ -40,16 +41,16 @@
 - [x] `kernel_bc_sweep`: missing `bc` now fails loudly instead of skipping
       silently, so the check can't lose coverage without anyone noticing
       (2026-08-01 EST)
-- [x] README: determinism guarantee, exact PRNG spec (PCG32 XSH-RR 64/32,
-      multiplier/increment/seeding), measured libm divergence, LuaJIT #1499
+- [x] README: determinism guarantee, exact then-current generator spec,
+      measured libm divergence, LuaJIT #1499
       note, compatibility note (2026-08-01 EST)
 - [x] `cos_turns` negative-`u` branch: documented as intentional
       out-of-domain defense, not dead code (2026-08-01 EST)
 - [x] `M.parse` dedicated unit pin: sign applies to the full integer+fraction
       magnitude, not just the integer part (2026-08-01 EST)
-- [x] Spec status line: steps 1-4 implemented, step 5 (Zig port) pending
+- [x] Spec status line: steps 1-5 implemented, including the Zig/C port
       (2026-08-01 EST)
-- [x] Codex hostile-review fixes, all 8 findings: `pcg32_range` power-of-two
+- [x] Codex hostile-review fixes, all 8 findings: legacy range-sampler power-of-two
       hang, `$IFS`-independent default delimiter, `DRANDOM_SEED` implies
       `-d`, malformed-seed grammar (nil-check + u64 overflow guard), large
       integer bounds/weights past 2^53 (`M.parse_int_safe`), `M.norm`/
@@ -67,7 +68,7 @@
       merge of the actual #1499 fix, `5ed524c` -- see
       `docs/luajit-1499-pin-investigation.md` for why the bare fix commit
       hash doesn't work: wrong branch, wrong version string). `bin/random`'s
-      PCG32 code was also rewritten (`xor64`/`u32()`, portability-motivated:
+      legacy generator code was also rewritten (`xor64`/`u32()`, portability-motivated:
       avoids an undocumented LuaJIT extension rather than a confirmed
       defect) -- an initial version of this work claimed two confirmed
       LuaJIT bugs motivated the rewrite; both were challenged by the
@@ -107,17 +108,17 @@
       compensation sign) and a narrow one (canonical zero keeping its incoming
       exponent, which differs in only a handful of cases) both fail it, and it
       passes on restore. Wired into `./test` (now 7 suites) and the hermetic
-      Nix check. `ZIG_0.15_TO_0.16_MIGRATION.md` symlinked at the root — it is
-      more current than `ZIG_RECENT_API_CHANGES.md`, which is stale on the
-      0.16 I/O rework (2026-08-02 EDT)
-- [ ] `src/fixed.zig` mirroring `lib/fixed.lua`, verified against the same `bc` sweep
-- [ ] Zig core (pure, no I/O) + `include/randomz.h` C FFI
-- [ ] `randomz` C CLI + `drandomz`/`nrandomz` symlinks, argv[0] dispatch
-- [ ] Differential harness: `randomz` vs `bin/random` over a seed x flag matrix
-- [ ] Cross-target digest control: x86_64 / aarch64 / musl must agree — EXTEND
+      Nix check. The former migration note has been consolidated into the
+      root `ZIG_RECENT_API_CHANGES.md` guide (2026-08-04 EDT).
+- [x] `src/fixed.zig` mirroring `lib/fixed.lua`, verified against the Lua oracle and same `bc` sweep
+- [x] Zig core (pure, no I/O) + `include/randomz.h` C FFI
+- [x] `randomz` C CLI + `drandomz`/`nrandomz` symlinks, argv[0] dispatch
+- [x] Differential harness: `randomz` vs `bin/random` over a seed x flag x stdin matrix
+- [x] Cross-target digest control: x86_64 / aarch64 / musl agree — EXTEND
       `tests/cross_arch_diff` rather than writing a second one; it already has
-      the legs, the sensitivity controls and the native-hardware path. Add
-      `randomz` as a payload alongside `bin/random`. Note the mutation finding:
+      the legs, the sensitivity controls and the native-hardware path.
+      `randomz` is now a payload alongside `bin/random`, including a raw Zig
+      kernel payload before CLI quantization. Note the mutation finding:
       a CLI-level differential alone is too coarse to catch a 1-ulp kernel
       perturbation, so the Zig port needs a kernel-level digest payload too.
 - [ ] `./bm` benchmark suite covering **both** implementations — LuaJIT and Zig —
@@ -128,7 +129,9 @@
       measured figure to beat: the `#1499` mitigation costs ~5.7x on the float
       distributions on pre-fix LuaJIT and nothing on fixed builds, so the
       benchmark must record which LuaJIT it ran under.
-- [ ] Mechatron Prime CI via the `mechatron-ci` skill
+- [x] Mechatron Prime CI targets for the correctness, statistical,
+      installed-package, ReleaseFast cross-architecture, and Windows x86_64
+      runtime gates
 
 ## Approved directives (Peter, 2026-08-04)
 
@@ -142,10 +145,9 @@ recorded on 2026-08-04).
       with partial/EINTR retry, `BCryptGenRandom` on Windows, exact-read
       `/dev/urandom` fallback, `--no-wait`, and `--random-source=PATH`.
 - [x] **Make `drandom` itself a CSPRNG — NOW, BEFORE the FFI/CLI port
-      (resequenced 2026-08-04 by Peter).** Rationale: porting PCG32 to Zig in
-      Task 8 and then deleting it the same day for BLAKE3 is pure waste; replace
-      the generator first, then port the result, so the Zig core implements
-      BLAKE3 directly and PCG32 is never ported. Not a `--secure` opt-in: the
+      (resequenced 2026-08-04 by Peter).** Replace the legacy generator first,
+      then port the final result: the Zig core implements BLAKE3 directly.
+      Not a `--secure` opt-in: the
       deterministic path becomes a BLAKE3 keyed DRBG outright. Seed 32 bytes
       from `getrandom` when none is given (couples to the entropy fix below); a
       user `--seed` is expanded through BLAKE3's KDF rather than used raw.
@@ -167,12 +169,28 @@ recorded on 2026-08-04).
 ## Superseded future goal (recorded 2026-08-03, completed 2026-08-04)
 - [x] **Cryptographically secure deterministic generator.** Peter superseded
       the deferred `--secure` opt-in: BLAKE3 is now the only deterministic
-      generator, PCG32 is removed, and distributions layer over it unchanged.
+      generator, the legacy implementation is removed, and distributions layer
+      over BLAKE3 unchanged.
       The faster LuaJIT-specific Egor Skriptunoff implementation is vendored
       with the documented provenance/licensing caveat; Zig will use
       `std.crypto.hash.Blake3`.
 
+## Post-shipment distribution enhancements
+
+- [ ] Expose `--gamma`, reusing the Marsaglia-Tsang sampler already required by beta.
+- [ ] Add `--weibull` for lifetime and latency models.
+- [ ] Add `--pareto` and discrete `--zipf` for heavy-tailed values/frequencies.
+- [ ] Add discrete `--geometric` and `--binomial` count distributions.
+- [ ] Add outlier-heavy `--cauchy` and `--student-t` distributions.
+- [ ] Add fuzzing-oriented `--edge-biased` integers concentrated on zero, ±1,
+      both bounds, powers of two, and powers-of-two ±1.
+- [ ] Add fuzzing-oriented `--log-uniform` sizes spanning orders of magnitude.
+- [ ] Implement each mode LuaJIT-first, freeze its byte-consumption contract,
+      port it through the Zig/C ABI, run the shared CLI suite and `./stats`
+      against both implementations, and add CLI-level differential vectors.
+
 ## Inbox-driven (additive, after current Zig-port task)
+
 - [ ] **Einstein 2026-08-04: assess `random` as entropy source for
       `randompassdict`** (inbox/2026-08-04-from-einstein-randompassdict-csprng.md,
       stays in inbox/ until answered). Review-only, no dotfiles changes. Five

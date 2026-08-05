@@ -5,6 +5,9 @@ set -u
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PATH="$here/../bin:$PATH"
+# shellcheck source=cli_test_setup.sh
+source "$here/cli_test_setup.sh"
+if ! cli_test_setup; then exit 1; fi
 
 fails=0
 tests=0
@@ -13,11 +16,8 @@ state_probe="$test_tmp/state-probe"
 capture_dir="$test_tmp/captures"
 mkdir -p "$state_probe" "$capture_dir"
 cleanup_test_tmp() {
-	if [ -x /run/current-system/sw/bin/rm ]; then
-		/run/current-system/sw/bin/rm -rf "$test_tmp"
-	else
-		/bin/rm -rf "$test_tmp"
-	fi
+	rm -rf -- "$test_tmp"
+	cli_test_cleanup
 }
 trap cleanup_test_tmp EXIT
 capture_id=0
