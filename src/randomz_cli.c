@@ -41,6 +41,8 @@ typedef enum distribution {
 	DIST_BETA
 } distribution;
 
+#include "distribution_charts.inc"
+
 typedef struct options {
 	bool deterministic;
 	bool force_true_random;
@@ -187,7 +189,141 @@ static void print_about(void)
 		platform_name(), architecture_name(), description);
 }
 
-static void print_help(void)
+static bool equals_case_insensitive(const char *left, const char *right)
+{
+	if (left == NULL || right == NULL) return false;
+	while (*left != '\0' && *right != '\0') {
+		if (tolower((unsigned char)*left) != tolower((unsigned char)*right)) return false;
+		left++;
+		right++;
+	}
+	return *left == '\0' && *right == '\0';
+}
+
+static bool terminal_program_is_kitty_capable(const char *value)
+{
+	return equals_case_insensitive(value, "WezTerm") ||
+		equals_case_insensitive(value, "ghostty") ||
+		equals_case_insensitive(value, "kitty");
+}
+
+static bool environment_present(const char *name)
+{
+	const char *value = getenv(name);
+	return value != NULL && *value != '\0';
+}
+
+#if !defined(_WIN32)
+static bool read_command_line(const char *command, char *buffer, size_t capacity)
+{
+	FILE *pipe = popen(command, "r");
+	if (pipe == NULL) return false;
+	bool read = fgets(buffer, (int)capacity, pipe) != NULL;
+	(void)pclose(pipe);
+	if (!read) return false;
+	size_t length = strlen(buffer);
+	while (length > 0 && isspace((unsigned char)buffer[length - 1])) buffer[--length] = '\0';
+	return length > 0;
+}
+#endif
+
+static bool known_kitty_terminal(void)
+{
+	const char *term = getenv("TERM");
+	if ((term != NULL && strcmp(term, "xterm-kitty") == 0) ||
+		environment_present("KITTY_WINDOW_ID") || environment_present("WEZTERM_PANE") ||
+		environment_present("WEZTERM_EXECUTABLE") || environment_present("GHOSTTY_RESOURCES_DIR") ||
+		terminal_program_is_kitty_capable(getenv("TERM_PROGRAM"))) return true;
+#if !defined(_WIN32)
+	if (environment_present("TMUX")) {
+		char outer[128];
+		if (read_command_line("tmux show-environment -g TERM_PROGRAM 2>/dev/null", outer,
+			sizeof(outer))) {
+			char *equals = strchr(outer, '=');
+			return terminal_program_is_kitty_capable(equals == NULL ? outer : equals + 1);
+		}
+	}
+#endif
+	return false;
+}
+
+static bool tmux_allows_passthrough(void)
+{
+#if defined(_WIN32)
+	return false;
+#else
+	char value[32];
+	return read_command_line("tmux show-options -gv allow-passthrough 2>/dev/null", value,
+		sizeof(value)) && (strcmp(value, "on") == 0 || strcmp(value, "all") == 0);
+#endif
+}
+
+static bool stdout_is_tty(void)
+{
+#if defined(_WIN32)
+	return _isatty(_fileno(stdout)) == 1;
+#else
+	return isatty(fileno(stdout)) == 1;
+#endif
+}
+
+static bool use_kitty_graphics(void)
+{
+	const char *requested = getenv("RANDOM_HELP_GRAPHICS");
+	if (equals_case_insensitive(requested, "unicode")) return false;
+	if (equals_case_insensitive(requested, "kitty")) return true;
+	if (!stdout_is_tty() || !known_kitty_terminal()) return false;
+	return !environment_present("TMUX") || tmux_allows_passthrough();
+}
+
+static const distribution_chart *chart_for_distribution(distribution dist)
+{
+	for (size_t i = 0; i < sizeof(distribution_charts) / sizeof(distribution_charts[0]); ++i) {
+		if (distribution_charts[i].dist == dist) return &distribution_charts[i];
+	}
+	return NULL;
+}
+
+static void write_kitty_sequence(const char *control, const char *payload, size_t length,
+	bool tmux)
+{
+	if (tmux) fputs("\033Ptmux;\033\033_G", stdout);
+	else fputs("\033_G", stdout);
+	fputs(control, stdout);
+	fputc(';', stdout);
+	(void)fwrite(payload, 1, length, stdout);
+	if (tmux) fputs("\033\033\\\033\\", stdout);
+	else fputs("\033\\", stdout);
+}
+
+static void print_distribution_help(distribution dist)
+{
+	const distribution_chart *chart = chart_for_distribution(dist);
+	if (chart == NULL) return;
+	printf("\nDistribution: %s\n%s\n\n", chart->title, chart->parameters);
+	if (use_kitty_graphics()) {
+		size_t length = strlen(chart->png_base64);
+		bool tmux = environment_present("TMUX");
+		for (size_t offset = 0; offset < length; offset += 4096) {
+			size_t count = length - offset > 4096 ? 4096 : length - offset;
+			bool final = offset + count == length;
+			char control[64];
+			if (offset == 0) {
+				(void)snprintf(control, sizeof(control),
+					"a=T,f=100,t=d,c=56,r=12,C=1,q=2,m=%d", final ? 0 : 1);
+			} else {
+				(void)snprintf(control, sizeof(control), "m=%d", final ? 0 : 1);
+			}
+			write_kitty_sequence(control, chart->png_base64 + offset, count, tmux);
+		}
+		for (int row = 0; row < 12; ++row) fputs("\r\n", stdout);
+	} else {
+		fputs(chart->fallback, stdout);
+	}
+	puts(chart->axis);
+}
+
+static void print_help(distribution dist)
 {
 	printf("Usage: %s [options] [start] [end]\n", program_name);
 	printf("       echo 'items' | %s --choose\n", program_name);
@@ -233,10 +369,35 @@ static void print_help(void)
 	puts("");
 	puts("Environment variables:");
 	puts("  DRANDOMZ_SEED     Unsigned decimal or 0x-prefixed seed (implies -d)");
+	puts("  RANDOM_HELP_GRAPHICS  auto (default), kitty, or unicode for distribution help");
 	puts("");
 	puts("Deterministic mode never persists state. Every invocation starts at");
 	puts("stream position zero. Without an explicit seed it obtains 32 bytes");
 	puts("from the entropy source and prints the replayable seed to stderr.");
+	print_distribution_help(dist);
+}
+
+static distribution help_distribution_from_args(int argc, char **argv)
+{
+	distribution selected = normal_invocation(program_name) ? DIST_NORMAL : DIST_UNIFORM;
+	for (int i = 1; i < argc; ++i) {
+		distribution candidate = DIST_UNIFORM;
+		if (strcmp(argv[i], "--normalized") == 0 || strcmp(argv[i], "-n") == 0) {
+			candidate = DIST_NORMAL;
+		} else if (strcmp(argv[i], "--exponential") == 0) {
+			candidate = DIST_EXPONENTIAL;
+		} else if (strcmp(argv[i], "--poisson") == 0) {
+			candidate = DIST_POISSON;
+		} else if (strcmp(argv[i], "--log-normal") == 0) {
+			candidate = DIST_LOG_NORMAL;
+		} else if (strcmp(argv[i], "--beta") == 0) {
+			candidate = DIST_BETA;
+		}
+		if (candidate == DIST_UNIFORM) continue;
+		if (selected != DIST_UNIFORM && selected != candidate) return DIST_UNIFORM;
+		selected = candidate;
+	}
+	return selected;
 }
 
 static bool test_file_exists(const char *path)
@@ -402,7 +563,7 @@ static int parse_arguments(int argc, char **argv, options *opts)
 			print_about();
 			exit(0);
 		} else if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0) {
-			print_help();
+			print_help(help_distribution_from_args(argc, argv));
 			exit(0);
 		} else if (strcmp(arg, "--test") == 0) {
 			exit(run_test_suite());

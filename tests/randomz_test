@@ -53,6 +53,61 @@ if [ -e /dev/full ]; then
 	fi
 fi
 
+echo "Testing generated distribution help parity and terminal framing..."
+if ! luajit "$root/tools/generate_distribution_charts.lua" --check; then
+	fails=$((fails + 1))
+fi
+
+compare_help() {
+	local label="$1" renderer="$2" tmux_value="$3"
+	shift 3
+	cases=$((cases + 1))
+	local lua_raw="$tmp/help-lua-raw.$cases" c_raw="$tmp/help-c-raw.$cases"
+	local lua_out="$tmp/help-lua.$cases" c_out="$tmp/help-c.$cases"
+	if [ -n "$tmux_value" ]; then
+		env RANDOM_HELP_GRAPHICS="$renderer" TMUX="$tmux_value" \
+			"$lua_cli" "$@" >"$lua_raw"
+		env RANDOM_HELP_GRAPHICS="$renderer" TMUX="$tmux_value" \
+			"$c_cli" "$@" >"$c_raw"
+	else
+		env -u TMUX RANDOM_HELP_GRAPHICS="$renderer" "$lua_cli" "$@" >"$lua_raw"
+		env -u TMUX RANDOM_HELP_GRAPHICS="$renderer" "$c_cli" "$@" >"$c_raw"
+	fi
+	# The frontends intentionally advertise different invocation and seed-env
+	# names in their generic help. The distribution-qualified block below its
+	# marker is the shared byte-for-byte contract under test here.
+	sed -n '/^Distribution: /,$p' "$lua_raw" >"$lua_out"
+	sed -n '/^Distribution: /,$p' "$c_raw" >"$c_out"
+	if ! cmp -s "$lua_out" "$c_out"; then
+		echo "randomz help differential FAILED: $label" >&2
+		cmp "$lua_out" "$c_out" >&2 || true
+		fails=$((fails + 1))
+	fi
+	if [ "$renderer" = "unicode" ]; then
+		if ! grep -Fq 'Distribution: ' "$lua_out" || grep -Fq $'\033_G' "$lua_out"; then
+			echo "randomz help framing FAILED: $label did not use Unicode-only output" >&2
+			fails=$((fails + 1))
+		fi
+	elif [ -z "$tmux_value" ]; then
+		if ! grep -Fq $'\033_Ga=T,f=100,t=d,c=56,r=12,C=1,q=2,m=1;iVBORw0KGgo' "$lua_out"; then
+			echo "randomz help framing FAILED: $label lacks a direct PNG Kitty transmission" >&2
+			fails=$((fails + 1))
+		fi
+	else
+		if ! grep -Fq $'\033Ptmux;\033\033_Ga=T,f=100,t=d,c=56,r=12,C=1,q=2,m=1;iVBORw0KGgo' "$lua_out" ||
+		   ! grep -Fq $'\033\033\\\033\\' "$lua_out"; then
+			echo "randomz help framing FAILED: $label lacks tmux passthrough framing" >&2
+			fails=$((fails + 1))
+		fi
+	fi
+}
+
+for help_dist in --normalized --exponential --poisson --log-normal --beta; do
+	compare_help "Unicode $help_dist" unicode "" "$help_dist" --help
+done
+compare_help "direct Kitty PNG" kitty "" --help --normalized
+compare_help "tmux-wrapped Kitty PNG" kitty fake --normalized --help
+
 compare_args() {
 	local label="$1"
 	shift

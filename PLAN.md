@@ -29,6 +29,11 @@
       every new control, run the complete suite, and commit only green units.
 
 ## Done
+- [x] Distribution-qualified help (`--normalized --help`, etc.) renders
+      deterministic embedded PNG plots through the Kitty graphics protocol in
+      Kitty, WezTerm, and Ghostty; tmux-aware passthrough is used only when
+      enabled, with byte-identical Braille fallback and output from Lua/C
+      (2026-08-04 EDT)
 - [x] Fix the legacy range sampler's infinite loop for ranges > 2^32 (2026-08-01 EST)
 - [x] Golden vectors for the integer paths, blessed pre-conversion (2026-08-01 EST)
 - [x] Integer-only soft-float kernel: mul/add/div/ln/exp/cos/sqrt/pow (2026-08-01 EST)

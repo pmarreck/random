@@ -103,6 +103,47 @@ test_random() {
 		(( fails++ ))
 	fi
 
+	# Distribution-qualified help is useful even when stdout is captured: the
+	# auto renderer must fall back to a shape-preserving Braille chart. Exercise
+	# every distribution here so this same contract runs against LuaJIT and,
+	# through RANDOM_TEST_CLI, the C frontend over the Zig ABI.
+	(( tests++ ))
+	echo "Testing distribution-qualified help charts..."
+	local distribution_help_ok=1 distribution_output distribution_status
+	local distribution_spec
+	for distribution_spec in \
+		'--normalized:Normal (Gaussian)' \
+		'--exponential:Exponential' \
+		'--poisson:Poisson' \
+		'--log-normal:Log-normal' \
+		'--beta:Beta'; do
+		local distribution_flag="${distribution_spec%%:*}"
+		local distribution_title="${distribution_spec#*:}"
+		distribution_output=$(env RANDOM_HELP_GRAPHICS=unicode random \
+			"$distribution_flag" --help)
+		distribution_status=$?
+		if [ "$distribution_status" -ne 0 ] ||
+		   ! grep -Fq "Distribution: $distribution_title" <<<"$distribution_output" ||
+		   ! grep -Fq 'Horizontal axis:' <<<"$distribution_output" ||
+		   ! grep -Fq '⡇' <<<"$distribution_output"; then
+			distribution_help_ok=0
+		fi
+	done
+	local help_before_distribution help_after_distribution normal_alias_help
+	help_before_distribution=$(env RANDOM_HELP_GRAPHICS=unicode random --help --normalized)
+	help_after_distribution=$(env RANDOM_HELP_GRAPHICS=unicode random --normalized --help)
+	normal_alias_help=$(env RANDOM_HELP_GRAPHICS=unicode nrandom --help)
+	if [ "$help_before_distribution" != "$help_after_distribution" ] ||
+	   ! grep -Fq 'Distribution: Normal (Gaussian)' <<<"$normal_alias_help"; then
+		distribution_help_ok=0
+	fi
+	if [ "$distribution_help_ok" -eq 1 ]; then
+		echo "✓ Distribution-qualified help charts passed"
+	else
+		echo "✗ Distribution-qualified help charts failed" >&2
+		(( fails++ ))
+	fi
+
 	# Test 3: --test flag
 	(( tests++ ))
 	echo "Testing --test flag..."

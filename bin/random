@@ -16,6 +16,7 @@ local here = (arg[0] or ""):match("^(.*)/[^/]+$") or "."
 package.path = here .. "/../lib/?.lua;" .. here .. "/lib/?.lua;" .. package.path
 local fx = require("fixed")
 local b3 = require("blake3")
+local distribution_charts = require("distribution_charts")
 
 local argv = arg or {}
 
@@ -24,6 +25,8 @@ ffi.cdef[[
 	long getrandom(void *buf, size_t buflen, unsigned int flags);
 	int getentropy(void *buffer, size_t length);
 	int _setmode(int fd, int mode);
+	int isatty(int fd);
+	int _isatty(int fd);
 	typedef long NTSTATUS;
 	NTSTATUS BCryptGenRandom(void *algorithm, unsigned char *buffer,
 		unsigned long length, unsigned long flags);
@@ -632,7 +635,114 @@ local function print_about(invocation)
 	print(("%s v%s (%s/%s): %s"):format(invocation, VERSION, jit.os, jit.arch, desc))
 end
 
-local function print_help(invocation)
+local function read_command_line(command)
+	if jit.os == "Windows" then return nil end
+	local pipe = io.popen(command, "r")
+	if not pipe then return nil end
+	local value = pipe:read("*l")
+	pipe:close()
+	return value and trim(value) or nil
+end
+
+local function terminal_program_is_kitty_capable(value)
+	if not value then return false end
+	value = value:lower()
+	return value == "wezterm" or value == "ghostty" or value == "kitty"
+end
+
+local function environment_present(name)
+	local value = os.getenv(name)
+	return value ~= nil and value ~= ""
+end
+
+local function known_kitty_terminal()
+	if os.getenv("TERM") == "xterm-kitty" or environment_present("KITTY_WINDOW_ID") or
+		environment_present("WEZTERM_PANE") or environment_present("WEZTERM_EXECUTABLE") or
+		environment_present("GHOSTTY_RESOURCES_DIR") then
+		return true
+	end
+	if terminal_program_is_kitty_capable(os.getenv("TERM_PROGRAM")) then return true end
+	if environment_present("TMUX") then
+		local outer = read_command_line("tmux show-environment -g TERM_PROGRAM 2>/dev/null")
+		if outer then
+			outer = outer:match("^[^=]+=(.*)$") or outer
+			return terminal_program_is_kitty_capable(outer)
+		end
+	end
+	return false
+end
+
+local function tmux_allows_passthrough()
+	local value = read_command_line("tmux show-options -gv allow-passthrough 2>/dev/null")
+	return value == "on" or value == "all"
+end
+
+local function stdout_is_tty()
+	if jit.os == "Windows" then return ffi.C._isatty(1) == 1 end
+	return ffi.C.isatty(1) == 1
+end
+
+local function use_kitty_graphics()
+	local requested = (os.getenv("RANDOM_HELP_GRAPHICS") or "auto"):lower()
+	if requested == "unicode" then return false end
+	if requested == "kitty" then return true end
+	if not stdout_is_tty() or not known_kitty_terminal() then return false end
+	return not environment_present("TMUX") or tmux_allows_passthrough()
+end
+
+local function write_kitty_sequence(control, payload, tmux)
+	local sequence = "\27_G" .. control .. ";" .. payload .. "\27\\"
+	if tmux then
+		sequence = "\27Ptmux;" .. sequence:gsub("\27", "\27\27") .. "\27\\"
+	end
+	io.write(sequence)
+end
+
+local function print_distribution_help(key)
+	local chart = key and distribution_charts[key]
+	if not chart then return end
+	print("")
+	print("Distribution: " .. chart.title)
+	print(chart.parameters)
+	print("")
+	if use_kitty_graphics() then
+		local encoded = chart.png_base64
+		local tmux = environment_present("TMUX")
+		for offset = 1, #encoded, 4096 do
+			local final = offset + 4095 >= #encoded
+			local control
+			if offset == 1 then
+				control = "a=T,f=100,t=d,c=56,r=12,C=1,q=2,m=" .. (final and "0" or "1")
+			else
+				control = "m=" .. (final and "0" or "1")
+			end
+			write_kitty_sequence(control, encoded:sub(offset, offset + 4095), tmux)
+		end
+		io.write(string.rep("\r\n", 12))
+	else
+		io.write(chart.fallback)
+	end
+	print(chart.axis)
+end
+
+local function help_distribution(invocation)
+	local selected = invocation == "nrandom" and "normal" or nil
+	local flag_to_distribution = {
+		["-n"] = "normal", ["--normalized"] = "normal",
+		["--exponential"] = "exponential", ["--poisson"] = "poisson",
+		["--log-normal"] = "log_normal", ["--beta"] = "beta",
+	}
+	for _, value in ipairs(argv) do
+		local candidate = flag_to_distribution[value]
+		if candidate then
+			if selected and selected ~= candidate then return nil end
+			selected = candidate
+		end
+	end
+	return selected
+end
+
+local function print_help(invocation, distribution)
 	print("Usage: " .. invocation .. " [options] [start] [end]")
 	print("       echo 'items' | " .. invocation .. " --choose")
 	print("       echo 'items' | " .. invocation .. " --shuffle")
@@ -677,6 +787,7 @@ local function print_help(invocation)
 	print("")
 	print("Environment variables:")
 	print("  DRANDOM_SEED      Unsigned decimal or 0x-prefixed seed (implies -d)")
+	print("  RANDOM_HELP_GRAPHICS  auto (default), kitty, or unicode for distribution help")
 	print("")
 	print("Deterministic mode never persists state. Every invocation starts at")
 	print("stream position zero. Without an explicit seed it obtains 32 bytes")
@@ -689,6 +800,7 @@ local function print_help(invocation)
 	print("  random --hex -c 5         # 5 hex numbers")
 	print("  echo -e 'a\\nb\\nc' | random --choose")
 	print("  echo 'rare:1,common:10' | random --weighted --delimiter ','")
+	print_distribution_help(distribution)
 end
 
 -- ===== Stdin reading =====
@@ -763,7 +875,7 @@ local function parse_args()
 			print_about(invocation)
 			os.exit(0)
 		elseif arg_val == "--help" or arg_val == "-h" then
-			print_help(invocation)
+			print_help(invocation, help_distribution(invocation))
 			os.exit(0)
 		elseif arg_val == "--test" then
 			local self = (arg and arg[0]) or ""
