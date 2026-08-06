@@ -15,6 +15,7 @@ annotate=[
 	ZIG_0.15_TO_0.16_MIGRATION.md = Symlink to the canonical Zig 0.15->0.16 migration guide (Io interface, Juicy Main); more current than ZIG_RECENT_API_CHANGES.md on the I/O rework
 	ZIG_RECENT_API_CHANGES.md = Symlink to the canonical Zig 0.16 API-changes cheatsheet in the Obsidian vault; read before writing build code
 	bin/random = unified random CLI; distributions/parsing/output run entirely through lib/fixed.lua's integer kernel (no math.*, no tonumber, no %f)
+	build = Bash: nix-build (sandboxed ReleaseFast) the project, copy randomz+random CLIs to zig-out/bin/
 	build.zig = Zig build: ReleaseFast default for artifacts, ReleaseSafe for tests; fixed module + differential driver
 	build.zig.zon = Zig package manifest (no dependencies, deliberately -- keeps the Nix sandbox build network-free)
 	crossarch = top-level runner for the cross-architecture differential (not part of ./test)

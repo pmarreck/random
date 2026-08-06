@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Build the whole project via `nix build` (sandboxed, deterministic -- avoids
+# host OS detection issues) and expose the binaries at a stable path.
+#
+# `result/` is a symlink into the read-only nix store whose target changes on
+# every rebuild, so we also copy the CLIs into `zig-out/bin/` (gitignored) for
+# a stable, writable location -- `./zig-out/bin/randomz`, `./zig-out/bin/random`.
+#
+# Usage: ./build                 # ReleaseFast, all optimizations (default)
+#        ./build --print-build-logs   # any extra args pass through to `nix build`
+#
+# NOTE: no `set -e` -- we branch on nix's exit status explicitly so we can emit
+# a useful message rather than aborting silently.
+set -u
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$here" || exit 1
+
+# The flake's package runs `zig build -Doptimize=ReleaseFast` and installs both
+# the LuaJIT `random` and the Zig/C `randomz` CLIs.
+nix build .#default "$@"
+rc=$?
+if [ "$rc" -ne 0 ]; then
+	echo "build FAILED (nix build exited $rc)" >&2
+	exit "$rc"
+fi
+
+mkdir -p zig-out/bin
+# `result/bin/*` are mode-555 store files; install -m755 gives writable copies.
+install -m755 result/bin/randomz zig-out/bin/randomz
+install -m755 result/bin/random  zig-out/bin/random
+
+echo "Built:"
+echo "  $here/zig-out/bin/randomz   ($("$here/zig-out/bin/randomz" --about 2>/dev/null))"
+echo "  $here/zig-out/bin/random    (LuaJIT frontend)"
