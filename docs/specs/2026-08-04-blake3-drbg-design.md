@@ -210,7 +210,9 @@ independent Zig reference retaining control over a self-consistent mistake.
 
 - The public C ABI uses caller-owned `{ key[32], position }` state, explicit
   get/set/fill/u32/u64 calls, checked fixed-format conversions, and
-  callback-fed one-shot samplers. Panic-capable low-level arithmetic remains
-  internal.
+  callback-fed one-shot samplers. Its entropy-free distribution-curve API
+  returns normalized heights and x-bounds to caller-owned storage; terminal
+  protocols and rasterization remain in the CLIs. Panic-capable low-level
+  arithmetic remains internal.
 - C and Zig share the Lua oracle's exact-integer position ceiling of 2^53 so
   one serialized state has one meaning on every supported implementation.

@@ -9,6 +9,7 @@ const fixed = @import("fixed");
 const Blake3 = std.crypto.hash.Blake3;
 const kdf_context = "random drbg 2026-08-04 v1";
 const max_exact_position: u64 = 9007199254740992;
+const curve_max_samples: usize = 4096;
 
 pub const Fixed = extern struct {
     m: i64,
@@ -41,6 +42,14 @@ const Status = enum(c_int) {
     position_overflow = 3,
     buffer_too_small = 4,
     numeric_error = 5,
+};
+
+const Distribution = enum(c_int) {
+    normal = 1,
+    exponential = 2,
+    poisson = 3,
+    log_normal = 4,
+    beta = 5,
 };
 
 const RngError = error{
@@ -304,6 +313,200 @@ fn beta(
     return fixed.div(x, fixed.add(x, y));
 }
 
+fn curveFraction(index: usize, denominator: usize) fixed.Fixed {
+    return fixed.div(
+        fixed.fromInt(@intCast(index)),
+        fixed.fromInt(@intCast(denominator)),
+    );
+}
+
+fn curveHeight(relative: fixed.Fixed) u16 {
+    if (relative.m <= 0) return 0;
+    const one = fixed.fromInt(1);
+    if (fixed.cmp(relative, one) >= 0) return std.math.maxInt(u16);
+    const scaled = fixed.mul(relative, fixed.fromInt(std.math.maxInt(u16)));
+    const value = fixed.toIntTrunc(scaled);
+    if (value <= 0) return 0;
+    if (value >= std.math.maxInt(u16)) return std.math.maxInt(u16);
+    return @intCast(value);
+}
+
+fn curveRelative(score: fixed.Fixed, maximum: fixed.Fixed) fixed.Fixed {
+    const difference = fixed.sub(score, maximum);
+    if (difference.m >= 0) return fixed.fromInt(1);
+    // Anything below exp(-64) is far below one 16-bit chart-height unit.
+    // Returning exact zero also keeps extreme-but-valid user parameters away
+    // from fixed.exp's intentionally bounded range reduction.
+    if (fixed.cmp(difference, fixed.fromInt(-64)) < 0) return fixed.Fixed.zero;
+    return fixed.exp(difference);
+}
+
+fn normalCurve(
+    mean: fixed.Fixed,
+    stddev: fixed.Fixed,
+    heights: []u16,
+    x_min: *Fixed,
+    x_max: *Fixed,
+) void {
+    const four = fixed.fromInt(4);
+    const eight = fixed.fromInt(8);
+    const two = fixed.fromInt(2);
+    const spread = fixed.mul(four, stddev);
+    x_min.* = Fixed.fromInternal(fixed.sub(mean, spread));
+    x_max.* = Fixed.fromInternal(fixed.add(mean, spread));
+    for (heights, 0..) |*height, i| {
+        const fraction = curveFraction(i, heights.len - 1);
+        const z = fixed.sub(fixed.mul(eight, fraction), four);
+        const score = fixed.neg(fixed.div(fixed.mul(z, z), two));
+        height.* = curveHeight(fixed.exp(score));
+    }
+}
+
+fn exponentialCurve(
+    rate: fixed.Fixed,
+    heights: []u16,
+    x_min: *Fixed,
+    x_max: *Fixed,
+) void {
+    const six = fixed.fromInt(6);
+    x_min.* = Fixed.fromInternal(fixed.Fixed.zero);
+    x_max.* = Fixed.fromInternal(fixed.div(six, rate));
+    for (heights, 0..) |*height, i| {
+        const fraction = curveFraction(i, heights.len - 1);
+        const score = fixed.neg(fixed.mul(six, fraction));
+        height.* = curveHeight(fixed.exp(score));
+    }
+}
+
+fn poissonCurve(
+    lambda: fixed.Fixed,
+    heights: []u16,
+    written: *usize,
+    x_min: *Fixed,
+    x_max: *Fixed,
+) void {
+    const mode = fixed.toIntTrunc(lambda);
+    const radius = fixed.toIntTrunc(fixed.mul(
+        fixed.fromInt(6),
+        fixed.sqrt(lambda),
+    )) + 1;
+    const minimum = @max(@as(i64, 0), mode - radius);
+    const maximum = mode + radius;
+    const integer_count: usize = @intCast(maximum - minimum + 1);
+    const count = @min(integer_count, heights.len);
+    written.* = count;
+    x_min.* = Fixed.fromInternal(fixed.fromInt(minimum));
+    x_max.* = Fixed.fromInternal(fixed.fromInt(maximum));
+
+    var probability = fixed.fromInt(1);
+    var current = mode;
+    while (current > minimum) : (current -= 1) {
+        probability = fixed.mul(probability, fixed.div(fixed.fromInt(current), lambda));
+    }
+
+    const x_span: u64 = @intCast(maximum - minimum);
+    const denominator: u64 = @intCast(count - 1);
+    for (heights[0..count], 0..) |*height, i| {
+        const numerator = @as(u64, @intCast(i)) * x_span + denominator / 2;
+        const target = minimum + @as(i64, @intCast(numerator / denominator));
+        while (current < target) {
+            current += 1;
+            probability = fixed.mul(
+                probability,
+                fixed.div(lambda, fixed.fromInt(current)),
+            );
+        }
+        height.* = curveHeight(probability);
+    }
+}
+
+fn logNormalScore(
+    sigma_squared: fixed.Fixed,
+    x_max_scaled: fixed.Fixed,
+    index: usize,
+    denominator: usize,
+) fixed.Fixed {
+    const x = fixed.mul(x_max_scaled, curveFraction(index, denominator));
+    const log_x = fixed.ln(x);
+    const shifted = fixed.add(log_x, sigma_squared);
+    return fixed.neg(fixed.div(
+        fixed.mul(shifted, shifted),
+        fixed.mul(fixed.fromInt(2), sigma_squared),
+    ));
+}
+
+fn logNormalCurve(
+    mean: fixed.Fixed,
+    stddev: fixed.Fixed,
+    heights: []u16,
+    x_min: *Fixed,
+    x_max: *Fixed,
+) void {
+    const span_unbounded = fixed.div(
+        fixed.mul(stddev, fixed.fromInt(13)),
+        fixed.fromInt(8),
+    );
+    const twenty = fixed.fromInt(20);
+    const span = if (fixed.cmp(span_unbounded, twenty) < 0) span_unbounded else twenty;
+    const x_max_scaled = fixed.exp(span);
+    x_min.* = Fixed.fromInternal(fixed.Fixed.zero);
+    x_max.* = Fixed.fromInternal(fixed.exp(fixed.add(mean, span)));
+
+    const sigma_squared = fixed.mul(stddev, stddev);
+    var maximum = logNormalScore(sigma_squared, x_max_scaled, 1, heights.len - 1);
+    for (2..heights.len) |i| {
+        const score = logNormalScore(sigma_squared, x_max_scaled, i, heights.len - 1);
+        if (fixed.cmp(score, maximum) > 0) maximum = score;
+    }
+    heights[0] = 0;
+    for (heights[1..], 1..) |*height, i| {
+        height.* = curveHeight(curveRelative(
+            logNormalScore(sigma_squared, x_max_scaled, i, heights.len - 1),
+            maximum,
+        ));
+    }
+}
+
+fn betaScore(
+    alpha_minus_one: fixed.Fixed,
+    beta_minus_one: fixed.Fixed,
+    index: usize,
+    count: usize,
+) fixed.Fixed {
+    const numerator = fixed.fromInt(@intCast(index * 2 + 1));
+    const denominator = fixed.fromInt(@intCast(count * 2));
+    const x = fixed.div(numerator, denominator);
+    const one_minus_x = fixed.sub(fixed.fromInt(1), x);
+    return fixed.add(
+        fixed.mul(alpha_minus_one, fixed.ln(x)),
+        fixed.mul(beta_minus_one, fixed.ln(one_minus_x)),
+    );
+}
+
+fn betaCurve(
+    alpha: fixed.Fixed,
+    beta_parameter: fixed.Fixed,
+    heights: []u16,
+    x_min: *Fixed,
+    x_max: *Fixed,
+) void {
+    x_min.* = Fixed.fromInternal(fixed.Fixed.zero);
+    x_max.* = Fixed.fromInternal(fixed.fromInt(1));
+    const alpha_minus_one = fixed.sub(alpha, fixed.fromInt(1));
+    const beta_minus_one = fixed.sub(beta_parameter, fixed.fromInt(1));
+    var maximum = betaScore(alpha_minus_one, beta_minus_one, 0, heights.len);
+    for (1..heights.len) |i| {
+        const score = betaScore(alpha_minus_one, beta_minus_one, i, heights.len);
+        if (fixed.cmp(score, maximum) > 0) maximum = score;
+    }
+    for (heights, 0..) |*height, i| {
+        height.* = curveHeight(curveRelative(
+            betaScore(alpha_minus_one, beta_minus_one, i, heights.len),
+            maximum,
+        ));
+    }
+}
+
 export fn randomz_drbg_init(
     state: ?*Drbg,
     seed_material: ?[*]const u8,
@@ -542,6 +745,74 @@ export fn randomz_beta(
     return @intFromEnum(Status.ok);
 }
 
+export fn randomz_distribution_curve(
+    distribution_value: c_int,
+    first: Fixed,
+    second: Fixed,
+    heights: ?[*]u16,
+    capacity: usize,
+    written: ?*usize,
+    x_min: ?*Fixed,
+    x_max: ?*Fixed,
+) callconv(.c) c_int {
+    const distribution: Distribution = switch (distribution_value) {
+        1 => .normal,
+        2 => .exponential,
+        3 => .poisson,
+        4 => .log_normal,
+        5 => .beta,
+        else => return @intFromEnum(Status.invalid_argument),
+    };
+    if (!validFixed(first) or !validFixed(second) or
+        capacity < 2 or capacity > curve_max_samples)
+        return @intFromEnum(Status.invalid_argument);
+    const output = heights orelse return @intFromEnum(Status.invalid_argument);
+    const output_count = written orelse return @intFromEnum(Status.invalid_argument);
+    const minimum = x_min orelse return @intFromEnum(Status.invalid_argument);
+    const maximum = x_max orelse return @intFromEnum(Status.invalid_argument);
+    const samples = output[0..capacity];
+    output_count.* = capacity;
+
+    switch (distribution) {
+        .normal => {
+            if (second.m <= 0) return @intFromEnum(Status.invalid_argument);
+            if (!exponentIn(first, -1_000_000, 1_000_000) or
+                !exponentIn(second, -1_000_000, 1_000_000))
+                return @intFromEnum(Status.numeric_error);
+            normalCurve(first.internal(), second.internal(), samples, minimum, maximum);
+        },
+        .exponential => {
+            if (first.m <= 0 or second.m != 0)
+                return @intFromEnum(Status.invalid_argument);
+            if (!exponentIn(first, -1_000_000, 1_000_000))
+                return @intFromEnum(Status.numeric_error);
+            exponentialCurve(first.internal(), samples, minimum, maximum);
+        },
+        .poisson => {
+            if (first.m <= 0 or second.m != 0)
+                return @intFromEnum(Status.invalid_argument);
+            if (!exponentIn(first, -1_000_000, 19))
+                return @intFromEnum(Status.numeric_error);
+            poissonCurve(first.internal(), samples, output_count, minimum, maximum);
+        },
+        .log_normal => {
+            if (second.m <= 0) return @intFromEnum(Status.invalid_argument);
+            if (!exponentIn(first, -1_000_000, 27) or
+                !exponentIn(second, -1_000_000, 23))
+                return @intFromEnum(Status.numeric_error);
+            logNormalCurve(first.internal(), second.internal(), samples, minimum, maximum);
+        },
+        .beta => {
+            if (first.m <= 0 or second.m <= 0)
+                return @intFromEnum(Status.invalid_argument);
+            if (!exponentIn(first, -20, 20) or !exponentIn(second, -20, 20))
+                return @intFromEnum(Status.numeric_error);
+            betaCurve(first.internal(), second.internal(), samples, minimum, maximum);
+        },
+    }
+    return @intFromEnum(Status.ok);
+}
+
 export fn randomz_fixed_from_int(value: i64) callconv(.c) Fixed {
     return Fixed.fromInternal(fixed.fromInt(value));
 }
@@ -606,6 +877,72 @@ export fn randomz_fixed_format(
     };
     output_length.* = rendered.len;
     return @intFromEnum(Status.ok);
+}
+
+test "distribution curves are normalized, parameter-aware, and bounded" {
+    const zero = Fixed.fromInternal(fixed.Fixed.zero);
+    const one = Fixed.fromInternal(fixed.fromInt(1));
+    const two = Fixed.fromInternal(fixed.fromInt(2));
+    const three = Fixed.fromInternal(fixed.fromInt(3));
+    var heights: [64]u16 = undefined;
+    var written: usize = 0;
+    var x_min: Fixed = undefined;
+    var x_max: Fixed = undefined;
+
+    try std.testing.expectEqual(@as(c_int, 0), randomz_distribution_curve(
+        @intFromEnum(Distribution.exponential),
+        two,
+        zero,
+        &heights,
+        heights.len,
+        &written,
+        &x_min,
+        &x_max,
+    ));
+    try std.testing.expectEqual(heights.len, written);
+    try std.testing.expectEqual(std.math.maxInt(u16), heights[0]);
+    try std.testing.expect(heights[heights.len - 1] < heights[0]);
+    try std.testing.expectEqual(@as(i64, 0), fixed.toIntTrunc(x_min.internal()));
+    try std.testing.expectEqual(@as(i64, 3), fixed.toIntTrunc(x_max.internal()));
+
+    try std.testing.expectEqual(@as(c_int, 0), randomz_distribution_curve(
+        @intFromEnum(Distribution.poisson),
+        one,
+        zero,
+        &heights,
+        heights.len,
+        &written,
+        &x_min,
+        &x_max,
+    ));
+    try std.testing.expectEqual(@as(usize, 9), written);
+    try std.testing.expectEqual(std.math.maxInt(u16), heights[0]);
+    try std.testing.expectEqual(std.math.maxInt(u16), heights[1]);
+
+    try std.testing.expectEqual(@as(c_int, 0), randomz_distribution_curve(
+        @intFromEnum(Distribution.beta),
+        one,
+        three,
+        &heights,
+        heights.len,
+        &written,
+        &x_min,
+        &x_max,
+    ));
+    try std.testing.expect(heights[0] > heights[heights.len - 1]);
+    try std.testing.expectEqual(
+        @as(c_int, @intFromEnum(Status.invalid_argument)),
+        randomz_distribution_curve(
+            @intFromEnum(Distribution.normal),
+            zero,
+            one,
+            &heights,
+            1,
+            &written,
+            &x_min,
+            &x_max,
+        ),
+    );
 }
 
 fn testDrbgFill(context: ?*anyopaque, out: [*]u8, count: usize) callconv(.c) c_int {

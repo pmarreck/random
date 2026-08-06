@@ -331,7 +331,7 @@ if not skip_true then
 end
 
 print("distribution shapes (fixed seeds):")
-local uniform = read_numbers(string.format("-d --seed 81001 -c %d 0 99", sample_count))
+local uniform = read_numbers(string.format("-d --seed 81001 -c %d 0..99", sample_count))
 evaluate_uniform(uniform, false)
 local normal = read_numbers(string.format(
   "-d --seed 81002 -n --mean 5 --stddev 2 -c %d", sample_count))
@@ -340,7 +340,7 @@ local exponential = read_numbers(string.format(
   "-d --seed 81003 --exponential -c %d", sample_count))
 evaluate_exponential(exponential, false)
 local poisson = read_numbers(string.format(
-  "-d --seed 81004 --poisson --mean 5 -c %d", sample_count))
+  "-d --seed 81004 --poisson --lambda 5 -c %d", sample_count))
 evaluate_poisson(poisson, false)
 local lognormal = read_numbers(string.format(
   "-d --seed 81005 --log-normal --mean 0 --stddev 1 -c %d", sample_count))
@@ -349,10 +349,10 @@ evaluate_normal("log-normal logs", lognormal, 0, 1, function(value)
   return math.log(value), true
 end, false)
 local beta = read_numbers(string.format(
-  "-d --seed 81006 --beta --alpha 2 --beta-param 5 -c %d", sample_count))
+  "-d --seed 81006 --beta 5 --alpha 2 -c %d", sample_count))
 evaluate_beta(beta, 2, 5, "beta(2,5)", false)
 local beta_u = read_numbers(string.format(
-  "-d --seed 81007 --beta --alpha 0.5 --beta-param 0.75 -c %d", sample_count))
+  "-d --seed 81007 --beta 0.75 --alpha 0.5 -c %d", sample_count))
 evaluate_beta(beta_u, 0.5, 0.75, "beta(0.5,0.75)", false)
 
 -- Mechanically falsifiable controls: each synthetic defect is chosen so its

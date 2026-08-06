@@ -29,11 +29,17 @@
       every new control, run the complete suite, and commit only green units.
 
 ## Done
+- [x] Replace ambiguous one/two bare range endpoints with one atomic range:
+      `M-N`/`M..N` are inclusive and Ruby-style `M...N` excludes N. Reject
+      ranges on distribution paths that do not consume them. (2026-08-05 EDT)
+- [x] Fold Beta's second shape parameter into `--beta[=B]`: bare `--beta`
+      keeps beta=2, while `--beta B`/`--beta=B` overrides it; remove the
+      redundant `--beta-param` surface. (2026-08-05 EDT)
 - [x] Distribution-qualified help (`--normalized --help`, etc.) renders
       deterministic embedded plots through Kitty graphics in Kitty/Ghostty and
-      Sixel in WezTerm; tmux uses native Sixel or explicitly enabled Kitty
-      passthrough, with `RANDOMZ_CHART_TYPE`/CLI overrides, byte-identical
-      Braille fallback, and matching Lua/C output (2026-08-05 EDT)
+      Sixel in WezTerm; tmux auto mode uses scrollback-stable UTF-8, with
+      `RANDOMZ_CHART_TYPE`/CLI overrides, byte-identical Braille fallback, and
+      matching Lua/C output (2026-08-05 EDT)
 - [x] Fix the legacy range sampler's infinite loop for ranges > 2^32 (2026-08-01 EST)
 - [x] Golden vectors for the integer paths, blessed pre-conversion (2026-08-01 EST)
 - [x] Integer-only soft-float kernel: mul/add/div/ln/exp/cos/sqrt/pow (2026-08-01 EST)
@@ -182,20 +188,24 @@ recorded on 2026-08-04).
 
 ## Post-shipment distribution enhancements
 
-- [ ] Add `--view` as a chart-only action for exactly one selected
+- [x] Add `--view` as a chart-only action for exactly one selected
       distribution. Distribution-qualified `--help` keeps showing the frozen
       default shape; `--view` renders the parameters actually supplied (for
-      example `--beta --alpha 1 --beta-param 3 --view`) through the same
+      example `--beta 3 --alpha 1 --view`) through the same
       UTF-8/Kitty/Sixel selector.
-- [ ] Complete the customization vocabulary before `--view`: add `--rate` for
+- [x] Complete the customization vocabulary before `--view`: add `--rate` for
       exponential and `--lambda` as a clearer Poisson alias while retaining
       `--mean`; normal/log-normal continue to use `--mean` + `--stddev`, and
-      beta uses `--alpha` + `--beta-param`.
-- [ ] Implement parameter-aware curve generation LuaJIT-first using the fixed
+      beta uses `--alpha` plus bare/default or parameterized `--beta[=B]`.
+- [x] Implement parameter-aware curve generation LuaJIT-first using the fixed
       numeric kernel, then expose a protocol-neutral curve-sampling API from
       the Zig core through the C ABI. Keep PNG/Sixel/Braille rasterization in
       the CLIs so distribution math enters the reusable core without terminal
       protocols or a Lua/ImageMagick runtime dependency entering `randomz`.
+      Runtime Kitty uses in-memory raw RGB, Sixel is encoded directly, and
+      Braille is rasterized directly; no temporary file or external image
+      runtime is needed. Lone normal `--mean`/`--stddev` now uses the missing
+      parameter's 0/1 default instead of silently ignoring the supplied one.
 - [ ] Expose `--gamma`, reusing the Marsaglia-Tsang sampler already required by beta.
 - [ ] Add `--weibull` for lifetime and latency models.
 - [ ] Add `--pareto` and discrete `--zipf` for heavy-tailed values/frequencies.
@@ -258,7 +268,7 @@ recorded on 2026-08-04).
   2^33..2^52, not the full 2^33..2^62 the original finding specified.
   `M.parse_int_safe`'s later 2^53 CLI ceiling (finding #3 in
   `docs/codex-fix-report.md`) makes spans above 2^53 unreachable through
-  positional CLI arguments at all -- not a weakening of the range-rejection
+  CLI range components at all -- not a weakening of the range-rejection
   fix now carried by `drbg_range`, which uses unconditional u64 arithmetic with no reference to
   that ceiling. Recovering full coverage to 2^62 would need a Lua-level
   test entry point into `drbg_range` (currently a local, unexported

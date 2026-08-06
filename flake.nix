@@ -295,6 +295,9 @@
               bin/random -d --seed 42 -b -c 131 > lua.raw
               wine "$TMPDIR/windows/bin/randomz.exe" -d --seed 42 -b -c 131 > windows.raw
               cmp lua.raw windows.raw
+              RANDOMZ_CHART_TYPE=utf8 bin/random --beta=3 --alpha=1 --view > lua.view
+              RANDOMZ_CHART_TYPE=utf8 wine "$TMPDIR/windows/bin/randomz.exe" --beta=3 --alpha=1 --view > windows.view
+              cmp lua.view windows.view
               wine "$TMPDIR/windows/bin/nrandomz.exe" -d --seed 42 -c 8 > alias.out
               wine "$TMPDIR/windows/bin/randomz.exe" -n -d --seed 42 -c 8 > flag.out
               cmp alias.out flag.out

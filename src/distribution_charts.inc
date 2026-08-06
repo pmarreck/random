@@ -221,7 +221,7 @@ static const distribution_chart distribution_charts[] = {
 	{
 		DIST_EXPONENTIAL,
 		"Exponential",
-		"Default shape: rate=1.",
+		"Default shape: rate=1; --rate reshapes the horizontal scale.",
 		"Horizontal axis: value; vertical axis: relative probability density.",
 		"iVBORw0KGgoAAAANSUhEUgAAAVAAAACQAgMAAAAjGdtKAAAADFBMVEUMEBglMkccXWdk1dLtZEClAAAv20lEQVR4AQHQLy/Q"
 		"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
@@ -427,7 +427,7 @@ static const distribution_chart distribution_charts[] = {
 	{
 		DIST_POISSON,
 		"Poisson",
-		"Default shape: lambda=1; --mean sets lambda.",
+		"Default shape: lambda=1; --lambda or --mean sets lambda.",
 		"Horizontal axis: integer value; vertical axis: probability mass.",
 		"iVBORw0KGgoAAAANSUhEUgAAAVAAAACQAgMAAAAjGdtKAAAADFBMVEUMEBglMkccXWdk1dLtZEClAAAv20lEQVR4AQHQLy/Q"
 		"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
@@ -841,7 +841,7 @@ static const distribution_chart distribution_charts[] = {
 	{
 		DIST_BETA,
 		"Beta",
-		"Default shape: alpha=2, beta=2; --alpha and --beta-param reshape it.",
+		"Default shape: alpha=2, beta=2; --alpha and --beta[=B] reshape it.",
 		"Horizontal axis: value from 0 to 1; vertical axis: relative probability density.",
 		"iVBORw0KGgoAAAANSUhEUgAAAVAAAACQAgMAAAAjGdtKAAAADFBMVEUMEBglMkccXWdk1dLtZEClAAAv20lEQVR4AQHQLy/Q"
 		"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"

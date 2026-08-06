@@ -17,6 +17,7 @@ package.path = here .. "/../lib/?.lua;" .. here .. "/lib/?.lua;" .. package.path
 local fx = require("fixed")
 local b3 = require("blake3")
 local distribution_charts = require("distribution_charts")
+local distribution_view = require("distribution_view")
 
 local argv = arg or {}
 
@@ -212,7 +213,7 @@ local function drbg_range(start_val, end_val)
 	-- wraparound arithmetic, which is not "reject everything", it is
 	-- unrepresentable: no u64 draw can ever satisfy `r < 0`, so the
 	-- rejection loop below spun forever for every such range -- confirmed
-	-- directly, `random --seed 42 -c 1 0 8589934591` (span 2^33) hung
+	-- directly, `random --seed 42 -c 1 0..8589934591` (span 2^33) hung
 	-- until killed. There is nothing to reject in this case: every 64-bit
 	-- draw already lands in exactly range/2^64 proportion, so ALL draws
 	-- are unbiased and none need to be rejected. exact_divides short-
@@ -635,15 +636,6 @@ local function print_about(invocation)
 	print(("%s v%s (%s/%s): %s"):format(invocation, VERSION, jit.os, jit.arch, desc))
 end
 
-local function read_command_line(command)
-	if jit.os == "Windows" then return nil end
-	local pipe = io.popen(command, "r")
-	if not pipe then return nil end
-	local value = pipe:read("*l")
-	pipe:close()
-	return value and trim(value) or nil
-end
-
 local function terminal_program_kind(value)
 	if not value then return nil end
 	value = value:lower()
@@ -665,19 +657,7 @@ local function terminal_kind()
 		environment_present("GHOSTTY_RESOURCES_DIR") then return "kitty" end
 	local direct = terminal_program_kind(os.getenv("TERM_PROGRAM"))
 	if direct then return direct end
-	if environment_present("TMUX") then
-		local outer = read_command_line("tmux show-environment -g TERM_PROGRAM 2>/dev/null")
-		if outer then
-			outer = outer:match("^[^=]+=(.*)$") or outer
-			return terminal_program_kind(outer)
-		end
-	end
 	return nil
-end
-
-local function tmux_allows_passthrough()
-	local value = read_command_line("tmux show-options -gv allow-passthrough 2>/dev/null")
-	return value == "on" or value == "all"
 end
 
 local function stdout_is_tty()
@@ -685,16 +665,12 @@ local function stdout_is_tty()
 	return ffi.C.isatty(1) == 1
 end
 
-local function tmux_supports_sixel()
-	return read_command_line("tmux display-message -p '#{sixel_support}' 2>/dev/null") == "1"
-end
-
 local function chart_renderer_flag()
 	local selected
 	for _, value in ipairs(argv) do
 		if value == "--kitty" then selected = "kitty"
 		elseif value == "--sixel" then selected = "sixel"
-		elseif value == "--utf8-graphics" then selected = "utf8" end
+		elseif value == "--utf8" or value == "--utf8-graphics" then selected = "utf8" end
 	end
 	return selected
 end
@@ -712,13 +688,13 @@ local function chart_renderer()
 		os.exit(1)
 	end
 	if not stdout_is_tty() then return "utf8" end
+	-- Terminal images in tmux are not reliably scrollback-attached even when
+	-- the outer terminal and tmux both advertise the underlying protocol.
+	-- Forced flags still let an informed user opt in for one invocation.
+	if environment_present("TMUX") then return "utf8" end
 	local kind = terminal_kind()
-	if kind == "wezterm" then
-		if environment_present("TMUX") and not tmux_supports_sixel() then return "utf8" end
-		return "sixel"
-	end
-	if kind == "kitty" and
-		(not environment_present("TMUX") or tmux_allows_passthrough()) then return "kitty" end
+	if kind == "wezterm" then return "sixel" end
+	if kind == "kitty" then return "kitty" end
 	return "utf8"
 end
 
@@ -767,6 +743,90 @@ local function print_distribution_help(key)
 	print(chart.axis)
 end
 
+local view_titles = {
+	normal = "Normal (Gaussian)",
+	exponential = "Exponential",
+	poisson = "Poisson",
+	log_normal = "Log-normal",
+	beta = "Beta",
+}
+
+local view_axes = {
+	normal = "Horizontal axis: mean +/- 4 standard deviations; vertical axis: relative probability density.",
+	exponential = "Horizontal axis: 0 to 6/rate; vertical axis: relative probability density.",
+	poisson = "Horizontal axis: lambda +/- 6*sqrt(lambda), clipped at zero; vertical axis: probability mass.",
+	log_normal = "Horizontal axis: 0 to exp(mean + min(1.625*stddev, 20)); vertical axis: relative probability density.",
+	beta = "Horizontal axis: value from 0 to 1; vertical axis: relative probability density.",
+}
+
+local function selected_distribution_key(options)
+	if options.normalized then return "normal" end
+	if options.exponential then return "exponential" end
+	if options.poisson then return "poisson" end
+	if options.log_normal then return "log_normal" end
+	if options.beta then return "beta" end
+	return nil
+end
+
+local function distribution_view_spec(options)
+	local key = selected_distribution_key(options)
+	local zero = { 0LL, 0 }
+	local one = { ONE_M, ONE_E }
+	local two = { TWO_M, TWO_E }
+	if key == "normal" or key == "log_normal" then
+		local mean = options.mean or zero
+		local stddev = options.stddev or one
+		return key, mean, stddev,
+			("Parameters: mean=%s, stddev=%s."):format(
+				options.mean_text or "0", options.stddev_text or "1")
+	elseif key == "exponential" then
+		return key, options.rate or one, zero,
+			("Parameters: rate=%s."):format(options.rate_text or "1")
+	elseif key == "poisson" then
+		return key, options.lambda or options.mean or one, zero,
+			("Parameters: lambda=%s."):format(
+				options.lambda_text or options.mean_text or "1")
+	elseif key == "beta" then
+		return key, options.alpha or two, options.beta_param or two,
+			("Parameters: alpha=%s, beta=%s."):format(
+				options.alpha_text or "2", options.beta_param_text or "2")
+	end
+end
+
+local function print_distribution_view(options)
+	local key, first, second, parameters = distribution_view_spec(options)
+	local renderer = chart_renderer()
+	local ok, payload = pcall(distribution_view.render, key, first, second, renderer)
+	if not ok then
+		stderr_write("Error: supplied distribution parameters cannot be charted: " ..
+			tostring(payload) .. "\n")
+		os.exit(1)
+	end
+	print("Distribution: " .. view_titles[key])
+	print(parameters)
+	print("")
+	if renderer == "kitty" then
+		local tmux = environment_present("TMUX")
+		for offset = 1, #payload, 4096 do
+			local final = offset + 4095 >= #payload
+			local control
+			if offset == 1 then
+				control = "a=T,f=24,s=336,v=144,c=56,r=12,C=1,q=2,m=" ..
+					(final and "0" or "1")
+			else
+				control = "m=" .. (final and "0" or "1")
+			end
+			write_kitty_sequence(control, payload:sub(offset, offset + 4095), tmux)
+		end
+		io.write(string.rep("\r\n", 12))
+	elseif renderer == "sixel" then
+		write_sixel(payload)
+	else
+		io.write(payload)
+	end
+	print(view_axes[key])
+end
+
 local function help_distribution(invocation)
 	local selected = invocation == "nrandom" and "normal" or nil
 	local flag_to_distribution = {
@@ -776,6 +836,7 @@ local function help_distribution(invocation)
 	}
 	for _, value in ipairs(argv) do
 		local candidate = flag_to_distribution[value]
+		if not candidate and value:match("^%-%-beta=") then candidate = "beta" end
 		if candidate then
 			if selected and selected ~= candidate then return nil end
 			selected = candidate
@@ -784,8 +845,20 @@ local function help_distribution(invocation)
 	return selected
 end
 
+local function parse_range_literal(value)
+	local first, last = value:match("^([+%-]?%d+)%.%.%.([+%-]?%d+)$")
+	local exclusive = first ~= nil
+	if not first then first, last = value:match("^([+%-]?%d+)%.%.([+%-]?%d+)$") end
+	if not first then first, last = value:match("^([+%-]?%d+)%-([+%-]?%d+)$") end
+	if not first then return nil end
+	first = fx.parse_int_safe(first)
+	last = fx.parse_int_safe(last)
+	if first == nil or last == nil then return nil end
+	return first, last, exclusive
+end
+
 local function print_help(invocation, distribution)
-	print("Usage: " .. invocation .. " [options] [start] [end]")
+	print("Usage: " .. invocation .. " [options] [M-N|M..N|M...N]")
 	print("       echo 'items' | " .. invocation .. " --choose")
 	print("       echo 'items' | " .. invocation .. " --shuffle")
 	print("")
@@ -794,10 +867,10 @@ local function print_help(invocation, distribution)
 	print("Distributions (mutually exclusive):")
 	print("  (default)           Uniform distribution")
 	print("  -n, --normalized    Normal (Gaussian) via Box-Muller")
-	print("      --exponential   Exponential distribution (rate=1)")
-	print("      --poisson       Poisson distribution (use --mean for λ)")
+	print("      --exponential   Exponential distribution (use --rate)")
+	print("      --poisson       Poisson distribution (use --lambda or --mean)")
 	print("      --log-normal    Log-normal distribution")
-	print("      --beta          Beta distribution (use --alpha, --beta-param)")
+	print("      --beta[=B]      Beta distribution; optional B replaces default beta 2")
 	print("")
 	print("Stdin operations:")
 	print("      --choose        Pick one random item from stdin")
@@ -819,11 +892,14 @@ local function print_help(invocation, distribution)
 	print("      --no-wait       Fail rather than wait for Linux getrandom initialization")
 	print("      --kitty         Force Kitty graphics for a distribution help chart")
 	print("      --sixel         Force Sixel graphics for a distribution help chart")
-	print("      --utf8-graphics Force the UTF-8 Braille distribution help chart")
-	print("      --mean M        Set mean for normal/poisson")
+	print("      --utf8           Force the UTF-8 Braille distribution chart")
+	print("      --utf8-graphics  Long alias for --utf8")
+	print("      --view          Show only the selected distribution with supplied parameters")
+	print("      --mean M        Set mean for normal/log-normal; Poisson lambda alias")
 	print("      --stddev S      Set stddev for normal/log-normal")
+	print("      --rate R        Set exponential rate")
+	print("      --lambda L      Set Poisson lambda (clearer alias for --mean)")
 	print("      --alpha A       Set alpha for beta distribution")
-	print("      --beta-param B  Set beta for beta distribution")
 	print("      --test          Run the test suite")
 	print("")
 	print("Symlink behavior:")
@@ -904,12 +980,22 @@ local function parse_args()
 		random_source = nil,
 		no_wait = false,
 		chart_renderer_flag = false,
+		view = false,
+		generation_option_seen = false,
 		start_val = nil,
 		end_val = nil,
 		mean = nil,
+		mean_text = nil,
 		stddev = nil,
+		stddev_text = nil,
+		rate = nil,
+		rate_text = nil,
+		lambda = nil,
+		lambda_text = nil,
 		alpha = nil,
+		alpha_text = nil,
 		beta_param = nil,
+		beta_param_text = nil,
 	}
 
 	local i = 1
@@ -917,6 +1003,7 @@ local function parse_args()
 
 	while i <= #argv do
 		local arg_val = argv[i]
+		local attached_option, attached_value = arg_val:match("^(%-%-[%w%-]+)=(.*)$")
 		if arg_val == "--about" or arg_val == "-a" then
 			print_about(invocation)
 			os.exit(0)
@@ -942,8 +1029,10 @@ local function parse_args()
 			end
 		elseif arg_val == "--deterministic" or arg_val == "-d" then
 			options.deterministic = true
+			options.generation_option_seen = true
 		elseif arg_val == "--true-random" then
 			options.force_true_random = true
+			options.generation_option_seen = true
 		elseif arg_val == "--normalized" or arg_val == "-n" then
 			options.normalized = true
 		elseif arg_val == "--exponential" then
@@ -952,32 +1041,71 @@ local function parse_args()
 			options.poisson = true
 		elseif arg_val == "--log-normal" then
 			options.log_normal = true
-		elseif arg_val == "--beta" then
+		elseif arg_val == "--beta" or attached_option == "--beta" then
 			options.beta = true
+			local value = attached_value
+			local bm, be
+			if attached_option == "--beta" and value == "" then
+				stderr_write("Error: --beta value must be a number\n")
+				os.exit(1)
+			end
+			if not value and argv[i + 1] then
+				local candidate = argv[i + 1]
+				local cm, ce = fx.parse(candidate)
+				local range_start = parse_range_literal(candidate)
+				if cm or (candidate:sub(1, 1) ~= "-" and range_start == nil) then
+					i = i + 1
+					value, bm, be = candidate, cm, ce
+				end
+			end
+			if value then
+				if not bm then bm, be = fx.parse(value) end
+				if not bm then
+					stderr_write("Error: --beta value must be a number\n")
+					os.exit(1)
+				end
+				if bm <= 0 then
+					stderr_write("Error: --beta parameter must be positive\n")
+					os.exit(1)
+				end
+				options.beta_param = { bm, be }
+				options.beta_param_text = value
+			end
 		elseif arg_val == "--binaryoutput" or arg_val == "-b" then
 			options.binary_output = true
+			options.generation_option_seen = true
 		elseif arg_val == "--hex" then
 			options.hex_output = true
+			options.generation_option_seen = true
 		elseif arg_val == "--base64" then
 			options.base64_output = true
+			options.generation_option_seen = true
 		elseif arg_val == "--choose" then
 			options.choose = true
+			options.generation_option_seen = true
 		elseif arg_val == "--shuffle" then
 			options.shuffle = true
+			options.generation_option_seen = true
 		elseif arg_val == "--weighted" then
 			options.weighted = true
+			options.generation_option_seen = true
 		elseif arg_val == "--no-wait" then
 			options.no_wait = true
+			options.generation_option_seen = true
+		elseif arg_val == "--view" then
+			options.view = true
 		elseif arg_val == "--kitty" or arg_val == "--sixel" or
-			arg_val == "--utf8-graphics" then
+			arg_val == "--utf8" or arg_val == "--utf8-graphics" then
 			options.chart_renderer_flag = true
 		elseif arg_val:match("^%-%-random%-source=") then
+			options.generation_option_seen = true
 			options.random_source = arg_val:sub(#"--random-source=" + 1)
 			if options.random_source == "" then
 				stderr_write("Error: --random-source requires a path\n")
 				os.exit(1)
 			end
 		elseif arg_val == "--random-source" then
+			options.generation_option_seen = true
 			i = i + 1
 			if i > #argv or argv[i] == "" then
 				stderr_write("Error: --random-source requires a path\n")
@@ -985,6 +1113,7 @@ local function parse_args()
 			end
 			options.random_source = argv[i]
 		elseif arg_val == "--delimiter" or arg_val == "--delim" then
+			options.generation_option_seen = true
 			i = i + 1
 			if i > #argv then
 				stderr_write("Error: --delimiter requires a value\n")
@@ -996,6 +1125,7 @@ local function parse_args()
 			end
 			options.delimiter = argv[i]
 		elseif arg_val == "--count" or arg_val == "-c" then
+			options.generation_option_seen = true
 			i = i + 1
 			if i > #argv then
 				stderr_write("Error: --count requires a number\n")
@@ -1007,6 +1137,7 @@ local function parse_args()
 				os.exit(1)
 			end
 		elseif arg_val == "--seed" then
+			options.generation_option_seen = true
 			i = i + 1
 			if i > #argv then
 				stderr_write("Error: --seed requires a value\n")
@@ -1021,25 +1152,28 @@ local function parse_args()
 			end
 			options.seed_provided = true
 			options.deterministic = true
-		elseif arg_val == "--mean" then
-			i = i + 1
-			if i > #argv then
+		elseif arg_val == "--mean" or attached_option == "--mean" then
+			local value = attached_value
+			if not value then i = i + 1; value = argv[i] end
+			if not value or value == "" then
 				stderr_write("Error: --mean requires a number\n")
 				os.exit(1)
 			end
-			local mm, me = fx.parse(argv[i])
+			local mm, me = fx.parse(value)
 			if not mm then
 				stderr_write("Error: --mean value must be a number\n")
 				os.exit(1)
 			end
 			options.mean = { mm, me }
-		elseif arg_val == "--stddev" then
-			i = i + 1
-			if i > #argv then
+			options.mean_text = value
+		elseif arg_val == "--stddev" or attached_option == "--stddev" then
+			local value = attached_value
+			if not value then i = i + 1; value = argv[i] end
+			if not value or value == "" then
 				stderr_write("Error: --stddev requires a number\n")
 				os.exit(1)
 			end
-			local sm, se = fx.parse(argv[i])
+			local sm, se = fx.parse(value)
 			if not sm then
 				stderr_write("Error: --stddev value must be a number\n")
 				os.exit(1)
@@ -1049,13 +1183,51 @@ local function parse_args()
 				os.exit(1)
 			end
 			options.stddev = { sm, se }
-		elseif arg_val == "--alpha" then
-			i = i + 1
-			if i > #argv then
+			options.stddev_text = value
+		elseif arg_val == "--rate" or attached_option == "--rate" then
+			local value = attached_value
+			if not value then i = i + 1; value = argv[i] end
+			if not value or value == "" then
+				stderr_write("Error: --rate requires a number\n")
+				os.exit(1)
+			end
+			local rm, re = fx.parse(value)
+			if not rm then
+				stderr_write("Error: --rate value must be a number\n")
+				os.exit(1)
+			end
+			if rm <= 0 then
+				stderr_write("Error: --rate must be positive\n")
+				os.exit(1)
+			end
+			options.rate = { rm, re }
+			options.rate_text = value
+		elseif arg_val == "--lambda" or attached_option == "--lambda" then
+			local value = attached_value
+			if not value then i = i + 1; value = argv[i] end
+			if not value or value == "" then
+				stderr_write("Error: --lambda requires a number\n")
+				os.exit(1)
+			end
+			local lm, le = fx.parse(value)
+			if not lm then
+				stderr_write("Error: --lambda value must be a number\n")
+				os.exit(1)
+			end
+			if lm <= 0 then
+				stderr_write("Error: --lambda must be positive\n")
+				os.exit(1)
+			end
+			options.lambda = { lm, le }
+			options.lambda_text = value
+		elseif arg_val == "--alpha" or attached_option == "--alpha" then
+			local value = attached_value
+			if not value then i = i + 1; value = argv[i] end
+			if not value or value == "" then
 				stderr_write("Error: --alpha requires a number\n")
 				os.exit(1)
 			end
-			local am, ae = fx.parse(argv[i])
+			local am, ae = fx.parse(value)
 			if not am then
 				stderr_write("Error: --alpha value must be a number\n")
 				os.exit(1)
@@ -1065,52 +1237,57 @@ local function parse_args()
 				os.exit(1)
 			end
 			options.alpha = { am, ae }
-		elseif arg_val == "--beta-param" then
-			i = i + 1
-			if i > #argv then
-				stderr_write("Error: --beta-param requires a number\n")
-				os.exit(1)
-			end
-			local bm, be = fx.parse(argv[i])
-			if not bm then
-				stderr_write("Error: --beta-param value must be a number\n")
-				os.exit(1)
-			end
-			if bm <= 0 then
-				stderr_write("Error: --beta-param must be positive\n")
-				os.exit(1)
-			end
-			options.beta_param = { bm, be }
+			options.alpha_text = value
 		else
 			table.insert(positionals, arg_val)
 		end
 		i = i + 1
 	end
 
-	-- Parse positional arguments
-	if #positionals >= 1 then
+	if options.view and #positionals > 0 then
+		stderr_write("Error: --view does not accept a range\n")
+		os.exit(1)
+	end
+	if #positionals > 1 then
+		stderr_write("Error: expected at most one range (M-N, M..N, or M...N)\n")
+		os.exit(1)
+	end
+	if #positionals > 0 and (options.exponential or options.poisson or
+		options.log_normal or options.beta) then
+		stderr_write("Error: ranges do not apply to the selected distribution\n")
+		os.exit(1)
+	end
+	if #positionals > 0 and options.normalized and (options.mean or options.stddev) then
+		stderr_write("Error: a range cannot be combined with custom normal parameters\n")
+		os.exit(1)
+	end
+
+	-- Parse the one atomic range argument. Two dots and hyphen are inclusive;
+	-- three dots follow Ruby's end-exclusive convention.
+	if #positionals == 1 then
 		-- fx.parse_int_safe, not fx.parse_int: the latter's documented
 		-- contract silently double-rounds any magnitude past 2^53 --
 		-- fine for --count (a loop bound), NOT fine for a range bound,
 		-- where the value used must be the value asked for. Confirmed
-		-- directly: `random --seed 1 9007199254740993 9007199254740993
+		-- directly: `random --seed 1 9007199254740993-9007199254740993
 		-- -c 1` used to print 9007199254740992 (2^53+1 silently
 		-- collapsed to 2^53) with fx.parse_int here. See
 		-- fx.parse_int_safe's own doc comment in lib/fixed.lua for the
 		-- full rationale, including why full int64-exact bounds were
 		-- deliberately not chosen instead.
-		options.start_val = fx.parse_int_safe(positionals[1])
-		if not options.start_val then
-			stderr_write("Error: start value must be a whole number no larger than 2^53 (9007199254740992) in magnitude\n")
+		local start_val, end_val, exclusive = parse_range_literal(positionals[1])
+		if start_val == nil then
+			stderr_write("Error: range must be M-N, M..N, or M...N using whole numbers no larger than 2^53 in magnitude\n")
 			os.exit(1)
 		end
-	end
-	if #positionals >= 2 then
-		options.end_val = fx.parse_int_safe(positionals[2])
-		if not options.end_val then
-			stderr_write("Error: end value must be a whole number no larger than 2^53 (9007199254740992) in magnitude\n")
-			os.exit(1)
+		if exclusive then
+			if start_val >= end_val then
+				stderr_write("Error: an end-exclusive range must have M < N\n")
+				os.exit(1)
+			end
+			end_val = end_val - 1
 		end
+		options.start_val, options.end_val = start_val, end_val
 	end
 
 	-- Validate: only one distribution type
@@ -1120,16 +1297,20 @@ local function parse_args()
 	if options.poisson then dist_count = dist_count + 1 end
 	if options.log_normal then dist_count = dist_count + 1 end
 	if options.beta then dist_count = dist_count + 1 end
-	if options.chart_renderer_flag then
-		stderr_write("Error: --kitty, --sixel, and --utf8-graphics require --help\n")
+	if options.chart_renderer_flag and not options.view then
+		stderr_write("Error: --kitty, --sixel, --utf8, and --utf8-graphics require --help or --view\n")
 		os.exit(1)
 	end
 	if dist_count > 1 then
 		stderr_write("Error: only one distribution type can be specified\n")
 		os.exit(1)
 	end
-	if #positionals > 2 then
-		stderr_write("Error: expected at most start and end positional arguments\n")
+	if options.view and dist_count ~= 1 then
+		stderr_write("Error: --view requires exactly one alternate distribution\n")
+		os.exit(1)
+	end
+	if options.view and options.generation_option_seen then
+		stderr_write("Error: --view cannot be combined with generation, stdin, range, or output options\n")
 		os.exit(1)
 	end
 	local stdin_modes = (options.choose and 1 or 0) + (options.shuffle and 1 or 0) +
@@ -1154,8 +1335,20 @@ local function parse_args()
 		stderr_write("Error: --stddev is not used by the selected distribution\n")
 		os.exit(1)
 	end
-	if (options.alpha or options.beta_param) and not options.beta then
-		stderr_write("Error: --alpha and --beta-param require --beta\n")
+	if options.rate and not options.exponential then
+		stderr_write("Error: --rate requires --exponential\n")
+		os.exit(1)
+	end
+	if options.lambda and not options.poisson then
+		stderr_write("Error: --lambda requires --poisson\n")
+		os.exit(1)
+	end
+	if options.poisson and options.lambda and options.mean then
+		stderr_write("Error: --lambda and --mean are aliases; specify only one\n")
+		os.exit(1)
+	end
+	if options.alpha and not options.beta then
+		stderr_write("Error: --alpha requires --beta\n")
 		os.exit(1)
 	end
 
@@ -1165,7 +1358,7 @@ local function parse_args()
 	-- so this check has to be conditional on the ACTIVE distribution
 	-- rather than a blanket rule on --mean itself. mean is a soft-float,
 	-- not a Lua number, so this is a direct mantissa-sign check (the
-	-- same convention used at every --alpha/--beta-param/--stddev check
+	-- same convention used at every --alpha/--beta/--stddev check
 	-- above and at MIN_UNIFORM's zero-draw substitution near the top of
 	-- this file), not fx.cmp against a constructed zero.
 	if options.poisson and options.mean and options.mean[1] <= 0 then
@@ -1207,6 +1400,10 @@ end
 -- ===== Main =====
 local function main()
 	local options, positionals, invocation = parse_args()
+	if options.view then
+		print_distribution_view(options)
+		return
+	end
 
 	-- Setup RNG first (needed for all operations). Entropy readers are kept
 	-- open for the invocation and always fail closed on short reads/errors.
@@ -1345,7 +1542,10 @@ local function main()
 			os.exit(1)
 		end
 	else
-		if options.start_val == nil and options.end_val == nil then
+		local range_scaled = not (options.exponential or options.poisson or
+			options.log_normal or options.beta) and not
+			(options.normalized and (options.mean or options.stddev))
+		if options.start_val == nil and options.end_val == nil and range_scaled then
 			show_defaults_msg = true
 		end
 		start_val = options.start_val or 0
@@ -1369,7 +1569,7 @@ local function main()
 	end
 
 	if show_defaults_msg and not options.binary_output then
-		stderr_write("(with a start of 0 and an end of 99)\n")
+		stderr_write("(with the default range 0..99)\n")
 	end
 
 	-- Generate values. Each value is either a plain Lua integer (uniform,
@@ -1393,10 +1593,13 @@ local function main()
 		local value
 
 		if options.exponential then
-			value = { exponential_random(ONE_M, ONE_E, uniform_func) }
+			local rm, re = ONE_M, ONE_E
+			if options.rate then rm, re = options.rate[1], options.rate[2] end
+			value = { exponential_random(rm, re, uniform_func) }
 		elseif options.poisson then
 			local lm, le = ONE_M, ONE_E
-			if options.mean then lm, le = options.mean[1], options.mean[2] end
+			local lambda = options.lambda or options.mean
+			if lambda then lm, le = lambda[1], lambda[2] end
 			value = poisson_random(lm, le, uniform_func)
 		elseif options.log_normal then
 			local mum, mue = 0LL, 0
@@ -1411,13 +1614,16 @@ local function main()
 			if options.beta_param then bm, be = options.beta_param[1], options.beta_param[2] end
 			value = { beta_random(am, ae, bm, be, uniform_func) }
 		elseif options.normalized then
-			if options.mean and options.stddev then
+			if options.mean or options.stddev then
 				-- Use custom mean/stddev, output as an int rounded to
 				-- nearest via round_to_int (sign-aware -- see its own doc
 				-- comment for why a plain "add 1/2, truncate toward zero"
 				-- is wrong for negative results).
-				local vm, ve = normal_random_float(options.mean[1], options.mean[2],
-					options.stddev[1], options.stddev[2], uniform_func)
+				local mum, mue = 0LL, 0
+				if options.mean then mum, mue = options.mean[1], options.mean[2] end
+				local sdm, sde = ONE_M, ONE_E
+				if options.stddev then sdm, sde = options.stddev[1], options.stddev[2] end
+				local vm, ve = normal_random_float(mum, mue, sdm, sde, uniform_func)
 				value = round_to_int(vm, ve)
 			else
 				value = normal_random_int(start_val, end_val, rand_func)

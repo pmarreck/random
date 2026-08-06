@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 
 #include "randomz.h"
+#include "distribution_view.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -68,6 +69,8 @@ typedef struct options {
 	bool weighted;
 	bool no_wait;
 	bool chart_renderer_flag;
+	bool view;
+	bool generation_option_seen;
 	const char *delimiter;
 	const char *random_source;
 	bool count_set;
@@ -80,12 +83,22 @@ typedef struct options {
 	int64_t end;
 	bool mean_set;
 	bool stddev_set;
+	bool rate_set;
+	bool lambda_set;
 	bool alpha_set;
 	bool beta_set;
 	randomz_fixed mean;
 	randomz_fixed stddev;
+	randomz_fixed rate;
+	randomz_fixed lambda;
 	randomz_fixed alpha;
 	randomz_fixed beta;
+	const char *mean_text;
+	const char *stddev_text;
+	const char *rate_text;
+	const char *lambda_text;
+	const char *alpha_text;
+	const char *beta_text;
 } options;
 
 typedef struct entropy_source {
@@ -129,6 +142,37 @@ static int parse_fixed_arg(const char *text, randomz_fixed *out)
 static int parse_safe_int(const char *text, int64_t *out)
 {
 	return randomz_fixed_parse_int_safe(text, strlen(text), out);
+}
+
+static int parse_range_part(const char *text, size_t length, int64_t *out)
+{
+	if (length == 0) return RANDOMZ_INVALID_ARGUMENT;
+	return randomz_fixed_parse_int_safe(text, length, out);
+}
+
+static int parse_range_literal(const char *text, int64_t *start, int64_t *end,
+	bool *exclusive)
+{
+	const char *separator = strstr(text, "...");
+	size_t separator_length = 3;
+	*exclusive = separator != NULL;
+	if (separator == NULL) {
+		separator = strstr(text, "..");
+		separator_length = 2;
+	}
+	if (separator == NULL) {
+		const char *search = text + ((*text == '+' || *text == '-') ? 1 : 0);
+		separator = strchr(search, '-');
+		separator_length = 1;
+		*exclusive = false;
+	}
+	if (separator == NULL) return RANDOMZ_INVALID_ARGUMENT;
+	size_t first_length = (size_t)(separator - text);
+	const char *last = separator + separator_length;
+	if (parse_range_part(text, first_length, start) != RANDOMZ_OK ||
+		parse_range_part(last, strlen(last), end) != RANDOMZ_OK)
+		return RANDOMZ_INVALID_ARGUMENT;
+	return RANDOMZ_OK;
 }
 
 static const char *base_name(const char *path)
@@ -227,20 +271,6 @@ static bool environment_present(const char *name)
 	return value != NULL && *value != '\0';
 }
 
-#if !defined(_WIN32)
-static bool read_command_line(const char *command, char *buffer, size_t capacity)
-{
-	FILE *pipe = popen(command, "r");
-	if (pipe == NULL) return false;
-	bool read = fgets(buffer, (int)capacity, pipe) != NULL;
-	(void)pclose(pipe);
-	if (!read) return false;
-	size_t length = strlen(buffer);
-	while (length > 0 && isspace((unsigned char)buffer[length - 1])) buffer[--length] = '\0';
-	return length > 0;
-}
-#endif
-
 static terminal_kind detected_terminal_kind(void)
 {
 	const char *term = getenv("TERM");
@@ -251,28 +281,7 @@ static terminal_kind detected_terminal_kind(void)
 		return TERMINAL_KITTY;
 	terminal_kind direct = terminal_program_kind(getenv("TERM_PROGRAM"));
 	if (direct != TERMINAL_UNKNOWN) return direct;
-#if !defined(_WIN32)
-	if (environment_present("TMUX")) {
-		char outer[128];
-		if (read_command_line("tmux show-environment -g TERM_PROGRAM 2>/dev/null", outer,
-			sizeof(outer))) {
-			char *equals = strchr(outer, '=');
-			return terminal_program_kind(equals == NULL ? outer : equals + 1);
-		}
-	}
-#endif
 	return TERMINAL_UNKNOWN;
-}
-
-static bool tmux_allows_passthrough(void)
-{
-#if defined(_WIN32)
-	return false;
-#else
-	char value[32];
-	return read_command_line("tmux show-options -gv allow-passthrough 2>/dev/null", value,
-		sizeof(value)) && (strcmp(value, "on") == 0 || strcmp(value, "all") == 0);
-#endif
 }
 
 static bool stdout_is_tty(void)
@@ -284,24 +293,14 @@ static bool stdout_is_tty(void)
 #endif
 }
 
-static bool tmux_supports_sixel(void)
-{
-#if defined(_WIN32)
-	return false;
-#else
-	char value[16];
-	return read_command_line("tmux display-message -p '#{sixel_support}' 2>/dev/null",
-		value, sizeof(value)) && strcmp(value, "1") == 0;
-#endif
-}
-
 static bool chart_renderer_for_help(int argc, char **argv, chart_renderer *out)
 {
 	bool flag_seen = false;
 	for (int i = 1; i < argc; ++i) {
 		if (strcmp(argv[i], "--kitty") == 0) { *out = CHART_KITTY; flag_seen = true; }
 		else if (strcmp(argv[i], "--sixel") == 0) { *out = CHART_SIXEL; flag_seen = true; }
-		else if (strcmp(argv[i], "--utf8-graphics") == 0) {
+		else if (strcmp(argv[i], "--utf8") == 0 ||
+			strcmp(argv[i], "--utf8-graphics") == 0) {
 			*out = CHART_UTF8; flag_seen = true;
 		}
 	}
@@ -318,12 +317,13 @@ static bool chart_renderer_for_help(int argc, char **argv, chart_renderer *out)
 		return true;
 	}
 	if (!stdout_is_tty()) { *out = CHART_UTF8; return true; }
+	/* Image placements are not reliably attached to tmux scrollback. Explicit
+	 * flags still bypass this automatic, conservative fallback. */
+	if (environment_present("TMUX")) { *out = CHART_UTF8; return true; }
 	terminal_kind terminal = detected_terminal_kind();
 	if (terminal == TERMINAL_WEZTERM) {
-		*out = environment_present("TMUX") && !tmux_supports_sixel()
-			? CHART_UTF8 : CHART_SIXEL;
-	} else if (terminal == TERMINAL_KITTY &&
-		(!environment_present("TMUX") || tmux_allows_passthrough())) {
+		*out = CHART_SIXEL;
+	} else if (terminal == TERMINAL_KITTY) {
 		*out = CHART_KITTY;
 	} else {
 		*out = CHART_UTF8;
@@ -386,7 +386,7 @@ static void print_distribution_help(distribution dist, chart_renderer renderer)
 
 static void print_help(distribution dist, chart_renderer renderer)
 {
-	printf("Usage: %s [options] [start] [end]\n", program_name);
+	printf("Usage: %s [options] [M-N|M..N|M...N]\n", program_name);
 	printf("       echo 'items' | %s --choose\n", program_name);
 	printf("       echo 'items' | %s --shuffle\n", program_name);
 	puts("");
@@ -395,10 +395,10 @@ static void print_help(distribution dist, chart_renderer renderer)
 	puts("Distributions (mutually exclusive):");
 	puts("  (default)           Uniform distribution");
 	puts("  -n, --normalized    Normal (Gaussian) via Box-Muller");
-	puts("      --exponential   Exponential distribution (rate=1)");
-	puts("      --poisson       Poisson distribution (use --mean for lambda)");
+	puts("      --exponential   Exponential distribution (use --rate)");
+	puts("      --poisson       Poisson distribution (use --lambda or --mean)");
 	puts("      --log-normal    Log-normal distribution");
-	puts("      --beta          Beta distribution (use --alpha, --beta-param)");
+	puts("      --beta[=B]      Beta distribution; optional B replaces default beta 2");
 	puts("");
 	puts("Stdin operations:");
 	puts("      --choose        Pick one random item from stdin");
@@ -420,11 +420,14 @@ static void print_help(distribution dist, chart_renderer renderer)
 	puts("      --no-wait       Fail rather than wait for Linux getrandom initialization");
 	puts("      --kitty         Force Kitty graphics for a distribution help chart");
 	puts("      --sixel         Force Sixel graphics for a distribution help chart");
-	puts("      --utf8-graphics Force the UTF-8 Braille distribution help chart");
-	puts("      --mean M        Set mean for normal/poisson");
+	puts("      --utf8           Force the UTF-8 Braille distribution chart");
+	puts("      --utf8-graphics  Long alias for --utf8");
+	puts("      --view          Show only the selected distribution with supplied parameters");
+	puts("      --mean M        Set mean for normal/log-normal; Poisson lambda alias");
 	puts("      --stddev S      Set stddev for normal/log-normal");
+	puts("      --rate R        Set exponential rate");
+	puts("      --lambda L      Set Poisson lambda (clearer alias for --mean)");
 	puts("      --alpha A       Set alpha for beta distribution");
-	puts("      --beta-param B  Set beta for beta distribution");
 	puts("      --test          Run the test suite");
 	puts("");
 	puts("Symlink behavior:");
@@ -454,7 +457,8 @@ static distribution help_distribution_from_args(int argc, char **argv)
 			candidate = DIST_POISSON;
 		} else if (strcmp(argv[i], "--log-normal") == 0) {
 			candidate = DIST_LOG_NORMAL;
-		} else if (strcmp(argv[i], "--beta") == 0) {
+		} else if (strcmp(argv[i], "--beta") == 0 ||
+			strncmp(argv[i], "--beta=", 7) == 0) {
 			candidate = DIST_BETA;
 		}
 		if (candidate == DIST_UNIFORM) continue;
@@ -610,6 +614,13 @@ static int require_next(int argc, char **argv, int *index, const char *message,
 	return 0;
 }
 
+static const char *attached_option_value(const char *argument, const char *name)
+{
+	size_t length = strlen(name);
+	return strncmp(argument, name, length) == 0 && argument[length] == '='
+		? argument + length + 1 : NULL;
+}
+
 static int parse_arguments(int argc, char **argv, options *opts)
 {
 	memset(opts, 0, sizeof(*opts));
@@ -618,7 +629,7 @@ static int parse_arguments(int argc, char **argv, options *opts)
 	opts->deterministic = deterministic_invocation(program_name);
 	if (normal_invocation(program_name)) select_distribution(opts, DIST_NORMAL);
 
-	const char *positionals[3] = {0};
+	const char *range_literal = NULL;
 	int positional_count = 0;
 	for (int i = 1; i < argc; ++i) {
 		const char *arg = argv[i];
@@ -637,8 +648,10 @@ static int parse_arguments(int argc, char **argv, options *opts)
 			exit(run_test_suite());
 		} else if (strcmp(arg, "--deterministic") == 0 || strcmp(arg, "-d") == 0) {
 			opts->deterministic = true;
+			opts->generation_option_seen = true;
 		} else if (strcmp(arg, "--true-random") == 0) {
 			opts->force_true_random = true;
+			opts->generation_option_seen = true;
 		} else if (strcmp(arg, "--normalized") == 0 || strcmp(arg, "-n") == 0) {
 			select_distribution(opts, DIST_NORMAL);
 		} else if (strcmp(arg, "--exponential") == 0) {
@@ -647,32 +660,71 @@ static int parse_arguments(int argc, char **argv, options *opts)
 			select_distribution(opts, DIST_POISSON);
 		} else if (strcmp(arg, "--log-normal") == 0) {
 			select_distribution(opts, DIST_LOG_NORMAL);
-		} else if (strcmp(arg, "--beta") == 0) {
+		} else if (strcmp(arg, "--beta") == 0 ||
+			attached_option_value(arg, "--beta") != NULL) {
 			select_distribution(opts, DIST_BETA);
+			value = attached_option_value(arg, "--beta");
+			if (value != NULL && *value == '\0') {
+				print_error("--beta value must be a number");
+				return 1;
+			}
+			if (value == NULL && i + 1 < argc) {
+				randomz_fixed candidate_fixed;
+				int64_t range_start, range_end;
+				bool range_exclusive;
+				const char *candidate = argv[i + 1];
+				bool numeric = parse_fixed_arg(candidate, &candidate_fixed) == RANDOMZ_OK;
+				bool range = parse_range_literal(candidate, &range_start, &range_end,
+					&range_exclusive) == RANDOMZ_OK;
+				if (numeric || (candidate[0] != '-' && !range)) value = argv[++i];
+			}
+			if (value != NULL) {
+				if (parse_fixed_arg(value, &opts->beta) != RANDOMZ_OK) {
+					print_error("--beta value must be a number");
+					return 1;
+				}
+				if (opts->beta.m <= 0) {
+					print_error("--beta parameter must be positive");
+					return 1;
+				}
+				opts->beta_set = true;
+				opts->beta_text = value;
+			}
 		} else if (strcmp(arg, "--binaryoutput") == 0 || strcmp(arg, "-b") == 0) {
 			opts->binary_output = true;
+			opts->generation_option_seen = true;
 		} else if (strcmp(arg, "--hex") == 0) {
 			opts->hex_output = true;
+			opts->generation_option_seen = true;
 		} else if (strcmp(arg, "--base64") == 0) {
 			opts->base64_output = true;
+			opts->generation_option_seen = true;
 		} else if (strcmp(arg, "--choose") == 0) {
 			opts->choose = true;
+			opts->generation_option_seen = true;
 		} else if (strcmp(arg, "--shuffle") == 0) {
 			opts->shuffle = true;
+			opts->generation_option_seen = true;
 		} else if (strcmp(arg, "--weighted") == 0) {
 			opts->weighted = true;
+			opts->generation_option_seen = true;
 		} else if (strcmp(arg, "--no-wait") == 0) {
 			opts->no_wait = true;
+			opts->generation_option_seen = true;
+		} else if (strcmp(arg, "--view") == 0) {
+			opts->view = true;
 		} else if (strcmp(arg, "--kitty") == 0 || strcmp(arg, "--sixel") == 0 ||
-			strcmp(arg, "--utf8-graphics") == 0) {
+			strcmp(arg, "--utf8") == 0 || strcmp(arg, "--utf8-graphics") == 0) {
 			opts->chart_renderer_flag = true;
 		} else if (strncmp(arg, "--random-source=", 16) == 0) {
+			opts->generation_option_seen = true;
 			opts->random_source = arg + 16;
 			if (*opts->random_source == '\0') {
 				print_error("--random-source requires a path");
 				return 1;
 			}
 		} else if (strcmp(arg, "--random-source") == 0) {
+			opts->generation_option_seen = true;
 			if (require_next(argc, argv, &i, "--random-source requires a path", &value)) return 1;
 			if (*value == '\0') {
 				print_error("--random-source requires a path");
@@ -680,6 +732,7 @@ static int parse_arguments(int argc, char **argv, options *opts)
 			}
 			opts->random_source = value;
 		} else if (strcmp(arg, "--delimiter") == 0 || strcmp(arg, "--delim") == 0) {
+			opts->generation_option_seen = true;
 			if (require_next(argc, argv, &i, "--delimiter requires a value", &value)) return 1;
 			if (*value == '\0') {
 				print_error("--delimiter must not be empty");
@@ -687,6 +740,7 @@ static int parse_arguments(int argc, char **argv, options *opts)
 			}
 			opts->delimiter = value;
 		} else if (strcmp(arg, "--count") == 0 || strcmp(arg, "-c") == 0) {
+			opts->generation_option_seen = true;
 			if (require_next(argc, argv, &i, "--count requires a number", &value)) return 1;
 			if (parse_safe_int(value, &opts->count) != RANDOMZ_OK || opts->count < 0) {
 				print_error("--count must be a nonnegative whole number no larger than 2^53");
@@ -694,6 +748,7 @@ static int parse_arguments(int argc, char **argv, options *opts)
 			}
 			opts->count_set = true;
 		} else if (strcmp(arg, "--seed") == 0) {
+			opts->generation_option_seen = true;
 			if (require_next(argc, argv, &i, "--seed requires a value", &value)) return 1;
 			if (!parse_seed(value, opts->seed)) {
 				fprintf(stderr, "Error: --seed must be an unsigned decimal or 0x-prefixed "
@@ -702,15 +757,24 @@ static int parse_arguments(int argc, char **argv, options *opts)
 			}
 			opts->seed_set = true;
 			opts->deterministic = true;
-		} else if (strcmp(arg, "--mean") == 0) {
-			if (require_next(argc, argv, &i, "--mean requires a number", &value)) return 1;
+		} else if (strcmp(arg, "--mean") == 0 ||
+			attached_option_value(arg, "--mean") != NULL) {
+			value = attached_option_value(arg, "--mean");
+			if (value == NULL && require_next(argc, argv, &i,
+				"--mean requires a number", &value)) return 1;
+			if (*value == '\0') { print_error("--mean requires a number"); return 1; }
 			if (parse_fixed_arg(value, &opts->mean) != RANDOMZ_OK) {
 				print_error("--mean value must be a number");
 				return 1;
 			}
 			opts->mean_set = true;
-		} else if (strcmp(arg, "--stddev") == 0) {
-			if (require_next(argc, argv, &i, "--stddev requires a number", &value)) return 1;
+			opts->mean_text = value;
+		} else if (strcmp(arg, "--stddev") == 0 ||
+			attached_option_value(arg, "--stddev") != NULL) {
+			value = attached_option_value(arg, "--stddev");
+			if (value == NULL && require_next(argc, argv, &i,
+				"--stddev requires a number", &value)) return 1;
+			if (*value == '\0') { print_error("--stddev requires a number"); return 1; }
 			if (parse_fixed_arg(value, &opts->stddev) != RANDOMZ_OK) {
 				print_error("--stddev value must be a number");
 				return 1;
@@ -720,8 +784,45 @@ static int parse_arguments(int argc, char **argv, options *opts)
 				return 1;
 			}
 			opts->stddev_set = true;
-		} else if (strcmp(arg, "--alpha") == 0) {
-			if (require_next(argc, argv, &i, "--alpha requires a number", &value)) return 1;
+			opts->stddev_text = value;
+		} else if (strcmp(arg, "--rate") == 0 ||
+			attached_option_value(arg, "--rate") != NULL) {
+			value = attached_option_value(arg, "--rate");
+			if (value == NULL && require_next(argc, argv, &i,
+				"--rate requires a number", &value)) return 1;
+			if (*value == '\0') { print_error("--rate requires a number"); return 1; }
+			if (parse_fixed_arg(value, &opts->rate) != RANDOMZ_OK) {
+				print_error("--rate value must be a number");
+				return 1;
+			}
+			if (opts->rate.m <= 0) {
+				print_error("--rate must be positive");
+				return 1;
+			}
+			opts->rate_set = true;
+			opts->rate_text = value;
+		} else if (strcmp(arg, "--lambda") == 0 ||
+			attached_option_value(arg, "--lambda") != NULL) {
+			value = attached_option_value(arg, "--lambda");
+			if (value == NULL && require_next(argc, argv, &i,
+				"--lambda requires a number", &value)) return 1;
+			if (*value == '\0') { print_error("--lambda requires a number"); return 1; }
+			if (parse_fixed_arg(value, &opts->lambda) != RANDOMZ_OK) {
+				print_error("--lambda value must be a number");
+				return 1;
+			}
+			if (opts->lambda.m <= 0) {
+				print_error("--lambda must be positive");
+				return 1;
+			}
+			opts->lambda_set = true;
+			opts->lambda_text = value;
+		} else if (strcmp(arg, "--alpha") == 0 ||
+			attached_option_value(arg, "--alpha") != NULL) {
+			value = attached_option_value(arg, "--alpha");
+			if (value == NULL && require_next(argc, argv, &i,
+				"--alpha requires a number", &value)) return 1;
+			if (*value == '\0') { print_error("--alpha requires a number"); return 1; }
 			if (parse_fixed_arg(value, &opts->alpha) != RANDOMZ_OK) {
 				print_error("--alpha value must be a number");
 				return 1;
@@ -731,35 +832,45 @@ static int parse_arguments(int argc, char **argv, options *opts)
 				return 1;
 			}
 			opts->alpha_set = true;
-		} else if (strcmp(arg, "--beta-param") == 0) {
-			if (require_next(argc, argv, &i, "--beta-param requires a number", &value)) return 1;
-			if (parse_fixed_arg(value, &opts->beta) != RANDOMZ_OK) {
-				print_error("--beta-param value must be a number");
-				return 1;
-			}
-			if (opts->beta.m <= 0) {
-				print_error("--beta-param must be positive");
-				return 1;
-			}
-			opts->beta_set = true;
+			opts->alpha_text = value;
 		} else {
-			if (positional_count < 3) positionals[positional_count] = arg;
+			if (positional_count == 0) range_literal = arg;
 			positional_count++;
 		}
 	}
 
-	if (positionals[0] != NULL) {
-		if (parse_safe_int(positionals[0], &opts->start) != RANDOMZ_OK) {
-			print_error("start value must be a whole number no larger than 2^53 (9007199254740992) in magnitude");
+	if (opts->view && positional_count > 0) {
+		print_error("--view does not accept a range");
+		return 1;
+	}
+	if (positional_count > 1) {
+		print_error("expected at most one range (M-N, M..N, or M...N)");
+		return 1;
+	}
+	if (positional_count > 0 && !(opts->dist == DIST_UNIFORM || opts->dist == DIST_NORMAL)) {
+		print_error("ranges do not apply to the selected distribution");
+		return 1;
+	}
+	if (positional_count > 0 && opts->dist == DIST_NORMAL &&
+		(opts->mean_set || opts->stddev_set)) {
+		print_error("a range cannot be combined with custom normal parameters");
+		return 1;
+	}
+	if (range_literal != NULL) {
+		bool exclusive;
+		if (parse_range_literal(range_literal, &opts->start, &opts->end,
+			&exclusive) != RANDOMZ_OK) {
+			print_error("range must be M-N, M..N, or M...N using whole numbers no larger than 2^53 in magnitude");
 			return 1;
+		}
+		if (exclusive) {
+			if (opts->start >= opts->end) {
+				print_error("an end-exclusive range must have M < N");
+				return 1;
+			}
+			opts->end--;
 		}
 		opts->start_set = true;
-	}
-	if (positionals[1] != NULL) {
-		if (parse_safe_int(positionals[1], &opts->end) != RANDOMZ_OK) {
-			print_error("end value must be a whole number no larger than 2^53 (9007199254740992) in magnitude");
-			return 1;
-		}
 		opts->end_set = true;
 	}
 
@@ -767,12 +878,16 @@ static int parse_arguments(int argc, char **argv, options *opts)
 		print_error("only one distribution type can be specified");
 		return 1;
 	}
-	if (opts->chart_renderer_flag) {
-		print_error("--kitty, --sixel, and --utf8-graphics require --help");
+	if (opts->chart_renderer_flag && !opts->view) {
+		print_error("--kitty, --sixel, --utf8, and --utf8-graphics require --help or --view");
 		return 1;
 	}
-	if (positional_count > 2) {
-		print_error("expected at most start and end positional arguments");
+	if (opts->view && opts->dist_count != 1) {
+		print_error("--view requires exactly one alternate distribution");
+		return 1;
+	}
+	if (opts->view && opts->generation_option_seen) {
+		print_error("--view cannot be combined with generation, stdin, range, or output options");
 		return 1;
 	}
 	int stdin_modes = (opts->choose ? 1 : 0) + (opts->shuffle ? 1 : 0) +
@@ -798,8 +913,20 @@ static int parse_arguments(int argc, char **argv, options *opts)
 		print_error("--stddev is not used by the selected distribution");
 		return 1;
 	}
-	if ((opts->alpha_set || opts->beta_set) && opts->dist != DIST_BETA) {
-		print_error("--alpha and --beta-param require --beta");
+	if (opts->rate_set && opts->dist != DIST_EXPONENTIAL) {
+		print_error("--rate requires --exponential");
+		return 1;
+	}
+	if (opts->lambda_set && opts->dist != DIST_POISSON) {
+		print_error("--lambda requires --poisson");
+		return 1;
+	}
+	if (opts->dist == DIST_POISSON && opts->lambda_set && opts->mean_set) {
+		print_error("--lambda and --mean are aliases; specify only one");
+		return 1;
+	}
+	if (opts->alpha_set && opts->dist != DIST_BETA) {
+		print_error("--alpha requires --beta");
 		return 1;
 	}
 	if (opts->force_true_random && opts->deterministic) {
@@ -973,10 +1100,11 @@ static int generate_value(const options *opts, rng_source *source,
 	case DIST_EXPONENTIAL:
 		value->is_fixed = true;
 		return randomz_exponential(source->fill, source->context,
-			fixed_integer(1), &value->fixed);
+			opts->rate_set ? opts->rate : fixed_integer(1), &value->fixed);
 	case DIST_POISSON:
 		return randomz_poisson(source->fill, source->context,
-			opts->mean_set ? opts->mean : fixed_integer(1), &value->integer);
+			opts->lambda_set ? opts->lambda :
+			(opts->mean_set ? opts->mean : fixed_integer(1)), &value->integer);
 	case DIST_LOG_NORMAL:
 		value->is_fixed = true;
 		return randomz_log_normal(source->fill, source->context,
@@ -988,10 +1116,11 @@ static int generate_value(const options *opts, rng_source *source,
 			opts->alpha_set ? opts->alpha : fixed_integer(2),
 			opts->beta_set ? opts->beta : fixed_integer(2), &value->fixed);
 	case DIST_NORMAL:
-		if (opts->mean_set && opts->stddev_set) {
+		if (opts->mean_set || opts->stddev_set) {
 			randomz_fixed output;
 			status = randomz_normal(source->fill, source->context,
-				opts->mean, opts->stddev, &output);
+				opts->mean_set ? opts->mean : fixed_integer(0),
+				opts->stddev_set ? opts->stddev : fixed_integer(1), &output);
 			if (status != RANDOMZ_OK) return status;
 			return randomz_fixed_to_int_round(output, &value->integer);
 		}
@@ -1356,6 +1485,102 @@ static int print_seed(const uint8_t seed[32])
 	return 0;
 }
 
+static randomz_distribution public_distribution(distribution dist)
+{
+	switch (dist) {
+	case DIST_NORMAL: return RANDOMZ_DISTRIBUTION_NORMAL;
+	case DIST_EXPONENTIAL: return RANDOMZ_DISTRIBUTION_EXPONENTIAL;
+	case DIST_POISSON: return RANDOMZ_DISTRIBUTION_POISSON;
+	case DIST_LOG_NORMAL: return RANDOMZ_DISTRIBUTION_LOG_NORMAL;
+	case DIST_BETA: return RANDOMZ_DISTRIBUTION_BETA;
+	case DIST_UNIFORM:
+	default: return 0;
+	}
+}
+
+static int print_distribution_view(int argc, char **argv, const options *opts)
+{
+	chart_renderer renderer = CHART_UTF8;
+	if (!chart_renderer_for_help(argc, argv, &renderer)) return 1;
+	randomz_fixed zero = fixed_integer(0);
+	randomz_fixed one = fixed_integer(1);
+	randomz_fixed two = fixed_integer(2);
+	randomz_fixed first = zero;
+	randomz_fixed second = zero;
+	const char *title = NULL;
+	const char *axis = NULL;
+	switch (opts->dist) {
+	case DIST_NORMAL:
+		title = "Normal (Gaussian)";
+		first = opts->mean_set ? opts->mean : zero;
+		second = opts->stddev_set ? opts->stddev : one;
+		axis = "Horizontal axis: mean +/- 4 standard deviations; vertical axis: relative probability density.";
+		break;
+	case DIST_EXPONENTIAL:
+		title = "Exponential";
+		first = opts->rate_set ? opts->rate : one;
+		axis = "Horizontal axis: 0 to 6/rate; vertical axis: relative probability density.";
+		break;
+	case DIST_POISSON:
+		title = "Poisson";
+		first = opts->lambda_set ? opts->lambda :
+			(opts->mean_set ? opts->mean : one);
+		axis = "Horizontal axis: lambda +/- 6*sqrt(lambda), clipped at zero; vertical axis: probability mass.";
+		break;
+	case DIST_LOG_NORMAL:
+		title = "Log-normal";
+		first = opts->mean_set ? opts->mean : zero;
+		second = opts->stddev_set ? opts->stddev : one;
+		axis = "Horizontal axis: 0 to exp(mean + min(1.625*stddev, 20)); vertical axis: relative probability density.";
+		break;
+	case DIST_BETA:
+		title = "Beta";
+		first = opts->alpha_set ? opts->alpha : two;
+		second = opts->beta_set ? opts->beta : two;
+		axis = "Horizontal axis: value from 0 to 1; vertical axis: relative probability density.";
+		break;
+	case DIST_UNIFORM:
+	default:
+		print_error("--view requires exactly one alternate distribution");
+		return 1;
+	}
+
+	printf("Distribution: %s\n", title);
+	if (opts->dist == DIST_NORMAL || opts->dist == DIST_LOG_NORMAL) {
+		printf("Parameters: mean=%s, stddev=%s.\n",
+			opts->mean_text != NULL ? opts->mean_text : "0",
+			opts->stddev_text != NULL ? opts->stddev_text : "1");
+	} else if (opts->dist == DIST_EXPONENTIAL) {
+		printf("Parameters: rate=%s.\n",
+			opts->rate_text != NULL ? opts->rate_text : "1");
+	} else if (opts->dist == DIST_POISSON) {
+		const char *lambda_text = opts->lambda_text != NULL ? opts->lambda_text :
+			(opts->mean_text != NULL ? opts->mean_text : "1");
+		printf("Parameters: lambda=%s.\n", lambda_text);
+	} else {
+		printf("Parameters: alpha=%s, beta=%s.\n",
+			opts->alpha_text != NULL ? opts->alpha_text : "2",
+			opts->beta_text != NULL ? opts->beta_text : "2");
+	}
+	putchar('\n');
+	distribution_view_output output = renderer == CHART_KITTY ? DISTRIBUTION_VIEW_KITTY :
+		(renderer == CHART_SIXEL ? DISTRIBUTION_VIEW_SIXEL : DISTRIBUTION_VIEW_UTF8);
+	int status = distribution_view_render(public_distribution(opts->dist),
+		first, second, output);
+	if (status != RANDOMZ_OK) {
+		if (status < 0) print_error("could not render distribution chart");
+		else fprintf(stderr, "Error: supplied distribution parameters cannot be charted (status %d)\n",
+			status);
+		return 1;
+	}
+	puts(axis);
+	if (fflush(stdout) == EOF || ferror(stdout)) {
+		print_error("stdout write failed");
+		return 1;
+	}
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 #if defined(_WIN32)
@@ -1376,6 +1601,7 @@ int main(int argc, char **argv)
 	program_name = base_name(program_path);
 	options opts;
 	if (parse_arguments(argc, argv, &opts) != 0) return 1;
+	if (opts.view) return print_distribution_view(argc, argv, &opts);
 
 	entropy_source entropy = {0};
 	randomz_drbg drbg;
@@ -1441,7 +1667,11 @@ int main(int argc, char **argv)
 		if (start < 0) { print_error("start value must be >= 0 for binary output"); return 1; }
 		if (end > 255) { print_error("end value must be <= 255 for binary output"); return 1; }
 	} else {
-		if (!opts.start_set && !opts.end_set) show_defaults = true;
+		bool range_scaled = (opts.dist == DIST_UNIFORM || opts.dist == DIST_NORMAL) &&
+			!(opts.dist == DIST_NORMAL && (opts.mean_set || opts.stddev_set));
+		if (!opts.start_set && !opts.end_set && range_scaled) {
+			show_defaults = true;
+		}
 		start = opts.start_set ? opts.start : 0;
 		end = opts.end_set ? opts.end : 99;
 		count = opts.count_set ? (uint64_t)opts.count : 1;
@@ -1456,7 +1686,7 @@ int main(int argc, char **argv)
 		}
 	}
 	if (show_defaults && !opts.binary_output) {
-		fputs("(with a start of 0 and an end of 99)\n", stderr);
+		fputs("(with the default range 0..99)\n", stderr);
 	}
 
 	int result;

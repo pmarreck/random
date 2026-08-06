@@ -99,7 +99,7 @@ max_decimal="1157920892373161954235709850086879078532699846656405640394575840079
 max_hex="0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 valid_seeds=(0 0000 1 "$max_decimal" 0x0 0Xf "$max_hex")
 for seed in "${valid_seeds[@]}"; do
-	local_out="$(random -d --seed "$seed" --count 1 0 0 2>/dev/null)"
+	local_out="$(random -d --seed "$seed" --count 1 0-0 2>/dev/null)"
 	local_status=$?
 	if [ "$local_status" -ne 0 ] || [ "$local_out" != "0" ]; then
 		fail "valid seed '$seed' was rejected"
@@ -171,7 +171,7 @@ raw_17="$(random -d --seed 42 --binaryoutput --hex --count 17 2>/dev/null)"
 if [ "$raw_17" != "${reference:0:34}" ]; then
 	fail "default binary output is not the first 17 contiguous XOF bytes"
 fi
-ranged_hex="$(random -d --seed 42 --binaryoutput --hex --count 128 64 192 2>/dev/null)"
+ranged_hex="$(random -d --seed 42 --binaryoutput --hex --count 128 64..192 2>/dev/null)"
 ranged_bad="$(printf '%s' "$ranged_hex" | xxd -r -p | od -An -tu1 | awk '{for(i=1;i<=NF;i++) if ($i<64 || $i>192) bad=1} END {print bad+0}')"
 if [ "$ranged_bad" -ne 0 ]; then
 	fail "ranged binary output escaped [64,192]"
@@ -184,7 +184,7 @@ fi
 tests=$((tests + 1))
 source_prefix="$(head -c 17 "$entropy_fixture" | xxd -p | tr -d '\n')"
 true_raw="$(random --random-source="$entropy_fixture" --binaryoutput --hex --count 17 2>/dev/null)"
-true_wide="$(random --random-source="$entropy_fixture" --count 1 0 5000000000000 2>/dev/null)"
+true_wide="$(random --random-source="$entropy_fixture" --count 1 0..5000000000000 2>/dev/null)"
 if [ "$true_raw" != "$source_prefix" ]; then
 	fail "default true-random binary output did not copy the source contiguously"
 elif [ "$true_wide" != "4138818188525" ]; then
@@ -196,7 +196,7 @@ fi
 # reject negative loop counts as input errors rather than a successful no-op.
 tests=$((tests + 1))
 out='' err='' rc=0
-capture random -d --seed 42 --count 1 -9007199254740992 9007199254740992
+capture random -d --seed 42 --count 1 -9007199254740992..9007199254740992
 range_rc=$rc
 range_err="$err"
 out='' err='' rc=0
@@ -204,7 +204,7 @@ capture random -d --seed 42 --count -1
 count_rc=$rc
 count_err="$err"
 out='' err='' rc=0
-capture random -d --seed 42 --count 1 -9007199254740992 -1
+capture random -d --seed 42 --count 1 -9007199254740992..-1
 max_span_rc=$rc
 max_span_out="$out"
 if [ "$range_rc" -eq 0 ] || [[ "$range_err" != Error:* ]]; then

@@ -73,6 +73,10 @@ pub fn build(b: *std.Build) void {
         .file = b.path("src/randomz_cli.c"),
         .flags = cli_c_flags,
     });
+    cli_mod.addCSourceFile(.{
+        .file = b.path("src/distribution_view.c"),
+        .flags = cli_c_flags,
+    });
     cli_mod.linkLibrary(randomz_lib);
     if (target.result.os.tag == .windows) {
         cli_mod.linkSystemLibrary("bcrypt", .{});

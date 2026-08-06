@@ -39,10 +39,14 @@ fi
 # would exercise nothing this control exists to catch.
 DISTS=(
 	"--normalized --mean 50 --stddev 15"
+	"--normalized --mean 50"
+	"--normalized --stddev 15"
 	"--exponential"
+	"--exponential --rate 4"
 	"--poisson --mean 5"
+	"--poisson --lambda 5"
 	"--log-normal"
-	"--beta --alpha 2 --beta-param 5"
+	"--beta 5 --alpha 2"
 )
 SEEDS=(1 42 12345 11111 22222 33333)
 COUNT=300

@@ -219,7 +219,7 @@ return {
 	},
 	["exponential"] = {
 		title = "Exponential",
-		parameters = "Default shape: rate=1.",
+		parameters = "Default shape: rate=1; --rate reshapes the horizontal scale.",
 		axis = "Horizontal axis: value; vertical axis: relative probability density.",
 		png_base64 =
 			"iVBORw0KGgoAAAANSUhEUgAAAVAAAACQAgMAAAAjGdtKAAAADFBMVEUMEBglMkccXWdk1dLtZEClAAAv20lEQVR4AQHQLy/Q" ..
@@ -434,7 +434,7 @@ return {
 	},
 	["poisson"] = {
 		title = "Poisson",
-		parameters = "Default shape: lambda=1; --mean sets lambda.",
+		parameters = "Default shape: lambda=1; --lambda or --mean sets lambda.",
 		axis = "Horizontal axis: integer value; vertical axis: probability mass.",
 		png_base64 =
 			"iVBORw0KGgoAAAANSUhEUgAAAVAAAACQAgMAAAAjGdtKAAAADFBMVEUMEBglMkccXWdk1dLtZEClAAAv20lEQVR4AQHQLy/Q" ..
@@ -866,7 +866,7 @@ return {
 	},
 	["beta"] = {
 		title = "Beta",
-		parameters = "Default shape: alpha=2, beta=2; --alpha and --beta-param reshape it.",
+		parameters = "Default shape: alpha=2, beta=2; --alpha and --beta[=B] reshape it.",
 		axis = "Horizontal axis: value from 0 to 1; vertical axis: relative probability density.",
 		png_base64 =
 			"iVBORw0KGgoAAAANSUhEUgAAAVAAAACQAgMAAAAjGdtKAAAADFBMVEUMEBglMkccXWdk1dLtZEClAAAv20lEQVR4AQHQLy/Q" ..

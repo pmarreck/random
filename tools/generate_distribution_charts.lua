@@ -26,7 +26,7 @@ local charts = {
 	{
 		key = "exponential",
 		title = "Exponential",
-		parameters = "Default shape: rate=1.",
+		parameters = "Default shape: rate=1; --rate reshapes the horizontal scale.",
 		axis = "Horizontal axis: value; vertical axis: relative probability density.",
 		xmin = 0, xmax = 6,
 		value = function(x) return math.exp(-x) end,
@@ -34,7 +34,7 @@ local charts = {
 	{
 		key = "poisson",
 		title = "Poisson",
-		parameters = "Default shape: lambda=1; --mean sets lambda.",
+		parameters = "Default shape: lambda=1; --lambda or --mean sets lambda.",
 		axis = "Horizontal axis: integer value; vertical axis: probability mass.",
 		xmin = 0, xmax = 8,
 		discrete = true,
@@ -54,7 +54,7 @@ local charts = {
 	{
 		key = "beta",
 		title = "Beta",
-		parameters = "Default shape: alpha=2, beta=2; --alpha and --beta-param reshape it.",
+		parameters = "Default shape: alpha=2, beta=2; --alpha and --beta[=B] reshape it.",
 		axis = "Horizontal axis: value from 0 to 1; vertical axis: relative probability density.",
 		xmin = 0, xmax = 1,
 		value = function(x) return 6 * x * (1 - x) end,

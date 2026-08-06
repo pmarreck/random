@@ -130,10 +130,15 @@ test_random() {
 		fi
 	done
 	local help_before_distribution help_after_distribution normal_alias_help
+	local beta_default_help beta_parameterized_help
 	help_before_distribution=$(env RANDOMZ_CHART_TYPE=utf8 random --help --normalized)
 	help_after_distribution=$(env RANDOMZ_CHART_TYPE=invalid random --utf8-graphics --normalized --help)
 	normal_alias_help=$(env RANDOMZ_CHART_TYPE=utf8 nrandom --help)
+	beta_default_help=$(env RANDOMZ_CHART_TYPE=utf8 random --beta --help)
+	beta_parameterized_help=$(env RANDOMZ_CHART_TYPE=utf8 random \
+		--beta=3 --alpha=1 --help)
 	if [ "$help_before_distribution" != "$help_after_distribution" ] ||
+	   [ "$beta_default_help" != "$beta_parameterized_help" ] ||
 	   ! grep -Fq 'Distribution: Normal (Gaussian)' <<<"$normal_alias_help"; then
 		distribution_help_ok=0
 	fi
@@ -141,8 +146,30 @@ test_random() {
 	if [ "$?" -eq 0 ]; then distribution_help_ok=0; fi
 	random --kitty >/dev/null 2>&1
 	if [ "$?" -eq 0 ]; then distribution_help_ok=0; fi
+	local beta_view beta_view_equals beta_view_reordered
+	beta_view=$(env RANDOMZ_CHART_TYPE=utf8 random \
+		--beta 3 --alpha 1 --view)
+	beta_view_equals=$(env RANDOMZ_CHART_TYPE=utf8 random \
+		--beta=3 --alpha=1 --view)
+	beta_view_reordered=$(random --alpha 1 --beta 3 --view --utf8)
+	if [ "$beta_view" != "$beta_view_equals" ] ||
+	   [ "$beta_view" != "$beta_view_reordered" ] ||
+	   ! grep -Fq 'Distribution: Beta' <<<"$beta_view" ||
+	   ! grep -Fq 'Parameters: alpha=1, beta=3.' <<<"$beta_view" ||
+	   ! grep -Fq '⡇' <<<"$beta_view" || grep -Fq 'Usage:' <<<"$beta_view"; then
+		distribution_help_ok=0
+	fi
+	for bad_view_args in \
+		'--view' \
+		'--beta --view --count 1' \
+		'--beta --view 1' \
+		'--beta --view --alpha 1 --exponential'; do
+		read -r -a bad_view_argv <<<"$bad_view_args"
+		random "${bad_view_argv[@]}" >/dev/null 2>&1
+		if [ "$?" -eq 0 ]; then distribution_help_ok=0; fi
+	done
 	if [ "$distribution_help_ok" -eq 1 ]; then
-		echo "✓ Distribution-qualified help charts passed"
+		echo "✓ Distribution-qualified help and parameterized --view charts passed"
 	else
 		echo "✗ Distribution-qualified help charts failed" >&2
 		(( fails++ ))
@@ -207,7 +234,7 @@ test_random() {
 	(( tests++ ))
 	echo "Testing custom range (10-20)..."
 
-	local custom_num=$(random 10 20 2>/dev/null)
+	local custom_num=$(random 10-20 2>/dev/null)
 
 	# A single unseeded draw only ever tests "is the value in range" --
 	# a generator that always returns e.g. `start_val` (a constant, or a
@@ -217,7 +244,7 @@ test_random() {
 	# value shows up, catching a degenerate/constant generator that a
 	# bounds check alone cannot.
 	local custom_batch
-	custom_batch=$(random -c 50 10 20 2>/dev/null)
+	custom_batch=$(random -c 50 10..20 2>/dev/null)
 	local custom_distinct
 	custom_distinct=$(printf '%s\n' "$custom_batch" | sort -u | wc -l | tr -d ' ')
 
@@ -232,7 +259,7 @@ test_random() {
 	(( tests++ ))
 	echo "Testing single value range (5-5)..."
 
-	local single_val=$(random 5 5 2>/dev/null)
+	local single_val=$(random 5-5 2>/dev/null)
 
 	if [ "$single_val" -eq 5 ]; then
 		echo "✓ Single value range test passed"
@@ -246,13 +273,42 @@ test_random() {
 	echo "Testing start > end rejection..."
 
 	local start_gt_end_output
-	start_gt_end_output=$(random 50 40 2>&1)
+	start_gt_end_output=$(random 50..40 2>&1)
 	local start_gt_end_status=$?
 
 	if [ $start_gt_end_status -ne 0 ] && echo "$start_gt_end_output" | grep -qi "error"; then
 		echo "✓ start > end rejection test passed"
 	else
 		echo "✗ start > end rejection test failed" >&2
+		(( fails++ ))
+	fi
+
+	# A range is one atomic token. The two inclusive spellings must be exact
+	# aliases, the Ruby-style three-dot spelling excludes its end, and the old
+	# one/two-endpoint positional grammar must fail rather than be guessed.
+	local hyphen_range dot_range exclusive_range
+	hyphen_range=$(random -d --seed 314159 -c 64 10-20 2>/dev/null)
+	dot_range=$(random -d --seed 314159 -c 64 10..20 2>/dev/null)
+	exclusive_range=$(random -d --seed 314159 -c 64 10...21 2>/dev/null)
+	if [ "$hyphen_range" != "$dot_range" ] || [ "$dot_range" != "$exclusive_range" ]; then
+		echo "✗ Atomic inclusive/exclusive range spellings are not exact aliases"
+		(( fails++ ))
+	fi
+	if random 10 >/dev/null 2>&1 || random 10 20 >/dev/null 2>&1; then
+		echo "✗ Legacy one/two-endpoint positional range grammar was accepted"
+		(( fails++ ))
+	fi
+	local malformed_range
+	for malformed_range in '1...' '...2' '1...1' '2...1' '1..2..3' '1.5..2'; do
+		if random "$malformed_range" >/dev/null 2>&1; then
+			echo "✗ Malformed/empty range '$malformed_range' was accepted"
+			(( fails++ ))
+		fi
+	done
+	local negative_range
+	negative_range=$(random -d --seed 314159 -c 64 -20--10 2>/dev/null)
+	if [ "$(awk '$1 < -20 || $1 > -10 { bad++ } END { print bad+0 }' <<<"$negative_range")" -ne 0 ]; then
+		echo "✗ Signed hyphen range escaped [-20,-10]"
 		(( fails++ ))
 	fi
 
@@ -270,7 +326,7 @@ test_random() {
 	echo "Testing large-magnitude uniform output is not scientific notation..."
 
 	local wide_output
-	wide_output=$(random -d --seed 1 -c 1 0 1000000000000000 2>/dev/null)
+	wide_output=$(random -d --seed 1 -c 1 0..1000000000000000 2>/dev/null)
 
 	if [[ "$wide_output" =~ ^[0-9]+$ ]]; then
 		echo "✓ large-magnitude uniform output test passed ($wide_output)"
@@ -288,7 +344,7 @@ test_random() {
 	echo "Testing --count flag..."
 
 	local count_output
-	count_output=$(random --count 5 0 100 2>/dev/null)
+	count_output=$(random --count 5 0..100 2>/dev/null)
 	local count_lines
 	count_lines=$(printf '%s\n' "$count_output" | wc -l | tr -d ' ')
 
@@ -336,7 +392,7 @@ test_random() {
 	echo "Testing --binaryoutput with custom range 64-192..."
 
 	local custom_range_output
-	custom_range_output=$(random -b -c 200 64 192 2>/dev/null | xxd -p | tr -d '\n')
+	custom_range_output=$(random -b -c 200 64..192 2>/dev/null | xxd -p | tr -d '\n')
 	local custom_bytes
 	custom_bytes=$((${#custom_range_output} / 2))
 
@@ -370,7 +426,7 @@ test_random() {
 	echo "Testing --binaryoutput rejects start < 0..."
 
 	local neg_output
-	neg_output=$(random -b -c 10 -1 100 2>&1)
+	neg_output=$(random -b -c 10 -1..100 2>&1)
 	local neg_status=$?
 
 	if [ $neg_status -ne 0 ] && echo "$neg_output" | grep -qi "error"; then
@@ -385,7 +441,7 @@ test_random() {
 	echo "Testing --binaryoutput rejects end > 255..."
 
 	local over_output
-	over_output=$(random -b -c 10 0 256 2>&1)
+	over_output=$(random -b -c 10 0..256 2>&1)
 	local over_status=$?
 
 	if [ $over_status -ne 0 ] && echo "$over_output" | grep -qi "error"; then
@@ -479,7 +535,7 @@ test_random() {
 	echo "Testing BLAKE3 seeded range output..."
 
 	local seeded_output
-	seeded_output=$(random -d --seed 42 0 99 2>/dev/null)
+	seeded_output=$(random -d --seed 42 0..99 2>/dev/null)
 
 	if [ "$seeded_output" = "97" ]; then
 		echo "✓ BLAKE3 seeded range output test passed"
@@ -493,7 +549,7 @@ test_random() {
 	echo "Testing range 2^32 + 1 (edge case for bound formula)..."
 
 	local edge_out edge_status
-	edge_out=$(timeout 5 random -d --seed 7 0 4294967296 2>/dev/null)
+	edge_out=$(timeout 5 random -d --seed 7 0..4294967296 2>/dev/null)
 	edge_status=$?
 
 	if [ $edge_status -eq 124 ]; then
@@ -514,7 +570,7 @@ test_random() {
 	echo "Testing wide range 5000000000 terminates..."
 
 	local wide_out wide_status
-	wide_out=$(timeout 5 random -d --seed 7 0 5000000000 2>/dev/null)
+	wide_out=$(timeout 5 random -d --seed 7 0..5000000000 2>/dev/null)
 	wide_status=$?
 
 	if [ $wide_status -eq 124 ]; then
@@ -548,7 +604,7 @@ test_random() {
 	# Capped at 2^52, not the full 2^62 the finding originally asked
 	# for: a LATER fix in this same review round (finding #3, large
 	# integer bounds) added a hard 2^53 safe-integer ceiling on every
-	# positional CLI argument -- values past it are now REJECTED before
+	# CLI range component -- values past it are now REJECTED before
 	# they ever reach drbg_range at all, an unrelated and unavoidable
 	# consequence of routing this test through the CLI rather than
 	# calling drbg_range directly (it is a local, unexported function
@@ -563,7 +619,7 @@ test_random() {
 	pow2_check() {
 		local label="$1" start="$2" end="$3"
 		local out status
-		out=$(timeout 3 random -d --seed 3 -c 1 "$start" "$end" 2>/dev/null)
+		out=$(timeout 3 random -d --seed 3 -c 1 "${start}..${end}" 2>/dev/null)
 		status=$?
 		if [ $status -eq 124 ]; then
 			echo "  ✗ $label: timed out (infinite loop)" >&2
@@ -602,7 +658,7 @@ test_random() {
 	(( tests++ ))
 	echo "Testing --normalized produces values in range..."
 
-	local norm_vals=$(random --normalized --count 20 0 100 2>/dev/null)
+	local norm_vals=$(random --normalized --count 20 0..100 2>/dev/null)
 	local all_in_range=true
 	while IFS= read -r val; do
 		if [ "$val" -lt 0 ] || [ "$val" -gt 100 ]; then
@@ -662,7 +718,7 @@ test_random() {
 	local normal_pass=true
 	local seed
 	for seed in "${NORMAL_TEST_SEEDS[@]}"; do
-		local stats=$(random -n --seed "$seed" --count $SHAPE_SAMPLE_SIZE $range_start $range_end 2>/dev/null | awk '
+		local stats=$(random -n --seed "$seed" --count $SHAPE_SAMPLE_SIZE "${range_start}..${range_end}" 2>/dev/null | awk '
 		{
 			samples[NR] = $1
 			sum += $1
@@ -736,8 +792,8 @@ test_random() {
 	(( tests++ ))
 	echo "Testing --deterministic --normalized reproducibility..."
 
-	local dn_seq1=$(random -d -n --seed 54321 --count 5 0 100 2>/dev/null | tr '\n' ' ')
-	local dn_seq2=$(random -d -n --seed 54321 --count 5 0 100 2>/dev/null | tr '\n' ' ')
+	local dn_seq1=$(random -d -n --seed 54321 --count 5 0..100 2>/dev/null | tr '\n' ' ')
+	local dn_seq2=$(random -d -n --seed 54321 --count 5 0..100 2>/dev/null | tr '\n' ' ')
 
 	if [ "$dn_seq1" = "$dn_seq2" ] && [ -n "$dn_seq1" ]; then
 		echo "✓ Deterministic normalized reproducibility test passed"
@@ -752,7 +808,7 @@ test_random() {
 	(( tests++ ))
 	echo "Testing --deterministic --normalized still center-heavy..."
 
-	local dn_sample=$(random -d -n --seed 11111 --count $SAMPLE_SIZE 0 100 2>/dev/null)
+	local dn_sample=$(random -d -n --seed 11111 --count $SAMPLE_SIZE 0..100 2>/dev/null)
 	local dn_center=0
 	local dn_total=0
 
@@ -782,7 +838,7 @@ test_random() {
 
 	# Check nrandom exists and is a symlink
 	if command -v nrandom >/dev/null 2>&1; then
-		local nrandom_sample=$(nrandom --count 50 0 100 2>/dev/null)
+		local nrandom_sample=$(nrandom --count 50 0..100 2>/dev/null)
 		local nr_center=0
 		local nr_total=0
 
@@ -1013,7 +1069,7 @@ test_random() {
 	(( tests++ ))
 	echo "Testing --delimiter output..."
 
-	local delim_out=$(random -d --seed 33333 -c 5 --delimiter "," 0 10 2>/dev/null)
+	local delim_out=$(random -d --seed 33333 -c 5 --delimiter "," 0..10 2>/dev/null)
 	local comma_count=$(echo "$delim_out" | tr -cd ',' | wc -c | tr -d ' ')
 
 	if [ "$comma_count" -eq 4 ]; then  # 5 numbers = 4 commas
@@ -1241,6 +1297,24 @@ verycommon:100"
 		(( fails++ ))
 	fi
 
+	# Supplying either normal parameter independently uses the other parameter's
+	# documented default. This exact-stream equivalence catches the old branch
+	# that silently ignored a lone --mean or lone --stddev.
+	(( tests++ ))
+	echo "Testing independent normal parameter defaults..."
+	local mean_only mean_with_default stddev_only stddev_with_default
+	mean_only=$(random -d --seed 4242 -n --mean=5 -c 64 2>/dev/null)
+	mean_with_default=$(random -d --seed 4242 -n --mean 5 --stddev 1 -c 64 2>/dev/null)
+	stddev_only=$(random -d --seed 4242 -n --stddev=2 -c 64 2>/dev/null)
+	stddev_with_default=$(random -d --seed 4242 -n --mean 0 --stddev 2 -c 64 2>/dev/null)
+	if [ "$mean_only" = "$mean_with_default" ] &&
+	   [ "$stddev_only" = "$stddev_with_default" ]; then
+		echo "✓ Lone --mean/--stddev use stddev=1/mean=0 respectively"
+	else
+		echo "✗ Independent normal parameter defaults changed the deterministic stream" >&2
+		(( fails++ ))
+	fi
+
 	# Test 39b: --mean/--stddev with a NEGATIVE mean -- regression coverage
 	# for the sign-aware rounding fix (bin/random's round_to_int). "Add 1/2,
 	# then truncate toward zero" is round-half-away-from-zero only for a
@@ -1314,7 +1388,7 @@ verycommon:100"
 	local neg_range_center=-9
 	local neg_range_pass=true
 	for seed in "${NORMAL_TEST_SEEDS[@]}"; do
-		local stats=$(random -n --seed "$seed" -c $SAMPLE_SIZE $neg_range_start $neg_range_end 2>/dev/null | awk '
+		local stats=$(random -n --seed "$seed" -c $SAMPLE_SIZE "${neg_range_start}..${neg_range_end}" 2>/dev/null | awk '
 		{ sum += $1; n++ }
 		END { printf "MEAN=%.4f\n", sum / n }')
 
@@ -1343,8 +1417,10 @@ verycommon:100"
 	(( tests++ ))
 	echo "Testing --exponential distribution..."
 
-	# Exponential with rate=1 should have mean≈1, variance≈1
-	local exp_stats=$(random --exponential -d --seed 11111 -c $SAMPLE_SIZE 2>/dev/null | awk '
+	# Exponential with rate=4 should have mean≈1/4, variance≈1/16. A parser
+	# that accepts --rate but leaves the sampler at its old rate=1 default is
+	# therefore rejected by the same shape check.
+	local exp_stats=$(random --exponential --rate 4 -d --seed 11111 -c $SAMPLE_SIZE 2>/dev/null | awk '
 	{
 		sum += $1
 		sumsq += $1 * $1
@@ -1357,18 +1433,18 @@ verycommon:100"
 	}')
 
 	eval "$exp_stats"
-	# Exponential: mean ≈ 1/λ AND variance ≈ 1/λ² (we use λ=1, so both ≈1),
+	# Exponential: mean ≈ 1/rate AND variance ≈ 1/rate²,
 	# all values >= 0. EXP_VAR was computed above but never compared
 	# against anything -- a stub that always returns a constant (e.g.
 	# `return fx.from_int(1)`) has mean=1.000, min=1.000, satisfies both
 	# checks that existed here, and var=0.000 sails through unexamined.
 	# Bounds are as loose as the existing mean check (roughly a 3x window
-	# either side of the true value 1, matching the Poisson check below's
+	# either side of the true values, matching the Poisson check below's
 	# similarly loose var bound) -- wide enough to absorb sampling noise at
 	# FAST's SAMPLE_SIZE=100, tight enough that a constant (var=0) or a
 	# near-constant stub cannot pass.
-	if (( $(echo "$EXP_MEAN > 0.5 && $EXP_MEAN < 2.0" | bc -l) )) && \
-	   (( $(echo "$EXP_VAR > 0.3 && $EXP_VAR < 3.0" | bc -l) )) && \
+	if (( $(echo "$EXP_MEAN > 0.125 && $EXP_MEAN < 0.5" | bc -l) )) && \
+	   (( $(echo "$EXP_VAR > 0.018 && $EXP_VAR < 0.19" | bc -l) )) && \
 	   (( $(echo "$EXP_MIN >= 0" | bc -l) )); then
 		echo "✓ --exponential test passed (mean=$EXP_MEAN, var=$EXP_VAR, min=$EXP_MIN)"
 	else
@@ -1381,7 +1457,7 @@ verycommon:100"
 	echo "Testing --poisson distribution..."
 
 	# Poisson with λ=5 should have mean≈5, variance≈5
-	local pois_stats=$(random --poisson --mean 5 -d --seed 22222 -c $SAMPLE_SIZE 2>/dev/null | awk '
+	local pois_stats=$(random --poisson --lambda 5 -d --seed 22222 -c $SAMPLE_SIZE 2>/dev/null | awk '
 	{
 		sum += $1
 		sumsq += $1 * $1
@@ -1446,7 +1522,7 @@ verycommon:100"
 	echo "Testing --beta distribution..."
 
 	# Beta(2,5): mean = α/(α+β) = 2/7 ≈ 0.286, all values in [0,1]
-	local beta_stats=$(random --beta --alpha 2 --beta-param 5 -d --seed 44444 -c $SAMPLE_SIZE 2>/dev/null | awk '
+	local beta_stats=$(random --beta 5 --alpha 2 -d --seed 44444 -c $SAMPLE_SIZE 2>/dev/null | awk '
 	{
 		sum += $1
 		if ($1 < 0 || $1 > 1) out_of_range++
@@ -1463,6 +1539,21 @@ verycommon:100"
 		echo "✓ --beta test passed (mean=$BETA_MEAN)"
 	else
 		echo "✗ --beta test failed (mean=$BETA_MEAN, out_of_range=$OUT_OF_RANGE)" >&2
+		(( fails++ ))
+	fi
+	local beta_default beta_explicit beta_spaced beta_attached
+	beta_default=$(random --beta -d --seed 44444 -c 32 2>/dev/null)
+	beta_explicit=$(random --beta=2 -d --seed 44444 -c 32 2>/dev/null)
+	beta_spaced=$(random --beta 5 --alpha 2 -d --seed 44444 -c 32 2>/dev/null)
+	beta_attached=$(random --beta=5 --alpha=2 -d --seed 44444 -c 32 2>/dev/null)
+	if [ "$beta_default" != "$beta_explicit" ] || [ "$beta_spaced" != "$beta_attached" ]; then
+		echo "✗ Bare/default or spaced/attached --beta forms diverged" >&2
+		(( fails++ ))
+	fi
+	local beta_stderr
+	beta_stderr=$(random --beta -d --seed 44444 -c 1 2>&1 >/dev/null)
+	if [[ "$beta_stderr" == *"default range"* ]]; then
+		echo "✗ Beta advertised an inapplicable default integer range" >&2
 		(( fails++ ))
 	fi
 
@@ -1512,19 +1603,39 @@ verycommon:100"
 	(( tests++ ))
 	echo "Testing --beta --alpha 0 is rejected cleanly..."
 	assert_clean_cli_error "--alpha 0 rejected cleanly" \
-		random --beta --alpha 0 --beta-param 5 -c 1 || (( fails++ ))
+		random --beta 5 --alpha 0 -c 1 || (( fails++ ))
 
 	# Test 46: --alpha negative is rejected the same way
 	(( tests++ ))
 	echo "Testing --beta --alpha -1 is rejected cleanly..."
 	assert_clean_cli_error "--alpha -1 rejected cleanly" \
-		random --beta --alpha -1 --beta-param 5 -c 1 || (( fails++ ))
+		random --beta 5 --alpha -1 -c 1 || (( fails++ ))
 
-	# Test 47: --beta-param must be positive
+	# Test 47: --beta's optional parameter must be positive
 	(( tests++ ))
-	echo "Testing --beta --beta-param 0 is rejected cleanly..."
-	assert_clean_cli_error "--beta-param 0 rejected cleanly" \
-		random --beta --alpha 2 --beta-param 0 -c 1 || (( fails++ ))
+	echo "Testing --beta 0 is rejected cleanly..."
+	assert_clean_cli_error "--beta 0 rejected cleanly" \
+		random --beta 0 --alpha 2 -c 1 || (( fails++ ))
+	random --beta 3 99 -d --seed 1 -c 1 >/dev/null 2>&1
+	if [ "$?" -eq 0 ]; then
+		echo "✗ --beta accepted a leftover positional range argument"
+		(( fails++ ))
+	fi
+	if random --beta-param 3 -d --seed 1 -c 1 >/dev/null 2>&1; then
+		echo "✗ Removed --beta-param spelling was still accepted"
+		(( fails++ ))
+	fi
+	local ranged_dist
+	for ranged_dist in --exponential --poisson --log-normal --beta; do
+		if random "$ranged_dist" 0..9 >/dev/null 2>&1; then
+			echo "✗ $ranged_dist silently accepted an inapplicable range"
+			(( fails++ ))
+		fi
+	done
+	if random --normalized --mean 5 0..9 >/dev/null 2>&1; then
+		echo "✗ Custom-parameter normal silently accepted an ignored range"
+		(( fails++ ))
+	fi
 
 	# Test 48: --stddev must be positive (shared by --normalized and
 	# --log-normal; zero or negative doesn't crash today -- it silently
@@ -1569,6 +1680,32 @@ verycommon:100"
 		(( fails++ ))
 	fi
 
+	(( tests++ ))
+	echo "Testing --lambda alias and new parameter validation..."
+	local lambda_stream mean_lambda_stream parameter_validation_ok=true
+	lambda_stream=$(random --poisson --lambda=5 -d --seed 5151 -c 64 2>/dev/null)
+	mean_lambda_stream=$(random --poisson --mean 5 -d --seed 5151 -c 64 2>/dev/null)
+	if [ "$lambda_stream" != "$mean_lambda_stream" ]; then
+		parameter_validation_ok=false
+	fi
+	for bad_parameter_args in \
+		'--exponential --rate 0' \
+		'--poisson --lambda 0' \
+		'--poisson --lambda 3 --mean 3' \
+		'--beta --rate 2' \
+		'--beta --lambda 2'; do
+		read -r -a bad_parameter_argv <<<"$bad_parameter_args"
+		if random "${bad_parameter_argv[@]}" >/dev/null 2>&1; then
+			parameter_validation_ok=false
+		fi
+	done
+	if $parameter_validation_ok; then
+		echo "✓ --lambda aliases --mean exactly; invalid rate/lambda combinations reject"
+	else
+		echo "✗ --lambda alias or rate/lambda validation failed" >&2
+		(( fails++ ))
+	fi
+
 	# Test 51: no floating-point math remains on the deterministic path.
 	# Source implementations are scanned for float declarations/conversions;
 	# compiled implementations are independently checked for libm dependencies.
@@ -1578,9 +1715,10 @@ verycommon:100"
 	local libm_hits float_hits
 	float_hits=""
 	if [ -f "$here/../src/fixed.zig" ] && [ -f "$here/../src/randomz.zig" ] && \
-	   [ -f "$here/../src/randomz_cli.c" ]; then
+	   [ -f "$here/../src/randomz_cli.c" ] && [ -f "$here/../src/distribution_view.c" ]; then
 		float_hits=$(grep -nE '\b(f16|f32|f64|f80|f128|float|double)\b|@float' \
-			"$here/../src/fixed.zig" "$here/../src/randomz.zig" "$here/../src/randomz_cli.c" | \
+			"$here/../src/fixed.zig" "$here/../src/randomz.zig" \
+			"$here/../src/randomz_cli.c" "$here/../src/distribution_view.c" | \
 			grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|/\*|\*)' || true)
 	fi
 	if [ -z "${RANDOM_TEST_CLI:-}" ]; then
@@ -1697,20 +1835,20 @@ verycommon:100"
 		fi
 	}
 
-	seed_reject_check "seed '-1'"          random --seed "-1" -c 1 0 0
-	seed_reject_check "seed '+1'"          random --seed "+1" -c 1 0 0
-	seed_reject_check "seed '' (empty)"    random --seed "" -c 1 0 0
-	seed_reject_check "seed '   ' (ws)"    random --seed "   " -c 1 0 0
-	seed_reject_check "seed '42x'"         random --seed "42x" -c 1 0 0
-	seed_reject_check "seed '0x'"          random --seed "0x" -c 1 0 0
-	seed_reject_check "seed 'nan'"         random --seed "nan" -c 1 0 0
-	seed_reject_check "seed 'inf'"         random --seed "inf" -c 1 0 0
-	seed_reject_check "bare hexadecimal"   random --seed "DEADBEEF" -c 1 0 0
-	seed_reject_check "seed 2^256 (dec)"   random --seed "115792089237316195423570985008687907853269984665640564039457584007913129639936" -c 1 0 0
-	seed_reject_check "seed 2^256 (hex)"   random --seed "0x10000000000000000000000000000000000000000000000000000000000000000" -c 1 0 0
+	seed_reject_check "seed '-1'"          random --seed "-1" -c 1 0-0
+	seed_reject_check "seed '+1'"          random --seed "+1" -c 1 0-0
+	seed_reject_check "seed '' (empty)"    random --seed "" -c 1 0-0
+	seed_reject_check "seed '   ' (ws)"    random --seed "   " -c 1 0-0
+	seed_reject_check "seed '42x'"         random --seed "42x" -c 1 0-0
+	seed_reject_check "seed '0x'"          random --seed "0x" -c 1 0-0
+	seed_reject_check "seed 'nan'"         random --seed "nan" -c 1 0-0
+	seed_reject_check "seed 'inf'"         random --seed "inf" -c 1 0-0
+	seed_reject_check "bare hexadecimal"   random --seed "DEADBEEF" -c 1 0-0
+	seed_reject_check "seed 2^256 (dec)"   random --seed "115792089237316195423570985008687907853269984665640564039457584007913129639936" -c 1 0-0
+	seed_reject_check "seed 2^256 (hex)"   random --seed "0x10000000000000000000000000000000000000000000000000000000000000000" -c 1 0-0
 	seed_reject_check "'--seed --count 3'" random --seed --count 3
-	seed_reject_check "$RANDOM_TEST_SEED_ENV=-1"  env "$RANDOM_TEST_SEED_ENV=-1" random -c 1 0 0
-	seed_reject_check "$RANDOM_TEST_SEED_ENV=nan" env "$RANDOM_TEST_SEED_ENV=nan" random -c 1 0 0
+	seed_reject_check "$RANDOM_TEST_SEED_ENV=-1"  env "$RANDOM_TEST_SEED_ENV=-1" random -c 1 0-0
+	seed_reject_check "$RANDOM_TEST_SEED_ENV=nan" env "$RANDOM_TEST_SEED_ENV=nan" random -c 1 0-0
 
 	if [ "$seed_grammar_fail" -eq 0 ]; then
 		echo "✓ Malformed seed classifier passed (14 cases)"
@@ -1729,7 +1867,7 @@ verycommon:100"
 	local seed_accept_fail=0
 	seed_accept_check() {
 		local label="$1" value="$2"
-		if ! random --seed "$value" -c 1 0 0 >/dev/null 2>&1; then
+		if ! random --seed "$value" -c 1 0-0 >/dev/null 2>&1; then
 			echo "  ✗ valid seed '$label' was wrongly rejected" >&2
 			seed_accept_fail=$((seed_accept_fail + 1))
 		fi
@@ -1753,18 +1891,18 @@ verycommon:100"
 	# Test 57: range bounds beyond the double-safe-integer boundary
 	# (2^53) are rejected with a clear error, not silently corrupted.
 	# Confirmed directly before this fix: `random --seed 1
-	# 9007199254740993 9007199254740993 -c 1` printed 9007199254740992
+	# 9007199254740993-9007199254740993 -c 1` printed 9007199254740992
 	# (2^53+1 silently collapsed to 2^53), and `random --seed 1
-	# 9223372036854775807 9223372036854775807 -c 1` printed
+	# 9223372036854775807-9223372036854775807 -c 1` printed
 	# -9223372036854775808 (a NEGATIVE bound for a string with no minus
 	# sign anywhere in it).
 	(( tests++ ))
 	echo "Testing range bounds beyond 2^53 are rejected cleanly..."
 
 	assert_clean_cli_error "bound 2^53+1 rejected cleanly" \
-		random --seed 1 9007199254740993 9007199254740993 -c 1 || (( fails++ ))
+		random --seed 1 9007199254740993-9007199254740993 -c 1 || (( fails++ ))
 	assert_clean_cli_error "bound int64-max rejected cleanly" \
-		random --seed 1 9223372036854775807 9223372036854775807 -c 1 || (( fails++ ))
+		random --seed 1 9223372036854775807-9223372036854775807 -c 1 || (( fails++ ))
 
 	# Test 58: a bound exactly AT 2^53 (the safe-integer boundary
 	# itself) is still accepted and returns the EXACT value asked for --
@@ -1774,7 +1912,7 @@ verycommon:100"
 	echo "Testing a range bound exactly at 2^53 is still accepted..."
 
 	local safe_bound_out
-	safe_bound_out=$(timeout 5 random --seed 1 9007199254740992 9007199254740992 -c 1 2>/dev/null)
+	safe_bound_out=$(timeout 5 random --seed 1 9007199254740992-9007199254740992 -c 1 2>/dev/null)
 	if [ "$safe_bound_out" = "9007199254740992" ]; then
 		echo "✓ Range bound exactly at 2^53 is accepted and returned exactly"
 	else

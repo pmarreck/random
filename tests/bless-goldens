@@ -37,19 +37,19 @@ integer)
 	{
 		for seed in 1 42 12345 0xDEADBEEF 18446744073709551615; do
 			emit "uniform/$seed/default" random -d --seed "$seed" -c 8
-			emit "uniform/$seed/0-9"     random -d --seed "$seed" -c 8 0 9
-			emit "uniform/$seed/1-6"     random -d --seed "$seed" -c 20 1 6
-			emit "uniform/$seed/wide"    random -d --seed "$seed" -c 4 0 5000000000
-			emit "uniform/$seed/single"  random -d --seed "$seed" -c 3 5 5
+			emit "uniform/$seed/0-9"     random -d --seed "$seed" -c 8 0..9
+			emit "uniform/$seed/1-6"     random -d --seed "$seed" -c 20 1..6
+			emit "uniform/$seed/wide"    random -d --seed "$seed" -c 4 0..5000000000
+			emit "uniform/$seed/single"  random -d --seed "$seed" -c 3 5-5
 			# no -c: locks the `count = options.count or 1` default branch
 			emit "uniform/$seed/defcount" random -d --seed "$seed"
 			emit "hex/$seed"             random -d --seed "$seed" -c 8 --hex
-			emit "delim/$seed"           random -d --seed "$seed" -c 5 --delimiter , 0 10
+			emit "delim/$seed"           random -d --seed "$seed" -c 5 --delimiter , 0..10
 			emit "binhex/$seed"          bash -c "random -d --seed $seed -b -c 64 | xxd -p | tr -d '\n'"
 			# no -c: locks the `count = options.count or 1024` binary default branch
 			emit "bindef/$seed"          bash -c "random -d --seed $seed -b | xxd -p | tr -d '\n'"
 			# ranged binary: locks the constrained-range branch, not just 0..255
-			emit "binrange/$seed"        bash -c "random -d --seed $seed -b -c 32 64 192 | xxd -p | tr -d '\n'"
+			emit "binrange/$seed"        bash -c "random -d --seed $seed -b -c 32 64..192 | xxd -p | tr -d '\n'"
 			emit "b64/$seed"             random -d --seed "$seed" -b -c 30 --base64
 			emit_stdin "choose/$seed"   $'apple\nbanana\ncherry\ndate' random --choose -d --seed "$seed"
 			emit_stdin "shuffle/$seed"  $'1\n2\n3\n4\n5\n6\n7\n8' random --shuffle -d --seed "$seed"
@@ -61,19 +61,19 @@ integer)
 dist)
 	{
 		for seed in 1 42 12345; do
-			emit "normal/$seed"      random -d -n --seed "$seed" -c 12 0 100
+			emit "normal/$seed"      random -d -n --seed "$seed" -c 12 0..100
 			emit "normalms/$seed"    random -d -n --seed "$seed" -c 12 --mean 75 --stddev 5
 			# Negative range and negative mean: lock the sign-aware rounding
 			# fix (bin/random's round_to_int) at both call sites -- the
 			# positive-only cases above never drove the composed
 			# pre-rounding value negative, so they never exercised the
 			# truncation-direction bug those two functions used to have.
-			emit "normalneg/$seed"   random -d -n --seed "$seed" -c 12 -100 0
+			emit "normalneg/$seed"   random -d -n --seed "$seed" -c 12 -100..0
 			emit "normalmsneg/$seed" random -d -n --seed "$seed" -c 12 --mean -75 --stddev 5
 			emit "exponential/$seed" random -d --exponential --seed "$seed" -c 12
 			emit "poisson/$seed"     random -d --poisson --mean 5 --seed "$seed" -c 12
 			emit "lognormal/$seed"   random -d --log-normal --seed "$seed" -c 12
-			emit "beta/$seed"        random -d --beta --alpha 2 --beta-param 5 --seed "$seed" -c 12
+			emit "beta/$seed"        random -d --beta 5 --alpha 2 --seed "$seed" -c 12
 		done
 	} > "${outfile:-$here/golden/dist.txt}"
 	echo "wrote $(wc -l < "${outfile:-$here/golden/dist.txt}") distribution vectors" >&2

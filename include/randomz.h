@@ -12,6 +12,7 @@ extern "C" {
 #define RANDOMZ_DRBG_KEY_BYTES 32
 #define RANDOMZ_MAX_EXACT_POSITION UINT64_C(9007199254740992)
 #define RANDOMZ_FIXED_STRING_BYTES 4096
+#define RANDOMZ_CURVE_MAX_SAMPLES 4096
 
 typedef enum randomz_status {
 	RANDOMZ_OK = 0,
@@ -28,6 +29,14 @@ typedef struct randomz_fixed {
 	int64_t m;
 	int32_t e;
 } randomz_fixed;
+
+typedef enum randomz_distribution {
+	RANDOMZ_DISTRIBUTION_NORMAL = 1,
+	RANDOMZ_DISTRIBUTION_EXPONENTIAL = 2,
+	RANDOMZ_DISTRIBUTION_POISSON = 3,
+	RANDOMZ_DISTRIBUTION_LOG_NORMAL = 4,
+	RANDOMZ_DISTRIBUTION_BETA = 5
+} randomz_distribution;
 
 /* Caller-owned, trivially serializable, and sensitive when secretly seeded.
  * A state is not thread-safe; copying or forking clones its future stream. */
@@ -69,6 +78,17 @@ int randomz_log_normal(randomz_fill_fn fill, void *context,
 	randomz_fixed mean, randomz_fixed stddev, randomz_fixed *out);
 int randomz_beta(randomz_fill_fn fill, void *context,
 	randomz_fixed alpha, randomz_fixed beta, randomz_fixed *out);
+
+/* Pure, entropy-free distribution curves for visualization. `first` and
+ * `second` are mean/stddev (normal and log-normal), rate/zero
+ * (exponential), lambda/zero (Poisson), or alpha/beta (beta). Heights are
+ * normalized to [0,65535]. Continuous curves write `capacity` samples;
+ * Poisson writes one sample per integer when that fits, otherwise a
+ * capacity-wide compressed curve. The caller supplies all storage. */
+int randomz_distribution_curve(randomz_distribution distribution,
+	randomz_fixed first, randomz_fixed second,
+	uint16_t *heights, size_t capacity, size_t *written,
+	randomz_fixed *x_min, randomz_fixed *x_max);
 
 /* Total public conversions for the internal integer-only numeric format. */
 randomz_fixed randomz_fixed_from_int(int64_t value);

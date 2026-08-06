@@ -23,7 +23,9 @@ mode in either family.
 - **Output formats:** decimal, `--hex`, `--base64`, raw `--binaryoutput`
 - **Visual distribution help:** append `--help` to an alternate-distribution
   flag for its shape; Kitty and Ghostty receive an embedded PNG via Kitty
-  graphics, WezTerm receives Sixel, and other terminals receive Braille
+  graphics, WezTerm receives Sixel, and other terminals (including every
+  automatic invocation inside tmux) receive Braille; use `--view` to render
+  the shape from parameters supplied on that invocation
 - **Replayable invocations:** deterministic mode starts at stream position zero and never writes state to disk
 - **Reproducible across platforms:** seeded streams are bit-identical across machines, operating systems and CPU architectures — verified on x86_64-glibc, x86_64-musl, aarch64-Linux and native aarch64-macOS — because all math runs on an integer-only kernel instead of the platform's libm — see [Determinism](#determinism) below
 - **Embeddable core:** `librandomz.a` plus `randomz.h`; callers own DRBG state
@@ -88,7 +90,7 @@ commit or later, the mitigation switches itself off automatically.
 The BLAKE3 migration deliberately breaks all legacy seeded streams and
 removes legacy state-file compatibility. Earlier integer-kernel conversion also
 changed seeded alternate-distribution output. Fractional range bounds are not
-accepted — `random 1.5 6.5` is an error, not a silently-truncated range.
+accepted — `random 1.5..6.5` is an error, not a silently-truncated range.
 
 #### `$IFS` is not part of the reproducibility contract
 
@@ -106,8 +108,12 @@ anyone who wants something other than newline.
 
 ```sh
 random                              # uniform 0-99
-random 1 6                          # uniform in [1, 6]
+random 1..6                         # inclusive uniform range
+random 1...7                        # same values; three dots exclude 7
 random -n --mean 50 --stddev 10     # normal distribution
+random --exponential --rate 4       # exponential with rate 4
+random --poisson --lambda 5         # --mean 5 remains an exact alias
+random --beta=3 --alpha=1 --view    # chart Beta(alpha=1, beta=3)
 random -d --seed 42 -c 5            # 5 reproducible numbers
 random --true-random -b -c 32       # force entropy even if DRANDOM_SEED is set
 random --hex -c 5                   # 5 hex values
@@ -121,12 +127,31 @@ Distribution-qualified help is order-independent: for example,
 `random --normalized --help` and `random --help --normalized` show the normal
 curve. The CLI sends its embedded PNG directly through the Kitty graphics
 protocol without a temporary file in Kitty and Ghostty. WezTerm uses a
-code-generated Sixel rendering of the same plot; tmux 3.4+ handles that DCS
-protocol natively when built with Sixel support. Kitty graphics under tmux
-requires `allow-passthrough` to be `on` or `all`; otherwise auto mode uses the
-UTF-8 fallback. Set `RANDOMZ_CHART_TYPE=utf8|kitty|sixel` to override automatic
-selection. `--utf8-graphics`, `--kitty`, and `--sixel` override the environment
-for one distribution-help invocation; if repeated, the last renderer flag wins.
+code-generated Sixel rendering of the same plot. Automatic mode always uses
+the scrollback-stable UTF-8 Braille fallback inside tmux: terminal image
+placements can disappear when scrolling even when tmux and the outer terminal
+both advertise a supported protocol. Set
+`RANDOMZ_CHART_TYPE=utf8|kitty|sixel` to override automatic selection.
+`--utf8` (also `--utf8-graphics`), `--kitty`, and `--sixel` override the environment for one
+distribution-help or `--view` invocation; if repeated, the last renderer flag
+wins.
+
+`--view` requires exactly one alternate distribution, generates no random
+bytes, and prints only that distribution's parameter summary and chart. Normal
+and log-normal accept `--mean` and `--stddev`; either normal parameter can be
+supplied independently and the omitted one defaults to mean 0 or standard
+deviation 1. Exponential accepts `--rate`, Poisson accepts `--lambda` (with
+`--mean` retained as an exact alias), and bare `--beta` uses beta parameter 2
+while `--beta B` or `--beta=B` replaces it; `--alpha` controls alpha. Parameter
+options accept both `--name value` and `--name=value`. Distribution-qualified
+`--help` deliberately keeps showing the frozen default chart even when
+parameter tokens are also present.
+
+Uniform and range-scaled normal modes accept at most one atomic integer range:
+`M-N` and `M..N` include both endpoints, while Ruby-style `M...N` excludes N.
+The default remains `0..99`. The former one/two bare endpoint grammar is not
+accepted. Ranges are rejected where a distribution's own parameters determine
+its output, including custom-parameter normal mode.
 
 `--test` runs the shared Bash contract suite. Nix installations close over its
 tool dependencies; manual Zig and Windows installations require Bash plus the
@@ -212,8 +237,8 @@ nix flake check   # hermetic CI check (runs all 13 suites, but FORCES FAST=1 --
 ```
 
 `./test` runs every suite under `tests/` (official BLAKE3 vectors, an independent
-Zig DRBG reference check, the same 75-check Bash CLI contract against both
-executables, 108 exact LuaJIT-vs-C cases, a C-compiled public-ABI conformance
+Zig DRBG reference check, the same 77-check Bash CLI contract against both
+executables, 142 exact LuaJIT-vs-C cases, a C-compiled public-ABI conformance
 test, isolated Zig-package reconstruction, five-target cross-compilation
 (including Windows ARM64), Wine-executed Windows x86_64 parity, kernel unit
 tests, golden vectors, the `bc` sweep, and the deep-mode-only JIT differential).
@@ -238,9 +263,11 @@ bin/nrandom         -> random   (normalized mode)
 bin/drandom         -> random   (deterministic mode)
 lib/fixed.lua       integer-only soft-float kernel (see Determinism above)
 lib/distribution_charts.lua generated embedded PNG/Sixel/Braille help charts
+lib/distribution_view.lua runtime parameter-aware curve/raster oracle
 src/fixed.zig       independent Zig port of the fixed-point kernel
 src/randomz.zig     pure RNG/distribution core and exported C ABI
 src/randomz_cli.c   C CLI; accesses the Zig core only through randomz.h
+src/distribution_view.c C-side UTF-8/Kitty/Sixel runtime rasterizer
 tools/generate_distribution_charts.lua deterministic shared chart generator
 include/randomz.h   public caller-owned-state C API
 tests/random_test   CLI behavior + statistical distribution suite (bash)

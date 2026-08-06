@@ -7,6 +7,8 @@
 
 _Static_assert(RANDOMZ_OK == 0, "status ABI drift");
 _Static_assert(RANDOMZ_NUMERIC_ERROR == 5, "status ABI drift");
+_Static_assert(RANDOMZ_DISTRIBUTION_NORMAL == 1, "distribution ABI drift");
+_Static_assert(RANDOMZ_DISTRIBUTION_BETA == 5, "distribution ABI drift");
 _Static_assert(sizeof(randomz_fixed) == 16, "randomz_fixed ABI drift");
 _Static_assert(offsetof(randomz_fixed, m) == 0, "randomz_fixed.m ABI drift");
 _Static_assert(offsetof(randomz_fixed, e) == 8, "randomz_fixed.e ABI drift");
@@ -99,6 +101,23 @@ int main(void)
 	CHECK(randomz_fixed_format(two, 6, rendered, sizeof(rendered), &written) == RANDOMZ_OK);
 	CHECK(written == 8 && memcmp(rendered, "2.000000", 8) == 0);
 	CHECK(randomz_fixed_format(two, 6, rendered, 2, &written) == RANDOMZ_BUFFER_TOO_SMALL);
+	uint16_t curve[64];
+	size_t curve_count = 0;
+	randomz_fixed x_min;
+	randomz_fixed x_max;
+	CHECK(randomz_distribution_curve(RANDOMZ_DISTRIBUTION_EXPONENTIAL,
+		two, zero, curve, 64, &curve_count, &x_min, &x_max) == RANDOMZ_OK);
+	CHECK(curve_count == 64 && curve[0] == UINT16_MAX && curve[63] < curve[0]);
+	CHECK(randomz_fixed_to_int_trunc(x_min, &integer) == RANDOMZ_OK && integer == 0);
+	CHECK(randomz_fixed_to_int_trunc(x_max, &integer) == RANDOMZ_OK && integer == 3);
+	CHECK(randomz_distribution_curve(RANDOMZ_DISTRIBUTION_POISSON,
+		one, zero, curve, 64, &curve_count, &x_min, &x_max) == RANDOMZ_OK);
+	CHECK(curve_count == 9 && curve[0] == UINT16_MAX && curve[1] == UINT16_MAX);
+	CHECK(randomz_distribution_curve(RANDOMZ_DISTRIBUTION_BETA,
+		one, three, curve, 64, &curve_count, &x_min, &x_max) == RANDOMZ_OK);
+	CHECK(curve_count == 64 && curve[0] > curve[63]);
+	CHECK(randomz_distribution_curve(RANDOMZ_DISTRIBUTION_NORMAL,
+		zero, one, curve, 1, &curve_count, &x_min, &x_max) == RANDOMZ_INVALID_ARGUMENT);
 	randomz_fixed huge;
 	CHECK(randomz_fixed_parse("1500000000", 10, &huge) == RANDOMZ_OK);
 	CHECK(randomz_log_normal(drbg_fill, &state, huge, one, &sampled) == RANDOMZ_NUMERIC_ERROR);

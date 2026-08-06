@@ -2053,9 +2053,9 @@ ok(fx.parse_int("-9223372036854775808") == nil,
 -- for a range BOUND: the bound a caller asked for must be the bound
 -- actually used, not the nearest double. Confirmed directly against
 -- bin/random before this function existed: `random --seed 1
--- 9007199254740993 9007199254740993 -c 1` printed 9007199254740992 (a
+-- 9007199254740993-9007199254740993 -c 1` printed 9007199254740992 (a
 -- SILENTLY DIFFERENT bound, 2^53+1 collapsed to 2^53), and `random
--- --seed 1 9223372036854775807 9223372036854775807 -c 1` printed
+-- --seed 1 9223372036854775807-9223372036854775807 -c 1` printed
 -- -9223372036854775808 (a NEGATIVE bound for a string with no minus
 -- sign anywhere in it, via a double-to-int64 wraparound one level up).
 -- 2^53 is the standard "safe integer" boundary (matching JS's

@@ -316,15 +316,16 @@ below the ±0.5-scale statistical tolerances in `tests/random_test`.
 A deterministic core fed by `strtod` is not deterministic. Both boundaries are
 closed as part of this work:
 
-- **Input** — `--mean`, `--stddev`, `--alpha` and `--beta-param` parse from
-  decimal strings directly to soft-float by integer accumulation (`fx.parse`).
-  Positional range bounds and `--weighted` weights parse via `fx.parse_int_safe`
+- **Input** — `--mean`, `--stddev`, `--rate`, `--lambda`, `--alpha`, and
+  optional `--beta[=B]` parse from decimal strings directly to soft-float by
+  integer accumulation (`fx.parse`). The two components of the one atomic range
+  literal and `--weighted` weights parse via `fx.parse_int_safe`
   (**AS-BUILT: capped at magnitude 2^53, not "plain i64" as originally
   proposed** -- added after this spec was written, once a downstream
   double-precision conversion path was found to silently corrupt integers
   between 2^53 and i64's own ~9.2×10^18 ceiling; `fx.parse_int` still parses
   the full i64 range for callers that need it and can tolerate that
-  contract, e.g. `--count`). A fractional positional bound is rejected
+  contract, e.g. `--count`). A fractional range bound is rejected
   with an error rather than silently floored. No `tonumber`, no `strtod`.
 - **Output** — values format to decimal by integer division. No `%f`.
   **AS-BUILT / DROPPED: scientific notation for large-magnitude values was
@@ -442,7 +443,7 @@ items, checked off with dates) plus git history already serve as the
 change record in practice. Reconsider if this project ever ships to
 end users who need a user-facing change log independent of git log.
 
-**Tightened:** a fractional positional bound (`random 1.5 6.5`) is now an error.
+**Tightened:** a fractional range bound (`random 1.5..6.5`) is now an error.
 It previously "worked" by accident through double arithmetic, was never
 documented, and has no sensible meaning for an integer range.
 

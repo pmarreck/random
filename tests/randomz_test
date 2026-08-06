@@ -81,7 +81,30 @@ if command -v sixel2png >/dev/null 2>&1 && command -v magick >/dev/null 2>&1; th
 			echo "Sixel decode control FAILED: $chart_name differs from its PNG canvas" >&2
 			fails=$((fails + 1))
 		fi
-	done
+		done
+	view_rgb="$tmp/beta-view.rgb"
+	view_png="$tmp/beta-view.png"
+	view_sixel_png="$tmp/beta-view-sixel.png"
+	if env VIEW_LIB="$root/lib" luajit -e '
+		package.path=os.getenv("VIEW_LIB").."/?.lua;"..package.path
+		local f=require("fixed"); local v=require("distribution_view")
+		local function p(s) local m,e=f.parse(s); return {m,e} end
+		io.write(v.render("beta",p("1"),p("3"),"kitty"))' |
+		base64 -d >"$view_rgb" &&
+	   magick -size 336x144 -depth 8 "rgb:$view_rgb" "$view_png" &&
+	   env VIEW_LIB="$root/lib" luajit -e '
+		package.path=os.getenv("VIEW_LIB").."/?.lua;"..package.path
+		local f=require("fixed"); local v=require("distribution_view")
+		local function p(s) local m,e=f.parse(s); return {m,e} end
+		io.write("\27P0;1;0q",v.render("beta",p("1"),p("3"),"sixel"),"\27\\")' |
+		sixel2png - "$view_sixel_png" &&
+	   magick compare -metric AE -fuzz 1% "$view_png" "$view_sixel_png" null: \
+		>/dev/null 2>&1; then
+		echo "Parameterized Sixel decode control passed"
+	else
+		echo "Parameterized Sixel decode control FAILED" >&2
+		fails=$((fails + 1))
+	fi
 else
 	echo "Skipping independent Sixel decode control (libsixel/ImageMagick unavailable)"
 fi
@@ -148,6 +171,81 @@ compare_help "--utf8-graphics overrides env" utf8 kitty "" --normalized --utf8-g
 compare_help "--kitty overrides env" kitty utf8 "" --help --kitty --normalized
 compare_help "--sixel overrides env" sixel utf8 "" --sixel --normalized --help
 
+compare_view() {
+	local label="$1" expected="$2" requested="$3" tmux_value="$4"
+	shift 4
+	cases=$((cases + 1))
+	local lua_out="$tmp/view-lua.$cases" c_out="$tmp/view-c.$cases"
+	local lua_err="$tmp/view-lua.$cases.err" c_err="$tmp/view-c.$cases.err"
+	if [ -n "$tmux_value" ]; then
+		env RANDOMZ_CHART_TYPE="$requested" TMUX="$tmux_value" \
+			"$lua_cli" "$@" >"$lua_out" 2>"$lua_err"
+		env RANDOMZ_CHART_TYPE="$requested" TMUX="$tmux_value" \
+			"$c_cli" "$@" >"$c_out" 2>"$c_err"
+	else
+		env -u TMUX RANDOMZ_CHART_TYPE="$requested" \
+			"$lua_cli" "$@" >"$lua_out" 2>"$lua_err"
+		env -u TMUX RANDOMZ_CHART_TYPE="$requested" \
+			"$c_cli" "$@" >"$c_out" 2>"$c_err"
+	fi
+	if [ -s "$lua_err" ] || [ -s "$c_err" ] || ! cmp -s "$lua_out" "$c_out"; then
+		echo "randomz view differential FAILED: $label" >&2
+		cmp "$lua_out" "$c_out" >&2 || true
+		fails=$((fails + 1))
+	fi
+	if ! grep -q '^Distribution: ' "$lua_out" || grep -q '^Usage: ' "$lua_out"; then
+		echo "randomz view contract FAILED: $label included the wrong prose" >&2
+		fails=$((fails + 1))
+	fi
+	if [ "$expected" = "utf8" ]; then
+		if ! grep -Fq '⡇' "$lua_out" || grep -Fq $'\033_G' "$lua_out" ||
+		   grep -Fq $'\033P0;1;0q' "$lua_out"; then
+			echo "randomz view framing FAILED: $label did not use UTF-8-only output" >&2
+			fails=$((fails + 1))
+		fi
+	elif [ "$expected" = "sixel" ]; then
+		if ! grep -Fq $'\0337\033P0;1;0q"1;1;336;144#0;2;5;6;9' "$lua_out" ||
+		   ! grep -Fq $'\033\\\0338' "$lua_out"; then
+			echo "randomz view framing FAILED: $label lacks Sixel framing" >&2
+			fails=$((fails + 1))
+		fi
+	elif [ -z "$tmux_value" ]; then
+		if ! grep -Fq $'\033_Ga=T,f=24,s=336,v=144,c=56,r=12,C=1,q=2,m=1;' "$lua_out"; then
+			echo "randomz view framing FAILED: $label lacks direct raw-RGB Kitty framing" >&2
+			fails=$((fails + 1))
+		fi
+	else
+		if ! grep -Fq $'\033Ptmux;\033\033_Ga=T,f=24,s=336,v=144,c=56,r=12,C=1,q=2,m=1;' "$lua_out"; then
+			echo "randomz view framing FAILED: $label lacks forced tmux Kitty framing" >&2
+			fails=$((fails + 1))
+		fi
+	fi
+}
+
+compare_view "normal mean-only" utf8 utf8 "" --normalized --mean=3 --view
+compare_view "exponential rate" utf8 utf8 "" --exponential --rate=2.5 --view
+compare_view "compressed Poisson lambda" utf8 utf8 "" --poisson --lambda=1000 --view
+compare_view "log-normal parameters" utf8 utf8 "" --log-normal --mean=-0.25 --stddev=1.75 --view
+compare_view "beta user example" utf8 utf8 "" --beta=3 --alpha=1 --view
+compare_view "beta reordered with UTF-8 alias" utf8 utf8 "" --alpha 1 --beta 4 --view --utf8
+compare_view "dynamic Kitty" kitty kitty "" --beta=3 --alpha=1 --view
+compare_view "dynamic Sixel" sixel sixel "" --beta=3 --alpha=1 --view
+compare_view "view UTF-8 flag overrides env" utf8 kitty "" --beta --view --utf8-graphics
+compare_view "view Kitty flag overrides env" kitty utf8 "" --beta --kitty --view
+compare_view "view Sixel flag overrides env" sixel utf8 "" --sixel --beta --view
+compare_view "forced view Kitty through tmux" kitty utf8 fake --beta --kitty --view
+
+for cli in "$lua_cli" "$c_cli"; do
+	env RANDOMZ_CHART_TYPE=utf8 "$cli" --beta=3 --alpha=1 --view \
+		>"$tmp/view-equals"
+	env RANDOMZ_CHART_TYPE=utf8 "$cli" --beta 3 --alpha 1 --view \
+		>"$tmp/view-spaces"
+	if ! cmp -s "$tmp/view-equals" "$tmp/view-spaces"; then
+		echo "randomz view syntax FAILED: $cli differs between --option=value and --option value" >&2
+		fails=$((fails + 1))
+	fi
+done
+
 compare_args() {
 	local label="$1"
 	shift
@@ -165,6 +263,25 @@ compare_args() {
 		diff -u <(xxd -p -c 32 <"$lua_out") <(xxd -p -c 32 <"$c_out") >&2 || true
 		if [ "$lua_rc" -ne 0 ]; then sed 's/^/  Lua stderr: /' <"$lua_err" >&2; fi
 		if [ "$c_rc" -ne 0 ]; then sed 's/^/  C stderr: /' <"$c_err" >&2; fi
+		fails=$((fails + 1))
+	fi
+}
+
+compare_failure() {
+	local label="$1"
+	shift
+	cases=$((cases + 1))
+	local lua_out="$tmp/fail-lua.$cases" c_out="$tmp/fail-c.$cases"
+	local lua_err="$tmp/fail-lua.$cases.err" c_err="$tmp/fail-c.$cases.err"
+	"$lua_cli" "$@" >"$lua_out" 2>"$lua_err"
+	local lua_rc=$?
+	"$c_cli" "$@" >"$c_out" 2>"$c_err"
+	local c_rc=$?
+	if [ "$lua_rc" -eq 0 ] || [ "$c_rc" -eq 0 ] || [ "$lua_rc" -ne "$c_rc" ] ||
+	   ! cmp -s "$lua_out" "$c_out" || ! cmp -s "$lua_err" "$c_err"; then
+		echo "randomz failure differential FAILED: $label (Lua=$lua_rc C=$c_rc)" >&2
+		echo "  args: $*" >&2
+		diff -u "$lua_err" "$c_err" >&2 || true
 		fails=$((fails + 1))
 	fi
 }
@@ -187,29 +304,40 @@ compare_stdin() {
 }
 
 echo "Testing exact LuaJIT-vs-C output over the seed/flag matrix..."
+compare_failure "legacy lone endpoint" 10
+compare_failure "legacy endpoint pair" 10 20
+compare_failure "empty exclusive range" 1...1
+compare_failure "range on beta" --beta 3 0..9
+compare_failure "range on custom normal" --normalized --mean 5 0..9
+compare_failure "nonpositive beta parameter" --beta=0
+compare_failure "removed beta-param spelling" --beta-param 3
 max_seed=0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 for seed in 0 1 42 "$max_seed"; do
 	compare_args "raw XOF boundaries, seed=$seed" -d --seed "$seed" -b -c 131
 	compare_args "raw XOF hex, seed=$seed" -d --seed "$seed" -b --hex -c 65
 	compare_args "raw XOF base64, seed=$seed" -d --seed "$seed" -b --base64 -c 65
-	compare_args "narrow range, seed=$seed" -d --seed "$seed" -c 32 -17 981
-	compare_args "wide range, seed=$seed" -d --seed "$seed" -c 32 -4000000000 4000000000
-	compare_args "power-of-two wide range, seed=$seed" -d --seed "$seed" -c 32 0 1099511627775
-	compare_args "normal integer, seed=$seed" -d --seed "$seed" -n -c 32 -18 0
+	compare_args "narrow hyphen range, seed=$seed" -d --seed "$seed" -c 32 -17-981
+	compare_args "wide dot range, seed=$seed" -d --seed "$seed" -c 32 -4000000000..4000000000
+	compare_args "power-of-two wide range, seed=$seed" -d --seed "$seed" -c 32 0..1099511627775
+	compare_args "normal exclusive range, seed=$seed" -d --seed "$seed" -n -c 32 -18...1
 	compare_args "normal fixed, seed=$seed" -d --seed "$seed" -n --mean -7.25 --stddev 2.5 -c 32
+	compare_args "normal mean-only default stddev, seed=$seed" -d --seed "$seed" -n --mean=5 -c 32
+	compare_args "normal stddev-only default mean, seed=$seed" -d --seed "$seed" -n --stddev=2 -c 32
 	compare_args "exponential, seed=$seed" -d --seed "$seed" --exponential -c 32
+	compare_args "exponential custom rate, seed=$seed" -d --seed "$seed" --exponential --rate=4 -c 32
 	compare_args "poisson, seed=$seed" -d --seed "$seed" --poisson --mean 5.5 -c 32
+	compare_args "poisson lambda alias, seed=$seed" -d --seed "$seed" --poisson --lambda=5.5 -c 32
 	compare_args "log-normal, seed=$seed" -d --seed "$seed" --log-normal --mean -0.25 --stddev 1.75 -c 32
-	compare_args "beta, seed=$seed" -d --seed "$seed" --beta --alpha 2.5 --beta-param 7.75 -c 32
-	compare_args "beta alpha below one, seed=$seed" -d --seed "$seed" --beta --alpha 0.5 --beta-param 2 -c 32
-	compare_args "beta both below one, seed=$seed" -d --seed "$seed" --beta --alpha 0.5 --beta-param 0.75 -c 32
-	compare_args "ranged binary, seed=$seed" -d --seed "$seed" -b --hex -c 65 64 192
-	compare_args "normal binary, seed=$seed" -d --seed "$seed" -b --hex -n -c 65 0 255
+	compare_args "beta, seed=$seed" -d --seed "$seed" --beta 7.75 --alpha 2.5 -c 32
+	compare_args "beta alpha below one, seed=$seed" -d --seed "$seed" --beta 2 --alpha 0.5 -c 32
+	compare_args "beta both below one, seed=$seed" -d --seed "$seed" --beta 0.75 --alpha 0.5 -c 32
+	compare_args "ranged binary, seed=$seed" -d --seed "$seed" -b --hex -c 65 64-192
+	compare_args "normal binary, seed=$seed" -d --seed "$seed" -b --hex -n -c 65 0...256
 	compare_args "exponential binary, seed=$seed" -d --seed "$seed" -b --hex --exponential -c 65
 	compare_args "poisson binary, seed=$seed" -d --seed "$seed" -b --hex --poisson --mean 5 -c 65
 	compare_args "log-normal binary, seed=$seed" -d --seed "$seed" -b --hex --log-normal -c 65
-	compare_args "beta binary, seed=$seed" -d --seed "$seed" -b --hex --beta --alpha 2 --beta-param 5 -c 65
-	compare_args "delimiter, seed=$seed" -d --seed "$seed" --delimiter '::' -c 17 0 100
+	compare_args "beta binary, seed=$seed" -d --seed "$seed" -b --hex --beta 5 --alpha 2 -c 65
+	compare_args "delimiter, seed=$seed" -d --seed "$seed" --delimiter '::' -c 17 0..100
 done
 
 stdin_lines=$'alpha\nbeta\ngamma\ndelta\nepsilon\n'
