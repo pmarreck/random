@@ -106,7 +106,7 @@
         # External tools the executable shells out to / the test suite needs.
         testTools = with pkgs; [
           bashInteractive coreutils gnugrep gawk bc xxd binutils gnutar
-          stdenv.cc libsixel imagemagick
+          stdenv.cc libsixel imagemagick nodejs wasm-tools
         ];
 
         # Zig 0.16 for the port (docs/plans/2026-08-02-zig-port.md). Pinned to
@@ -139,6 +139,7 @@
             cp lib/*.lua $out/lib/
             cp tests/random_test tests/cli_test_setup.sh $out/tests/
             cp zig-out/bin/randomz $out/bin/randomz
+            cp zig-out/bin/randomz-wasi.wasm $out/lib/randomz-wasi.wasm
             cp zig-out/lib/librandomz.a $out/lib/
             cp zig-out/include/randomz.h $out/include/
             cp LICENSE $out/share/licenses/random/LICENSE
@@ -242,8 +243,10 @@
           '';
 
         checks.package-smoke = pkgs.runCommand "random-package-smoke"
-          { nativeBuildInputs = [ pkgs.stdenv.cc ]; } ''
+          { nativeBuildInputs = [ pkgs.stdenv.cc pkgs.wasm-tools ]; } ''
             test -s ${random}/share/licenses/random/LICENSE
+            test -s ${random}/lib/randomz-wasi.wasm
+            wasm-tools validate ${random}/lib/randomz-wasi.wasm
             cc -std=c11 -Wall -Wextra -Werror -I${random}/include \
               ${./tests/randomz_abi_test.c} ${random}/lib/librandomz.a \
               -o randomz-abi-test

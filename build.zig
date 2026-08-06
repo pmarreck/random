@@ -111,6 +111,44 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(driver);
 
+    // A host-neutral WASI module: the deterministic C ABI remains the same,
+    // while randomz_wasi_fill obtains nondeterministic bytes through WASI's
+    // required random_get import. It is built independently of the requested
+    // native/cross target so every package includes one portable .wasm artifact.
+    const wasi_target = b.resolveTargetQuery(.{
+        .cpu_arch = .wasm32,
+        .os_tag = .wasi,
+    });
+    const wasi_fixed_mod = b.addModule("fixed-wasi", .{
+        .root_source_file = b.path("src/fixed.zig"),
+        .target = wasi_target,
+        .optimize = optimize,
+    });
+    const wasi_randomz_mod = b.createModule(.{
+        .root_source_file = b.path("src/randomz.zig"),
+        .target = wasi_target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "fixed", .module = wasi_fixed_mod },
+        },
+    });
+    const wasi_adapter_mod = b.createModule(.{
+        .root_source_file = b.path("src/randomz_wasi.zig"),
+        .target = wasi_target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "randomz", .module = wasi_randomz_mod },
+        },
+    });
+    const wasi = b.addExecutable(.{
+        .name = "randomz-wasi",
+        .root_module = wasi_adapter_mod,
+    });
+    wasi.entry = .disabled;
+    wasi.export_memory = true;
+    wasi.rdynamic = true;
+    b.installArtifact(wasi);
+
     const unit_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/fixed.zig"),

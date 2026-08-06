@@ -143,6 +143,22 @@
 - [x] Mechatron Prime CI targets for the correctness, statistical,
       installed-package, ReleaseFast cross-architecture, and Windows x86_64
       runtime gates
+- [x] Select explicit OS entropy backends by numeric truth value: Linux uses
+      `getrandom`, Apple/FreeBSD/OpenBSD/NetBSD use `arc4random_buf`, and
+      Windows uses `BCryptGenRandom`. Cross-compile the C/FFI CLI for both
+      x86_64 and aarch64 on the three BSD targets and Windows, with pre-link
+      symbol-provenance controls and a defined-as-zero regression for the
+      presence-vs-truth bug class. (2026-08-06 EDT)
+- [x] Ship `randomz-wasi.wasm` as a WASI Preview 1 reactor. Its deterministic
+      ABI is checked byte-for-byte against LuaJIT and its true-random adapter
+      uses host `random_get`; an injected host failure must return an entropy
+      error. (2026-08-06 EDT)
+- [ ] Produce and execute native Solaris/illumos and DragonFly artifacts. Their
+      source selectors are implemented (`getrandom` for Solaris/illumos,
+      `arc4random_buf` for DragonFly) and preprocessing controls pin them, but
+      Zig 0.16 currently provides neither a usable illumos/DragonFly libc
+      cross-sysroot nor a successful full illumos build. Do not claim runtime
+      support until native or cross execution proves it.
 
 ## Approved directives (Peter, 2026-08-04)
 
@@ -217,6 +233,26 @@ recorded on 2026-08-04).
 - [ ] Implement each mode LuaJIT-first, freeze its byte-consumption contract,
       port it through the Zig/C ABI, run the shared CLI suite and `./stats`
       against both implementations, and add CLI-level differential vectors.
+
+## Post-shipment physical entropy
+
+- [ ] Add interactive `--dice MdN` entropy supplementation using the contract
+      in `docs/specs/2026-08-06-dice-entropy-design.md`. Default mode combines
+      32 OS-CSPRNG bytes and the canonically framed roll sequence through a
+      domain-separated BLAKE3 derivation, prints the resulting replay seed,
+      and fails if the OS source fails rather than silently downgrading.
+- [ ] Support ordered sequential entry (or a color/position order chosen
+      before rolling) as the recommended mode. Offer explicit unordered entry
+      only by sorting and reporting its lower conservative min-entropy; never
+      credit it with the ordered `M*log2(N)` estimate.
+- [ ] Keep secret roll transcripts out of argv, shell history, and process
+      listings: prompt through the controlling terminal, with an explicit
+      file source for automation/tests. Require exact count/range validation,
+      predeclared cocked/off-table reroll rules, and no selective rerolls.
+- [ ] Make dice-only operation a conspicuous explicit mode, require at least
+      256 bits of conservative nominal min-entropy, and distinguish its framed
+      input from OS-plus-dice mode. Hashing and the DRBG KDF must never be
+      described as creating entropy.
 
 ## Inbox-driven (additive, after current Zig-port task)
 

@@ -2,6 +2,7 @@
 
 #include "randomz.h"
 #include "distribution_view.h"
+#include "entropy_backend.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -11,21 +12,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if defined(_WIN32)
+#if RANDOMZ_ENTROPY_BACKEND_BCRYPT
 #include <windows.h>
 #include <bcrypt.h>
 #include <fcntl.h>
 #include <io.h>
 #include <process.h>
-#elif defined(__linux__)
-#include <sys/random.h>
-#include <sys/wait.h>
-#include <unistd.h>
-#elif defined(__APPLE__)
-#include <sys/random.h>
-#include <sys/wait.h>
-#include <unistd.h>
 #else
+#if RANDOMZ_ENTROPY_BACKEND_GETRANDOM
+#include <sys/random.h>
+#endif
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
@@ -420,7 +416,7 @@ static void print_help(distribution dist, chart_renderer renderer)
 	puts("      --base64        Output as base64 (for binary)");
 	puts("      --seed N|0xHEX  Set unsigned 256-bit integer seed (implies -d)");
 	puts("      --random-source PATH  Read entropy from PATH instead of the OS");
-	puts("      --no-wait       Fail rather than wait for Linux getrandom initialization");
+	puts("      --no-wait       Use nonblocking getrandom; fail if the pool is not ready");
 	puts("      --kitty         Force Kitty graphics for a distribution help chart");
 	puts("      --sixel         Force Sixel graphics for a distribution help chart");
 	puts("      --utf8           Force the UTF-8 Braille distribution chart");
@@ -966,10 +962,10 @@ static int entropy_open(entropy_source *source, const char *path, bool no_wait)
 			return 1;
 		}
 	}
-#if !defined(__linux__)
+#if !RANDOMZ_ENTROPY_BACKEND_GETRANDOM
 	if (no_wait && path == NULL) {
 		snprintf(source->error, sizeof(source->error),
-			"--no-wait is supported only by Linux getrandom");
+			"--no-wait is supported only by a getrandom backend");
 		return 1;
 	}
 #endif
@@ -996,7 +992,7 @@ static int entropy_file_fill(entropy_source *source, uint8_t *out, size_t count)
 	return 0;
 }
 
-#if !defined(_WIN32)
+#if RANDOMZ_ENTROPY_BACKEND_GETRANDOM || RANDOMZ_ENTROPY_BACKEND_GETENTROPY
 static int entropy_device_fallback(entropy_source *source, uint8_t *out, size_t count)
 {
 	if (source->file == NULL) source->file = fopen("/dev/urandom", "rb");
@@ -1015,7 +1011,7 @@ static int entropy_fill(void *context, uint8_t *out, size_t count)
 	if (source->explicit_file) return entropy_file_fill(source, out, count);
 	if (count == 0) return 0;
 
-#if defined(_WIN32)
+#if RANDOMZ_ENTROPY_BACKEND_BCRYPT
 	NTSTATUS status = BCryptGenRandom(NULL, out, (ULONG)count,
 		BCRYPT_USE_SYSTEM_PREFERRED_RNG);
 	if (status != 0) {
@@ -1024,7 +1020,10 @@ static int entropy_fill(void *context, uint8_t *out, size_t count)
 		return 1;
 	}
 	return 0;
-#elif defined(__linux__)
+#elif RANDOMZ_ENTROPY_BACKEND_ARC4RANDOM
+	arc4random_buf(out, count);
+	return 0;
+#elif RANDOMZ_ENTROPY_BACKEND_GETRANDOM
 	size_t offset = 0;
 	while (offset < count) {
 		ssize_t got = getrandom(out + offset, count - offset,
@@ -1038,7 +1037,14 @@ static int entropy_fill(void *context, uint8_t *out, size_t count)
 			return 1;
 		}
 		if (errno == EINTR) continue;
-		if (errno == ENOSYS) return entropy_device_fallback(source, out + offset, count - offset);
+		if (errno == ENOSYS) {
+			if (source->no_wait) {
+				snprintf(source->error, sizeof(source->error),
+					"getrandom is unavailable and --no-wait was requested");
+				return 1;
+			}
+			return entropy_device_fallback(source, out + offset, count - offset);
+		}
 		if (source->no_wait && errno == EAGAIN) {
 			snprintf(source->error, sizeof(source->error),
 				"pool is not initialized and --no-wait was requested");
@@ -1049,7 +1055,7 @@ static int entropy_fill(void *context, uint8_t *out, size_t count)
 		return 1;
 	}
 	return 0;
-#else
+#elif RANDOMZ_ENTROPY_BACKEND_GETENTROPY
 	size_t offset = 0;
 	while (offset < count) {
 		size_t part = count - offset;
@@ -1065,6 +1071,8 @@ static int entropy_fill(void *context, uint8_t *out, size_t count)
 		return 1;
 	}
 	return 0;
+#else
+#error "unhandled randomz entropy backend"
 #endif
 }
 

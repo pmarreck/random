@@ -11,11 +11,17 @@ targets=(
 	x86_64-linux-musl
 	aarch64-linux-musl
 	aarch64-macos
+	x86_64-freebsd
+	aarch64-freebsd
+	x86_64-openbsd
+	aarch64-openbsd
+	x86_64-netbsd
+	aarch64-netbsd
 	x86_64-windows-gnu
 	aarch64-windows-gnu
 )
-required_target_manifest="x86_64-linux-musl aarch64-linux-musl aarch64-macos x86_64-windows-gnu aarch64-windows-gnu"
-if [ "${targets[*]}" != "$required_target_manifest" ] || [ "${#targets[@]}" -ne 5 ]; then
+required_target_manifest="x86_64-linux-musl aarch64-linux-musl aarch64-macos x86_64-freebsd aarch64-freebsd x86_64-openbsd aarch64-openbsd x86_64-netbsd aarch64-netbsd x86_64-windows-gnu aarch64-windows-gnu"
+if [ "${targets[*]}" != "$required_target_manifest" ] || [ "${#targets[@]}" -ne 11 ]; then
 	echo "randomz cross-compile target manifest changed or shrank" >&2
 	exit 1
 fi

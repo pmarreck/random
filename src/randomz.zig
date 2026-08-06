@@ -35,7 +35,7 @@ pub const FillFn = *const fn (
     count: usize,
 ) callconv(.c) c_int;
 
-const Status = enum(c_int) {
+pub const Status = enum(c_int) {
     ok = 0,
     invalid_argument = 1,
     entropy_error = 2,

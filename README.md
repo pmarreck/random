@@ -35,6 +35,8 @@ mode in either family.
 - **Reproducible across platforms:** seeded streams are bit-identical across machines, operating systems and CPU architectures — verified on x86_64-glibc, x86_64-musl, aarch64-Linux and native aarch64-macOS — because all math runs on an integer-only kernel instead of the platform's libm — see [Determinism](#determinism) below
 - **Embeddable core:** `librandomz.a` plus `randomz.h`; callers own DRBG state
   and provide entropy through a callback, so the Zig core performs no I/O
+- **WASM build:** `randomz-wasi.wasm` exports the same deterministic core plus
+  a fail-closed adapter to the host's WASI `random_get`
 - **Small runtime surface:** LuaJIT for the oracle CLI; libc only for `randomz`
 
 ### Determinism
@@ -164,11 +166,26 @@ common Unix command-line tools used by the suite.
 
 ### Entropy and persistence
 
-True-random mode uses `getrandom` on Linux, `getentropy` where available, and
-`BCryptGenRandom` on Windows, with an exact-read `/dev/urandom` fallback on
-Unix. Any short read or source error fails closed. `--random-source PATH`
-selects an explicit byte source, chiefly for deterministic testing;
-`--no-wait` requests Linux `GRND_NONBLOCK` behavior.
+True-random mode uses `getrandom` on Linux, Solaris, and illumos;
+`arc4random_buf` on Apple and the BSDs; `BCryptGenRandom` on Windows; and
+`getentropy` on other Unix platforms that provide it. An exact-read
+`/dev/urandom` fallback is used only when the selected Unix kernel API reports
+that it is unavailable. Any other source error, policy denial, or short read
+fails closed. `--random-source PATH` selects an explicit byte source, chiefly
+for deterministic testing; `--no-wait` requests `GRND_NONBLOCK` on a
+`getrandom` backend.
+
+The Apple, FreeBSD, OpenBSD, and NetBSD C frontends are cross-compile gated on
+x86_64 and aarch64. Solaris/illumos and DragonFly have pinned source selectors,
+but Zig 0.16 currently lacks usable cross-libc support for their full artifacts;
+native runtime validation remains pending and support is not yet claimed.
+
+Backend flags are normalized to numeric `0`/`1` values and tested by value,
+never by macro presence. The build rejects zero or multiple selected backends;
+the test suite additionally defines disabled backends as `0` and proves they
+remain false. Object-symbol checks pin each target to its intended OS API, and
+a fault-injection test proves an OS policy denial cannot become a weak or
+deterministic fallback.
 
 The CLIs never persist deterministic state. Reusing a seed restarts the same
 stream; omitting it prints a replayable seed. The LuaJIT CLI uses
@@ -199,6 +216,15 @@ C CLI and static library, run `zig build -Doptimize=ReleaseFast` and use
 `zig-out/bin/randomz`, `zig-out/include/randomz.h`, and
 `zig-out/lib/librandomz.a`. `nrandomz` and `drandomz` are installed aliases;
 the Nix package installs them as symlinks.
+
+The same build emits `zig-out/bin/randomz-wasi.wasm`, a WASI Preview 1 reactor
+module. It exports memory, the public deterministic `randomz_*` ABI, and
+`randomz_wasi_fill(ptr, len)`, which returns `RANDOMZ_OK` on success and
+`RANDOMZ_ENTROPY_ERROR` if the host's `random_get` fails. A browser can host
+the module through a WASI shim whose randomness implementation calls Web
+Crypto `crypto.getRandomValues`; the module never substitutes `Math.random`
+or an internal deterministic fallback. The Nix package installs the module as
+`lib/randomz-wasi.wasm`.
 
 ### C API quick start
 

@@ -22,9 +22,16 @@ local distribution_view = require("distribution_view")
 local argv = arg or {}
 
 -- ===== FFI declarations =====
+-- Solaris declares getrandom() with an int result; Linux uses ssize_t. Giving
+-- LuaJIT the platform's actual ABI matters when -1 is returned.
+if jit.os == "POSIX" then
+	ffi.cdef[[int getrandom(void *buf, size_t buflen, unsigned int flags);]]
+else
+	ffi.cdef[[long getrandom(void *buf, size_t buflen, unsigned int flags);]]
+end
 ffi.cdef[[
-	long getrandom(void *buf, size_t buflen, unsigned int flags);
 	int getentropy(void *buffer, size_t length);
+	void arc4random_buf(void *buffer, size_t length);
 	int _setmode(int fd, int mode);
 	int isatty(int fd);
 	int _isatty(int fd);
@@ -322,6 +329,16 @@ local function getentropy_reader()
 	end
 end
 
+local function arc4random_reader()
+	local ok, fill = pcall(function() return ffi.C.arc4random_buf end)
+	if not ok then return nil end
+	return function(count)
+		local buffer = ffi.new("uint8_t[?]", count)
+		fill(buffer, count)
+		return ffi.string(buffer, count)
+	end
+end
+
 local function windows_entropy_reader()
 	local ok, bcrypt = pcall(ffi.load, "bcrypt")
 	if not ok then return nil end
@@ -337,8 +354,9 @@ end
 
 local function make_entropy_reader(source_path, no_wait)
 	if source_path then return exact_file_reader(source_path) end
-	if no_wait and jit.os ~= "Linux" then
-		entropy_fatal("--no-wait is supported only by Linux getrandom")
+	local uses_getrandom = jit.os == "Linux" or jit.os == "POSIX"
+	if no_wait and not uses_getrandom then
+		entropy_fatal("--no-wait is supported only by a getrandom backend")
 	end
 
 	if jit.os == "Windows" then
@@ -347,13 +365,22 @@ local function make_entropy_reader(source_path, no_wait)
 		entropy_fatal("BCryptGenRandom is unavailable")
 	end
 
-	local primary = jit.os == "Linux" and getrandom_reader(no_wait) or getentropy_reader()
-	local fallback = jit.os == "Linux" and getentropy_reader() or nil
+	if jit.os == "BSD" or jit.os == "OSX" then
+		local reader = arc4random_reader()
+		if reader then return reader end
+		-- Older/nonstandard libc: retain the fail-closed kernel API fallback.
+	end
+
+	local primary = uses_getrandom and getrandom_reader(no_wait) or getentropy_reader()
+	local fallback = uses_getrandom and getentropy_reader() or nil
 	local device
 	return function(count)
 		local bytes, status = primary(count)
 		if bytes then return bytes end
 		if status ~= "unavailable" then entropy_fatal(tostring(status)) end
+		if no_wait then
+			entropy_fatal("getrandom is unavailable and --no-wait was requested")
+		end
 		if fallback then
 			bytes, status = fallback(count)
 			if bytes then return bytes end
@@ -892,7 +919,7 @@ local function print_help(invocation, distribution)
 	print("      --base64        Output as base64 (for binary)")
 	print("      --seed N|0xHEX  Set unsigned 256-bit integer seed (implies -d)")
 	print("      --random-source PATH  Read entropy from PATH instead of the OS")
-	print("      --no-wait       Fail rather than wait for Linux getrandom initialization")
+	print("      --no-wait       Use nonblocking getrandom; fail if the pool is not ready")
 	print("      --kitty         Force Kitty graphics for a distribution help chart")
 	print("      --sixel         Force Sixel graphics for a distribution help chart")
 	print("      --utf8           Force the UTF-8 Braille distribution chart")

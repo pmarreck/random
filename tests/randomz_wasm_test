@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Validate the shipped WASI reactor, its entropy import, and its deterministic
+# identity against the LuaJIT oracle.
+set -u
+set -o pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+wasm="$root/zig-out/bin/randomz-wasi.wasm"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/randomz-wasm.XXXXXX")" || exit 1
+trap 'rm -rf -- "$tmp"' EXIT
+
+zig build -Doptimize=ReleaseFast >/dev/null || exit 1
+wasm-tools validate "$wasm" || exit 1
+wasm-tools print "$wasm" >"$tmp/randomz.wat" || exit 1
+
+fails=0
+if ! grep -Fq '(import "wasi_snapshot_preview1" "random_get"' "$tmp/randomz.wat"; then
+	echo "WASM test FAILED: WASI random_get is not imported" >&2
+	fails=$((fails + 1))
+fi
+for export_name in memory randomz_drbg_init randomz_drbg_fill randomz_wasi_fill; do
+	if ! grep -Fq "(export \"$export_name\"" "$tmp/randomz.wat"; then
+		echo "WASM test FAILED: missing export $export_name" >&2
+		fails=$((fails + 1))
+	fi
+done
+
+wasm_hex=$(NODE_NO_WARNINGS=1 node "$root/tests/wasm_probe.mjs" "$wasm")
+wasm_rc=$?
+lua_hex=$("$root/bin/random" -d --seed 42 --binaryoutput --count 64 | xxd -p -c 256)
+lua_rc=$?
+if [ "$wasm_rc" -ne 0 ] || [ "$lua_rc" -ne 0 ] || [ "$wasm_hex" != "$lua_hex" ]; then
+	echo "WASM test FAILED: deterministic stream differs from LuaJIT oracle" >&2
+	echo "  wasm=$wasm_hex" >&2
+	echo "  lua =$lua_hex" >&2
+	fails=$((fails + 1))
+fi
+
+if [ "$fails" -ne 0 ]; then
+	echo "randomz WASM test FAILED: $fails failure(s)" >&2
+	exit 1
+fi
+echo "randomz WASM test PASSED: validated WASI CSPRNG and 64-byte oracle stream"

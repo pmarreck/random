@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+# Compile the C entropy boundary for each supported platform and inspect the
+# object before Zig/libc can add their own RNG references. This is a provenance
+# gate: random-looking output cannot prove that the intended OS API was linked.
+set -u
+set -o pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/randomz-entropy-backends.XXXXXX")" || exit 1
+trap 'rm -rf -- "$tmp"' EXIT
+
+fails=0
+cases=0
+
+check_object() {
+	local target="$1" expected="$2"
+	shift 2
+	local object="$tmp/${target}.o" symbols="$tmp/${target}.symbols"
+	cases=$((cases + 1))
+	if ! zig cc -target "$target" -std=c11 -I"$root/include" -I"$root/src" \
+		-c "$root/src/randomz_cli.c" -o "$object" >"$tmp/${target}.log" 2>&1; then
+		echo "entropy backend FAILED: $target did not compile" >&2
+		sed 's/^/    /' <"$tmp/${target}.log" >&2
+		fails=$((fails + 1))
+		return
+	fi
+	if ! nm -u "$object" >"$symbols" 2>/dev/null; then
+		# GNU nm on Linux cannot read Mach-O, but the undefined symbol names remain
+		# in its string table. The C object contains no linked Zig/libc runtime.
+		strings "$object" >"$symbols"
+	fi
+	if ! grep -Eq "(^|[_[:space:]])${expected}$" "$symbols"; then
+		echo "entropy backend FAILED: $target does not reference $expected" >&2
+		sed 's/^/    /' <"$symbols" >&2
+		fails=$((fails + 1))
+	fi
+	local forbidden
+	for forbidden in "$@"; do
+		if grep -Eq "(^|[_[:space:]])${forbidden}$" "$symbols"; then
+			echo "entropy backend FAILED: $target unexpectedly references $forbidden" >&2
+			fails=$((fails + 1))
+		fi
+	done
+}
+
+check_object x86_64-linux-musl getrandom arc4random_buf BCryptGenRandom getentropy
+check_object aarch64-macos arc4random_buf getrandom BCryptGenRandom getentropy
+check_object x86_64-openbsd arc4random_buf getrandom BCryptGenRandom getentropy
+check_object x86_64-freebsd arc4random_buf getrandom BCryptGenRandom getentropy
+check_object x86_64-netbsd arc4random_buf getrandom BCryptGenRandom getentropy
+check_object x86_64-windows-gnu BCryptGenRandom getrandom arc4random_buf getentropy
+
+# A macro being defined is not the same as its value being true.  This
+# executable poisons every non-selected backend with an explicit value of 0;
+# it must still select exactly the one numerically true Linux backend.
+cases=$((cases + 1))
+if ! cc -std=c11 -Wall -Wextra -Werror -I"$root/src" \
+	"$root/tests/entropy_false_zero.c" -o "$tmp/entropy-false-zero" ||
+	! "$tmp/entropy-false-zero"; then
+	echo "entropy backend FAILED: a defined-as-zero feature evaluated true" >&2
+	fails=$((fails + 1))
+fi
+
+# Zig 0.16 cannot currently provide illumos or DragonFly libc sysroots. Bind
+# their source-level selectors anyway so future native/cross toolchains cannot
+# silently select the generic fallback.
+for selector in '__sun:getrandom' '__illumos__:getrandom' '__DragonFly__:arc4random'; do
+	macro="${selector%%:*}"
+	expected="${selector#*:}"
+	cases=$((cases + 1))
+	if [ "$expected" = getrandom ]; then
+		expected_define='RANDOMZ_ENTROPY_BACKEND_GETRANDOM'
+	else
+		expected_define='RANDOMZ_ENTROPY_BACKEND_ARC4RANDOM'
+	fi
+	if ! cc -dM -E -U__linux__ -D"$macro" -include "$root/src/entropy_backend.h" \
+		-x c /dev/null 2>"$tmp/${macro}.log" |
+		grep -Eq "^#define ${expected_define} 1$"; then
+		echo "entropy backend FAILED: $macro selector is not $expected" >&2
+		sed 's/^/    /' <"$tmp/${macro}.log" >&2
+		fails=$((fails + 1))
+	fi
+done
+
+# Prove the two native Linux frontends fail closed when the selected kernel API
+# is present but denied. Randomness statistics cannot establish this property.
+if [ "$(uname -s)" = Linux ]; then
+	cases=$((cases + 1))
+	if ! cc -std=c11 -Wall -Wextra -Werror -shared -fPIC \
+		"$root/tests/getrandom_fail.c" -o "$tmp/getrandom-fail.so" ||
+		! (cd "$root" && zig build -Doptimize=ReleaseFast) >/dev/null; then
+		echo "entropy backend FAILED: could not build the fault-injection control" >&2
+		fails=$((fails + 1))
+	else
+		for frontend in "$root/bin/random" "$root/zig-out/bin/randomz"; do
+			if LD_PRELOAD="$tmp/getrandom-fail.so" "$frontend" --true-random \
+				--binaryoutput --count 1 >"$tmp/fault.out" 2>"$tmp/fault.err"; then
+				echo "entropy backend FAILED: $(basename "$frontend") accepted denied kernel entropy" >&2
+				fails=$((fails + 1))
+			elif ! grep -Fq "getrandom failed" "$tmp/fault.err"; then
+				echo "entropy backend FAILED: $(basename "$frontend") hid the kernel entropy error" >&2
+				sed 's/^/    /' <"$tmp/fault.err" >&2
+				fails=$((fails + 1))
+			fi
+		done
+	fi
+fi
+
+if [ "$fails" -ne 0 ]; then
+	echo "entropy backend test FAILED: $fails failure(s) across $cases cases" >&2
+	exit 1
+fi
+echo "entropy backend test PASSED: $cases platform selections"
