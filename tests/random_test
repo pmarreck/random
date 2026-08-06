@@ -298,6 +298,14 @@ test_random() {
 		echo "✗ Legacy one/two-endpoint positional range grammar was accepted"
 		(( fails++ ))
 	fi
+	local unknown_option_output unknown_option_status
+	unknown_option_output=$(random --heop 2>&1)
+	unknown_option_status=$?
+	if [ "$unknown_option_status" -eq 0 ] ||
+	   [ "$unknown_option_output" != 'Error: unknown option: --heop' ]; then
+		echo "✗ Unknown long option was not classified as an option: $unknown_option_output"
+		(( fails++ ))
+	fi
 	local malformed_range
 	for malformed_range in '1...' '...2' '1...1' '2...1' '1..2..3' '1.5..2'; do
 		if random "$malformed_range" >/dev/null 2>&1; then

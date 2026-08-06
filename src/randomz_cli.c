@@ -834,6 +834,10 @@ static int parse_arguments(int argc, char **argv, options *opts)
 			opts->alpha_set = true;
 			opts->alpha_text = value;
 		} else {
+			if (strncmp(arg, "--", 2) == 0) {
+				fprintf(stderr, "Error: unknown option: %s\n", arg);
+				return 1;
+			}
 			if (positional_count == 0) range_literal = arg;
 			positional_count++;
 		}

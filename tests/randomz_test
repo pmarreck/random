@@ -311,6 +311,7 @@ compare_failure "range on beta" --beta 3 0..9
 compare_failure "range on custom normal" --normalized --mean 5 0..9
 compare_failure "nonpositive beta parameter" --beta=0
 compare_failure "removed beta-param spelling" --beta-param 3
+compare_failure "unknown long option" --heop
 max_seed=0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 for seed in 0 1 42 "$max_seed"; do
 	compare_args "raw XOF boundaries, seed=$seed" -d --seed "$seed" -b -c 131

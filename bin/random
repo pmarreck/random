@@ -1239,6 +1239,10 @@ local function parse_args()
 			options.alpha = { am, ae }
 			options.alpha_text = value
 		else
+			if arg_val:sub(1, 2) == "--" then
+				stderr_write("Error: unknown option: " .. arg_val .. "\n")
+				os.exit(1)
+			end
 			table.insert(positionals, arg_val)
 		end
 		i = i + 1
