@@ -1,5 +1,5 @@
 {
-  description = "random — matching LuaJIT and Zig/C random CLIs (BLAKE3 DRBG, OS entropy, alternate distributions)";
+  description = "Cross-platform-identical deterministic CSPRNG and OS-entropy random CLI with alternate distributions";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -156,7 +156,7 @@
             runHook postInstall
           '';
           meta = with pkgs.lib; {
-            description = "Cross-platform-identical random CLIs in LuaJIT and Zig/C";
+            description = "Cross-platform-identical CSPRNG CLIs in LuaJIT and Zig/C";
             license = licenses.mit;
             platforms = platforms.unix;
             mainProgram = "random";

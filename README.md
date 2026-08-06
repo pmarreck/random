@@ -2,13 +2,18 @@
 
 [![Mechatron Prime CI](https://img.shields.io/endpoint?url=https%3A%2F%2Fthelio-nixos.tail66c90.ts.net%2Fbadges%2Frandom.json&style=for-the-badge)](https://thelio-nixos.tail66c90.ts.net/mechatron-prime/)
 
-A unified command-line random number generator with matching implementations:
-the original [LuaJIT](https://luajit.org/) oracle and a Zig core exposed through
-a public C ABI, driven by a C CLI that dogfoods that ABI.
-One small program that covers the cases you usually reach for several tools to do:
-multiple statistical distributions, both **true** randomness (the OS CSPRNG) and
-**reproducible** randomness (a seeded BLAKE3 keyed XOF), stdin operations (choose/shuffle/weighted),
-and several output encodings.
+`random` is a cryptographically secure command-line generator built around an
+unusual guarantee: given the same seed and arguments, it emits bit-identical
+output across supported operating systems and CPU architectures—including for
+normal, exponential, Poisson, log-normal, and beta distributions. True-random
+mode instead draws fresh entropy from the operating system CSPRNG and is
+intentionally not reproducible.
+
+The project ships matching implementations: the original
+[LuaJIT](https://luajit.org/) oracle and a Zig core exposed through a public C
+ABI, driven by a C CLI that dogfoods that ABI. A seeded BLAKE3 keyed XOF powers
+cross-platform-identical deterministic streams; stdin operations and multiple
+output encodings make the same small tool useful beyond number generation.
 
 It ships two equivalent command families: `random`/`nrandom`/`drandom` use the
 LuaJIT implementation, while `randomz`/`nrandomz`/`drandomz` use the C frontend
@@ -18,7 +23,7 @@ mode in either family.
 ## Features
 
 - **Distributions:** uniform (default), normal (Box-Muller), exponential, Poisson, log-normal, beta
-- **Two sources:** the platform OS CSPRNG, or a deterministic BLAKE3 keyed XOF (`-d`/`--seed`)
+- **Cryptographically secure sources:** the platform OS CSPRNG, or a deterministic BLAKE3 keyed XOF (`-d`/`--seed`)
 - **Stdin ops:** `--choose` one item, `--shuffle` all items, `--weighted` (`value:weight`)
 - **Output formats:** decimal, `--hex`, `--base64`, raw `--binaryoutput`
 - **Visual distribution help:** append `--help` to an alternate-distribution

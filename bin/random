@@ -627,11 +627,11 @@ local VERSION = "0.1.0"
 local function print_about(invocation)
 	local desc
 	if invocation == "nrandom" then
-		desc = "Normally distributed random integer between bounds via Box-Muller sampling"
+		desc = "CSPRNG for normal variates with OS entropy or cross-platform-identical deterministic streams"
 	elseif invocation == "drandom" then
-		desc = "Deterministic BLAKE3 keyed-XOF generator with reproducible integer seeds"
+		desc = "Cross-platform-identical deterministic CSPRNG using a seeded BLAKE3 keyed XOF"
 	else
-		desc = "Unified random number generator: multiple distributions, stdin ops, output formats"
+		desc = "CSPRNG with OS entropy, cross-platform-identical deterministic streams, and alternate distributions"
 	end
 	print(("%s v%s (%s/%s): %s"):format(invocation, VERSION, jit.os, jit.arch, desc))
 end
@@ -862,7 +862,10 @@ local function print_help(invocation, distribution)
 	print("       echo 'items' | " .. invocation .. " --choose")
 	print("       echo 'items' | " .. invocation .. " --shuffle")
 	print("")
-	print("Unified random number generator with multiple modes and distributions.")
+	print("Cryptographically secure random generator with alternate distributions.")
+	print("Seeded mode provides cross-platform-identical deterministic streams.")
+	print("True-random mode uses fresh OS CSPRNG entropy; deterministic mode uses")
+	print("a seeded BLAKE3 keyed XOF. A public seed is reproducible, not secret.")
 	print("")
 	print("Distributions (mutually exclusive):")
 	print("  (default)           Uniform distribution")
@@ -881,8 +884,8 @@ local function print_help(invocation, distribution)
 	print("  -a, --about         Show a short description")
 	print("  -b, --binaryoutput  Output binary bytes")
 	print("  -c, --count N       Output N numbers (default: 1, or 1024 with -b)")
-	print("  -d, --deterministic Use the deterministic BLAKE3 keyed XOF")
-	print("      --true-random   Force OS/source entropy; ignore DRANDOM_SEED")
+	print("  -d, --deterministic Use the cross-platform-identical BLAKE3 keyed XOF")
+	print("      --true-random   Force fresh OS/source CSPRNG entropy; ignore DRANDOM_SEED")
 	print("      --delimiter S   Set delimiter for output/input (default: newline)")
 	print("  -h, --help          Show this help message")
 	print("      --hex           Output as hexadecimal")
@@ -913,6 +916,8 @@ local function print_help(invocation, distribution)
 	print("Deterministic mode never persists state. Every invocation starts at")
 	print("stream position zero. Without an explicit seed it obtains 32 bytes")
 	print("from the entropy source and prints the replayable seed to stderr.")
+	print("Seeded output, including alternate distributions, is byte-identical")
+	print("across supported operating systems and CPU architectures.")
 	print("")
 	print("Examples:")
 	print("  random                    # Uniform random 0-99")

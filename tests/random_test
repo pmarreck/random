@@ -76,7 +76,9 @@ test_random() {
 
 	if [ -n "$about_output" ] && [ "$about_lines" -eq 1 ] && [ "$about_a_output" = "$about_output" ] && \
 	   [[ "$about_output" == *"$about_os"* ]] && [[ "$about_output" == *"$about_arch"* ]] && \
-	   [[ "$about_output" =~ v[0-9]+\.[0-9]+ ]]; then
+	   [[ "$about_output" =~ v[0-9]+\.[0-9]+ ]] && \
+	   [[ "$about_output" == *"CSPRNG"* ]] && \
+	   [[ "$about_output" == *"cross-platform-identical"* ]]; then
 		echo "✓ About flag test passed (got: $about_output)"
 	else
 		echo "✗ About flag test failed: --about='$about_output' (lines: $about_lines) -a='$about_a_output' " \
@@ -96,6 +98,8 @@ test_random() {
 	local help_long_status=$?
 
 	if [ $help_status -eq 0 ] && echo "$help_output" | grep -q "Usage: random" && \
+	   grep -Fq 'Cryptographically secure random generator' <<<"$help_output" && \
+	   grep -Fq 'cross-platform-identical deterministic streams' <<<"$help_output" && \
 	   [ $help_long_status -eq 0 ] && [ "$help_long_output" = "$help_output" ]; then
 		echo "✓ Help flag test passed"
 	else

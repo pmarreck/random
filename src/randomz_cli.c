@@ -236,11 +236,11 @@ static void print_about(void)
 {
 	const char *description;
 	if (normal_invocation(program_name)) {
-		description = "Normally distributed random integer between bounds via Box-Muller sampling";
+		description = "CSPRNG for normal variates with OS entropy or cross-platform-identical deterministic streams";
 	} else if (deterministic_invocation(program_name)) {
-		description = "Deterministic BLAKE3 keyed-XOF generator with reproducible integer seeds";
+		description = "Cross-platform-identical deterministic CSPRNG using a seeded BLAKE3 keyed XOF";
 	} else {
-		description = "Unified random number generator: multiple distributions, stdin ops, output formats";
+		description = "CSPRNG with OS entropy, cross-platform-identical deterministic streams, and alternate distributions";
 	}
 	printf("%s v%s (%s/%s): %s\n", program_name, RANDOMZ_VERSION,
 		platform_name(), architecture_name(), description);
@@ -390,7 +390,10 @@ static void print_help(distribution dist, chart_renderer renderer)
 	printf("       echo 'items' | %s --choose\n", program_name);
 	printf("       echo 'items' | %s --shuffle\n", program_name);
 	puts("");
-	puts("Unified random number generator with multiple modes and distributions.");
+	puts("Cryptographically secure random generator with alternate distributions.");
+	puts("Seeded mode provides cross-platform-identical deterministic streams.");
+	puts("True-random mode uses fresh OS CSPRNG entropy; deterministic mode uses");
+	puts("a seeded BLAKE3 keyed XOF. A public seed is reproducible, not secret.");
 	puts("");
 	puts("Distributions (mutually exclusive):");
 	puts("  (default)           Uniform distribution");
@@ -409,8 +412,8 @@ static void print_help(distribution dist, chart_renderer renderer)
 	puts("  -a, --about         Show a short description");
 	puts("  -b, --binaryoutput  Output binary bytes");
 	puts("  -c, --count N       Output N numbers (default: 1, or 1024 with -b)");
-	puts("  -d, --deterministic Use the deterministic BLAKE3 keyed XOF");
-	puts("      --true-random   Force OS/source entropy; ignore DRANDOMZ_SEED");
+	puts("  -d, --deterministic Use the cross-platform-identical BLAKE3 keyed XOF");
+	puts("      --true-random   Force fresh OS/source CSPRNG entropy; ignore DRANDOMZ_SEED");
 	puts("      --delimiter S   Set delimiter for output/input (default: newline)");
 	puts("  -h, --help          Show this help message");
 	puts("      --hex           Output as hexadecimal");
@@ -441,6 +444,8 @@ static void print_help(distribution dist, chart_renderer renderer)
 	puts("Deterministic mode never persists state. Every invocation starts at");
 	puts("stream position zero. Without an explicit seed it obtains 32 bytes");
 	puts("from the entropy source and prints the replayable seed to stderr.");
+	puts("Seeded output, including alternate distributions, is byte-identical");
+	puts("across supported operating systems and CPU architectures.");
 	print_distribution_help(dist, renderer);
 }
 
