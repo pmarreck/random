@@ -1,7 +1,20 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{});
+    // On a native macOS build, Zig stamps every object with the HOST SDK
+    // version (e.g. 26.6). A C consumer that links our static librandomz.a at a
+    // lower deployment target -- the nixpkgs apple-sdk floor is 14.0, which the
+    // C-ABI conformance harness (tests/randomz_abi_test) links against -- then
+    // trips ld's "object file was built for newer macOS version than being
+    // linked" warning. Pin an explicit, reproducible macOS minimum so the
+    // artifact's platform floor is a property of the project, not of whatever
+    // SDK happens to sit on the build host. Only used when no -Dtarget was
+    // given; explicit cross targets (incl. aarch64-macos) set their own.
+    const default_target: std.Target.Query = if (@import("builtin").target.os.tag == .macos)
+        .{ .os_version_min = .{ .semver = .{ .major = 14, .minor = 0, .patch = 0 } } }
+    else
+        .{};
+    const target = b.standardTargetOptions(.{ .default_target = default_target });
 
     // NOT b.standardOptimizeOption(.{}) -- that defaults to Debug, and a debug
     // binary silently benchmarked is a documented way to lose hours here.
