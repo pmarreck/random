@@ -905,7 +905,7 @@ fn run_tests(program_path: &Path) -> Result<(), String> {
 	// Invoke Bash explicitly so installed packages do not depend on
 	// `/usr/bin/env` existing merely to resolve the suite's shebang (notably,
 	// the Nix build sandbox has no `/usr/bin`).
-	let mut command = Command::new("bash");
+	let mut command = Command::new(test_bash_command());
 	command.arg(&test);
 	let status = command
 		.env("FAST", "1")
@@ -918,6 +918,73 @@ fn run_tests(program_path: &Path) -> Result<(), String> {
 		Ok(())
 	} else {
 		process::exit(status.code().unwrap_or(1));
+	}
+}
+
+fn test_bash_command() -> OsString {
+	let candidates = test_bash_candidates();
+	select_test_bash(env::var_os("RANDOM_TEST_BASH"), candidates, |candidate| {
+		candidate.is_file()
+	})
+}
+
+fn select_test_bash(
+	explicit: Option<OsString>,
+	candidates: impl IntoIterator<Item = PathBuf>,
+	mut is_file: impl FnMut(&Path) -> bool,
+) -> OsString {
+	if let Some(explicit) = explicit {
+		return explicit;
+	}
+	candidates
+		.into_iter()
+		.find(|candidate| is_file(candidate))
+		.map_or_else(|| OsString::from("bash"), PathBuf::into_os_string)
+}
+
+#[cfg(windows)]
+fn test_bash_candidates() -> Vec<PathBuf> {
+	let mut candidates = Vec::new();
+	for variable in ["ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"] {
+		if let Some(root) = env::var_os(variable) {
+			let root = PathBuf::from(root).join("Git");
+			candidates.push(root.join("bin/bash.exe"));
+			candidates.push(root.join("usr/bin/bash.exe"));
+		}
+	}
+	candidates
+}
+
+#[cfg(not(windows))]
+fn test_bash_candidates() -> [PathBuf; 0] {
+	[]
+}
+
+#[cfg(test)]
+mod test_bash_tests {
+	use super::*;
+
+	#[test]
+	fn explicit_test_bash_wins_without_path_guessing() {
+		let selected = select_test_bash(
+			Some(OsString::from("chosen-bash")),
+			[PathBuf::from("installed-bash")],
+			|_| true,
+		);
+		assert_eq!(selected, OsString::from("chosen-bash"));
+	}
+
+	#[test]
+	fn first_installed_bash_wins_and_missing_candidates_fall_back() {
+		let candidates = [PathBuf::from("missing-bash"), PathBuf::from("git-bash")];
+		let selected = select_test_bash(None, candidates.clone(), |candidate| {
+			candidate == Path::new("git-bash")
+		});
+		assert_eq!(selected, OsString::from("git-bash"));
+		assert_eq!(
+			select_test_bash(None, candidates, |_| false),
+			OsString::from("bash")
+		);
 	}
 }
 
