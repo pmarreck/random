@@ -1,6 +1,7 @@
 # Cross-architecture determinism: evidence
 
-**Date:** 2026-08-02; BLAKE3 DRBG extension re-verified 2026-08-04 ·
+**Date:** 2026-08-02; BLAKE3 DRBG extension re-verified 2026-08-04;
+Rust extension verified 2026-08-11 ·
 **Suite:** `tests/cross_arch_diff` (`./crossarch`)
 
 ## What was actually at stake
@@ -45,7 +46,8 @@ Four payloads:
   keyed BLAKE3 XOF, with chunked-consumption and seek assertions against the
   one-shot stream. This payload was added with the 2026-08-04 PCG32→BLAKE3
   migration and rerun on all four legs, including native M4 Max hardware.
-- **cli** — `bin/random` end to end, byte-exact stdout, 42 invocations × 3 seeds.
+- **cli** — `bin/random` end to end, byte-exact stdout, 54 invocations spanning
+  four seeds and the full integer/nonlinear/binary surface.
 
 ## Results
 
@@ -59,7 +61,7 @@ sha256 of stdout, first 16 hex digits, `FAST=1`:
 | *control:* libm | `d74d06aa0e68f67d` | `622518d5ffc3a60f` | `d74d06aa0e68f67d` | `763ae34a97400ca9` |
 | *control:* float2int | `ddcc9fd67f79fb99` | `ddcc9fd67f79fb99` | `1ae5e1a5aa89121b` | `1ae5e1a5aa89121b` |
 
-Plus 42 CLI invocations × 3 seeds byte-identical across the three local legs.
+Plus 54 CLI invocations byte-identical across the three local legs.
 The native remote section directly rechecked kernel, decimal, and the new DRBG
 payload; it does not currently rerun the full CLI matrix remotely.
 
@@ -68,7 +70,7 @@ payload; it does not currently rerun the full CLI matrix remotely.
 ## Zig/C extension (2026-08-04)
 
 The same suite now builds and executes the independent Zig/C implementation in
-ReleaseSafe mode. Its local matrix is:
+ReleaseFast mode. Its local matrix is:
 
 | leg | architecture | libc | execution |
 |---|---|---|---|
@@ -81,7 +83,7 @@ Two new payloads passed:
 - The raw `differential-driver` fixed-point output is byte-identical on all
   three targets. This is load-bearing because a CLI-only comparison can hide a
   one-ULP kernel defect through decimal formatting or integer quantization.
-- `randomz`, the C CLI linked only through `include/randomz.h`, runs the same 42
+- `randomz`, the C CLI linked only through `include/randomz.h`, runs the same 54
   seed/flag/stdin cases on all three targets. Every framed payload is
   byte-identical both across the targets and against the native LuaJIT oracle.
 
@@ -89,6 +91,44 @@ The required suite also cross-compiles the frontend for aarch64-macOS,
 x86_64-Windows-GNU, and aarch64-Windows-GNU. Compilation is not counted as
 execution evidence; the optional native-remote leg builds and executes the
 Zig/C payloads when supplied.
+
+## Rust extension (2026-08-11)
+
+`randomr` adds a third implementation rather than a wrapper around either
+oracle. The deterministic library is integer-only Rust, uses the official
+pure-Rust BLAKE3 crate backend, and shares no implementation code or FFI with
+LuaJIT or Zig. The CLI is a separate crate.
+
+The default suite first requires the complete 141-case LuaJIT↔Zig matrix to
+agree, then independently requires the same matrix for Rust↔LuaJIT and
+Rust↔Zig. The cross-architecture suite additionally runs the 54-invocation
+end-to-end payload against the LuaJIT oracle on:
+
+| leg | architecture | libc | execution |
+|---|---|---|---|
+| `randomr-x86_64-glibc` | x86_64 | glibc | native |
+| `randomr-aarch64-glibc` | aarch64 | glibc | qemu user-mode |
+
+Both Rust legs were byte-identical to LuaJIT on all 54 invocations. The same
+positive sensitivity controls described above prove that the run can observe
+both its libc and architecture axes before this verdict is accepted.
+
+Cross-build evidence currently covers native Linux x86_64, Linux aarch64,
+Windows x86_64, a license-free Windows ARM64 PE (`aarch64-pc-windows-gnullvm`
+linked with Zig), FreeBSD x86_64, and NetBSD x86_64. The latter two use the
+standard libraries Rust 1.97 actually distributes plus Zig's BSD sysroots.
+Rust 1.97 distributes no standard-library artifact for OpenBSD or for any of
+these BSD ARM64 targets; those four combinations are named target-library gaps,
+not passing skips. Native macOS ARM64 and Windows ARM64 workflow legs are
+configured to validate the architecture, compare a 131-byte stream and a
+wide-range/nonlinear/stdin payload to frozen oracle digests, and exercise OS
+entropy on first-party hosted ARM64 runners. These are configuration claims
+until the workflow has completed remotely.
+
+Four test-only mutations prove the Rust controls are live: a broken candidate
+selector, a dead Zig second oracle, a perturbed trigonometric constant, and an
+entropy source that incorrectly reports EOF as success each make the expected
+gate red.
 
 ## Why the control rows are the important part
 
@@ -135,9 +175,9 @@ confirmed to fire, then restored and confirmed to pass:
 | reflexivity | ASLR pointer mixed into the digest | `NOT self-reproducible` on all 3 legs |
 
 **A finding from that exercise, worth keeping:** under the `M.ln` contaminant
-the **CLI payload still reported identical**. A 1-ulp perturbation of a 63-bit
-mantissa is invisible at the six decimal places the CLI prints, and the
-integer-range modes quantize it away entirely. The kernel payload is what
+the **CLI payload still reported identical**. At the then-current six-place
+output precision, a 1-ulp perturbation of a 63-bit mantissa was invisible, and
+the integer-range modes quantized it away entirely. The kernel payload is what
 actually carries the weight here — a CLI-level differential alone, which is
 what the original port kickoff proposed, would have passed this mutation.
 
@@ -176,7 +216,7 @@ reflexivity cheerfully passed on a leg that had produced nothing. Both are now
 
 ## Caveats — what this does NOT establish
 
-- **Only two architectures.** x86_64 and aarch64. No 32-bit, no big-endian,
+- **Only two executed architectures.** x86_64 and aarch64. No 32-bit, no big-endian,
   no RISC-V. The big-endian case is not merely untested: the controls'
   bit-extraction unions assert little-endianness and refuse to run.
 - **Only three Unix libcs** (glibc, musl, Apple libSystem). The C frontend

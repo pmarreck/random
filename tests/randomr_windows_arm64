@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# License-free Linux -> Windows ARM64 artifact gate. This is intentionally a
+# special target rather than part of ./test because it downloads a Rust target.
+set -u
+set -o pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+toolchain="${RANDOMR_RUST_TOOLCHAIN:-1.97.0}"
+target="aarch64-pc-windows-gnullvm"
+
+for command_name in rustup cargo zig od; do
+	if ! command -v "$command_name" >/dev/null 2>&1; then
+		echo "randomr Windows ARM64 gate requires $command_name" >&2
+		exit 1
+	fi
+done
+
+rustup toolchain install "$toolchain" --profile minimal --target "$target" || exit 1
+export CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER="$root/tools/zig-aarch64-windows-linker"
+(cd "$root" && cargo "+$toolchain" build --locked --release \
+	-p randomr-cli --target "$target") || exit 1
+
+target_dir="$(cd "$root" && cargo metadata --no-deps --format-version 1 |
+	sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')"
+artifact="$target_dir/$target/release/randomr.exe"
+if [ ! -s "$artifact" ]; then
+	echo "randomr Windows ARM64 artifact is absent: $artifact" >&2
+	exit 1
+fi
+pe_offset="$(od -An -tu4 -j 60 -N 4 "$artifact" | tr -d '[:space:]')"
+machine="$(od -An -tx2 -j "$((pe_offset + 4))" -N 2 "$artifact" | tr -d '[:space:]')"
+if [ "$machine" != "aa64" ]; then
+	echo "randomr Windows ARM64 gate got PE machine $machine, expected aa64" >&2
+	exit 1
+fi
+echo "randomr Windows ARM64 gate PASSED: $artifact"

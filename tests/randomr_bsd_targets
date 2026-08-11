@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Cross-link the complete Rust CLI for every BSD target whose standard library
+# Rust 1.97 distributes, using Zig's libc/sysroot, then inspect each artifact.
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+toolchain="${RANDOMR_RUST_TOOLCHAIN:-1.97.0}"
+targets=(
+	x86_64-unknown-freebsd:x86_64-freebsd:003e
+	x86_64-unknown-netbsd:x86_64-netbsd:003e
+)
+if [ "${#targets[@]}" -ne 2 ]; then
+	echo "randomr BSD target manifest must contain exactly FreeBSD and NetBSD" >&2
+	exit 1
+fi
+expected_targets=$'x86_64-unknown-freebsd:x86_64-freebsd:003e\nx86_64-unknown-netbsd:x86_64-netbsd:003e'
+actual_targets="$(printf '%s\n' "${targets[@]}")"
+if [ "$actual_targets" != "$expected_targets" ]; then
+	echo "randomr BSD target manifest identity changed" >&2
+	exit 1
+fi
+
+for command_name in rustup cargo zig od; do
+	if ! command -v "$command_name" >/dev/null 2>&1; then
+		echo "randomr BSD target gate requires $command_name" >&2
+		exit 1
+	fi
+done
+
+for spec in "${targets[@]}"; do
+	IFS=: read -r rust_target zig_target elf_machine <<<"$spec"
+	rustup toolchain install "$toolchain" --profile minimal --target "$rust_target"
+	export RANDOMR_ZIG_TARGET="$zig_target"
+	linker_env="CARGO_TARGET_${rust_target^^}_LINKER"
+	linker_env="${linker_env//-/_}"
+	export "$linker_env=$root/tools/zig-rust-linker"
+	(cd "$root" && cargo "+$toolchain" build --locked --release \
+		-p randomr-cli --target "$rust_target")
+	target_dir="$(cd "$root" && cargo metadata --no-deps --format-version 1 |
+		sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')"
+	artifact="$target_dir/$rust_target/release/randomr"
+	if [ ! -s "$artifact" ]; then
+		echo "randomr BSD artifact is absent: $artifact" >&2
+		exit 1
+	fi
+	machine="$(od -An -tx2 -j 18 -N 2 "$artifact" | tr -d '[:space:]')"
+	if [ "$machine" != "$elf_machine" ]; then
+		echo "$rust_target emitted ELF machine $machine, expected $elf_machine" >&2
+		exit 1
+	fi
+	echo "  ✓ $rust_target"
+done
+echo "randomr BSD target gate PASSED: ${#targets[@]} targets"

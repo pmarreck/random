@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Enforce the deterministic Rust core's compile-time I/O boundary.
+set -u
+set -o pipefail
+
+root="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+core="$root/rust/randomr"
+
+if [ ! -d "$core/src" ] || [ ! -f "$core/Cargo.toml" ]; then
+	echo "randomr purity FAILED: randomr crate is absent under $root" >&2
+	exit 1
+fi
+
+# entropy.rs is the one reviewed adapter allowed to touch ambient state, OS
+# APIs, or unsafe FFI. Feature gates do not exempt any deterministic module.
+if rg -n \
+	--glob '*.rs' \
+	--glob '!entropy.rs' \
+	'(^|[^[:alnum:]_])(getrandom|libc)([^[:alnum:]_]|$)|extern[[:space:]]+"C"|unsafe[[:space:]]*\{|std::(env|fs|io|net|path|process|time)|(^|[^[:alnum:]_])(print|println|eprint|eprintln)!' \
+	"$core/src"; then
+	echo "randomr purity FAILED: deterministic core contains forbidden I/O or FFI" >&2
+	exit 1
+fi
+
+if rg -n 'feature = "entropy"' "$core/src" \
+	--glob '*.rs' --glob '!lib.rs' --glob '!entropy.rs'; then
+	echo "randomr purity FAILED: deterministic module has an entropy feature escape hatch" >&2
+	exit 1
+fi
+
+if ! rg -U -q '#\[cfg\(feature = "entropy"\)\]\npub mod entropy;' \
+	"$core/src/lib.rs"; then
+	echo "randomr purity FAILED: entropy module is not isolated behind its feature" >&2
+	exit 1
+fi
+
+for optional_dependency in getrandom libc; do
+	if ! rg -q "^${optional_dependency} = .*optional = true" "$core/Cargo.toml"; then
+		echo "randomr purity FAILED: $optional_dependency is not an optional dependency" >&2
+		exit 1
+	fi
+done
+if ! rg -q '^entropy = \["std", "dep:getrandom", "dep:libc"\]$' \
+	"$core/Cargo.toml"; then
+	echo "randomr purity FAILED: OS dependencies are not confined to the entropy feature" >&2
+	exit 1
+fi
+
+echo "randomr purity check PASSED: deterministic modules cannot reach OS I/O or FFI"

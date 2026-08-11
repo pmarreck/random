@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Rust CLI acceptance and two-oracle exact differential gate.
+set -u
+set -o pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+rust_target="$(cd "$root" && cargo metadata --no-deps --format-version 1 |
+	sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')"
+rust_cli="${RANDOMR_TEST_CLI:-$rust_target/release/randomr}"
+zig_cli="${RANDOMR_TEST_ZIG_CLI:-$root/zig-out/bin/randomz}"
+
+if [ -z "${RANDOMR_TEST_CLI:-}" ]; then
+	if [ ! -f "$root/Cargo.toml" ]; then
+		echo "randomr test RED: Cargo workspace does not exist" >&2
+		exit 1
+	fi
+	(cd "$root" && cargo build --locked --release -p randomr-cli) || exit 1
+fi
+if [ ! -x "$rust_cli" ]; then
+	echo "randomr test RED: Rust CLI is not executable: $rust_cli" >&2
+	exit 1
+fi
+if [ -z "${RANDOMR_TEST_ZIG_CLI:-}" ]; then
+	(cd "$root" && zig build -Doptimize=ReleaseFast) || exit 1
+fi
+if [ ! -x "$zig_cli" ]; then
+	echo "randomr test RED: Zig/C oracle is not executable: $zig_cli" >&2
+	exit 1
+fi
+
+if [ "$(uname -s)" = Linux ]; then
+	echo "Proving large Rust binary output stays inside a fixed memory budget..."
+	if ! (ulimit -v 65536; "$rust_cli" -d --seed 42 -b -c 134217728 >/dev/null); then
+		echo "randomr test FAILED: 128 MiB output did not stream under a 64 MiB memory limit" >&2
+		exit 1
+	fi
+fi
+
+if [ ! -x "$root/tests/frontend_differential" ]; then
+	echo "randomr test RED: three-frontend differential harness is absent" >&2
+	exit 1
+fi
+
+echo "Verifying the LuaJIT and Zig/C oracles agree before judging Rust..."
+CANDIDATE_CLI="$zig_cli" CANDIDATE_KIND=zig \
+	"$root/tests/frontend_differential" || exit 1
+
+echo "Comparing Rust against the LuaJIT oracle..."
+RANDOMZ_SKIP_CHART_SOURCE_CONTROLS=1 CANDIDATE_CLI="$rust_cli" CANDIDATE_KIND=rust \
+	"$root/tests/frontend_differential" || exit 1
+
+echo "Comparing Rust against the independent Zig/C oracle..."
+RANDOMZ_DIFFERENTIAL_ONLY=1 ORACLE_KIND=zig ORACLE_CLI="$zig_cli" CANDIDATE_CLI="$rust_cli" CANDIDATE_KIND=rust \
+	"$root/tests/frontend_differential"

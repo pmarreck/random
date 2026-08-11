@@ -179,6 +179,36 @@ test_random() {
 		(( fails++ ))
 	fi
 
+	(( tests++ ))
+	echo "Testing maximum deterministic fractional precision and truncation..."
+	local full_precision six_places truncate_alias zero_places expected_six
+	full_precision=$(random -d --seed 42 --exponential -c 1 2>/dev/null)
+	six_places=$(random -d --seed 42 --exponential --precision 6 -c 1 2>/dev/null)
+	truncate_alias=$(random -d --seed 42 --exponential --truncate=6 -c 1 2>/dev/null)
+	zero_places=$(random -d --seed 42 --exponential --precision=0 -c 1 2>/dev/null)
+	expected_six="${full_precision:0:${#full_precision}-12}"
+	local precision_failures=0
+	for precision_spec in '--precision -1' '--precision 19' '--precision 1.5' \
+		'--precision=' '--truncate=' '-b --precision 6'; do
+		read -r -a precision_argv <<<"$precision_spec"
+		if random -d --seed 42 --exponential "${precision_argv[@]}" -c 1 \
+			>/dev/null 2>&1; then
+			precision_failures=$((precision_failures + 1))
+		fi
+	done
+	if [[ "$full_precision" =~ ^[0-9]+\.[0-9]{18}$ ]] &&
+	   [[ "$six_places" =~ ^[0-9]+\.[0-9]{6}$ ]] &&
+	   [[ "$zero_places" =~ ^[0-9]+$ ]] &&
+	   [ "$six_places" = "$truncate_alias" ] &&
+	   [ "$six_places" = "$expected_six" ] &&
+	   [ "$precision_failures" -eq 0 ] &&
+	   grep -Fq -- '--precision N' <<<"$help_output"; then
+		echo "✓ Fractional output defaults to 18 digits and truncates explicitly"
+	else
+		echo "✗ Fractional precision contract failed: default='$full_precision' six='$six_places' alias='$truncate_alias' zero='$zero_places' failures=$precision_failures" >&2
+		(( fails++ ))
+	fi
+
 	# Test 3: --test flag
 	(( tests++ ))
 	echo "Testing --test flag..."
@@ -187,7 +217,8 @@ test_random() {
 	probe_dir=$(mktemp -d "${TMPDIR:-/tmp}/random-test-probe.XXXXXX")
 	probe="$probe_dir/probe"
 	marker="$probe_dir/invoked"
-	printf '#!%s\n%s\n%s\n' "$(command -v bash)" \
+	printf '#!%s\n%s\n%s\n%s\n' "$(command -v bash)" \
+		'[ "${RANDOM_TEST_DEPTH:-}" = 0 ] || exit 97' \
 		'printf invoked >"$RANDOM_TEST_PROBE_MARK"' \
 		'exit "${RANDOM_TEST_PROBE_EXIT:-0}"' >"$probe"
 	chmod +x "$probe"
@@ -205,6 +236,18 @@ test_random() {
 		(( fails++ ))
 	fi
 	rm -rf -- "$probe_dir"
+
+	(( tests++ ))
+	echo "Testing byte-oriented stdin items..."
+	local byte_item
+	byte_item=$(printf '\377\n' | random --choose -d --seed 42 2>/dev/null |
+		od -An -tx1 | tr -d '[:space:]')
+	if [ "$byte_item" = ff0a ]; then
+		echo "✓ Non-UTF-8 stdin item bytes are preserved"
+	else
+		echo "✗ Non-UTF-8 stdin item bytes changed or were rejected: $byte_item" >&2
+		(( fails++ ))
+	fi
 
 	# Test 4: Basic execution
 	(( tests++ ))
@@ -909,15 +952,19 @@ test_random() {
 	(( tests++ ))
 	echo "Testing $RANDOM_TEST_SEED_ENV alone implies deterministic mode..."
 
-	local envseed_seq1 envseed_seq2 explicit_seq
+	local envseed_seq1 envseed_seq2 explicit_seq other_seed_env
 	envseed_seq1=$(env "$RANDOM_TEST_SEED_ENV=424242" random -c 3 2>/dev/null | tr '\n' ' ')
 	envseed_seq2=$(env "$RANDOM_TEST_SEED_ENV=424242" random -c 3 2>/dev/null | tr '\n' ' ')
 	explicit_seq=$(random -d --seed 424242 -c 3 2>/dev/null | tr '\n' ' ')
 
+	local other_seed_help_absent=1
+	for other_seed_env in $RANDOM_TEST_OTHER_SEED_ENVS; do
+		if [[ "$help_output" == *"$other_seed_env"* ]]; then other_seed_help_absent=0; fi
+	done
 	if [ -n "$envseed_seq1" ] && [ "$envseed_seq1" = "$envseed_seq2" ] && \
 	   [ "$envseed_seq1" = "$explicit_seq" ] && \
 	   [[ "$help_output" == *"$RANDOM_TEST_SEED_ENV"* ]] && \
-	   [[ "$help_output" != *"$RANDOM_TEST_OTHER_SEED_ENV"* ]]; then
+	   [ "$other_seed_help_absent" -eq 1 ]; then
 		echo "✓ $RANDOM_TEST_SEED_ENV alone implies deterministic mode"
 	else
 		echo "✗ $RANDOM_TEST_SEED_ENV contract failed: run1='$envseed_seq1' run2='$envseed_seq2' explicit='$explicit_seq'" >&2
@@ -930,13 +977,19 @@ test_random() {
 	entropy_fixture=$(mktemp "${TMPDIR:-/tmp}/random-entropy.XXXXXX")
 	dd if=/dev/zero of="$entropy_fixture" bs=32 count=1 status=none
 	true_bytes=$(env "$RANDOM_TEST_SEED_ENV=424242" random --true-random --random-source "$entropy_fixture" -b -c 32 2>/dev/null | xxd -p -c 256)
-	other_seed_bytes=$(env -u "$RANDOM_TEST_SEED_ENV" "$RANDOM_TEST_OTHER_SEED_ENV=424242" \
-		random --random-source "$entropy_fixture" -b -c 32 2>/dev/null | xxd -p -c 256)
+	other_seed_bytes=""
+	local one_other_seed_bytes
+	for other_seed_env in $RANDOM_TEST_OTHER_SEED_ENVS; do
+		one_other_seed_bytes=$(env -u "$RANDOM_TEST_SEED_ENV" "$other_seed_env=424242" \
+			random --random-source "$entropy_fixture" -b -c 32 2>/dev/null | xxd -p -c 256)
+		if [ -z "$other_seed_bytes" ]; then other_seed_bytes="$one_other_seed_bytes"; fi
+		if [ "$one_other_seed_bytes" != "$true_bytes" ]; then other_seed_bytes="mismatch"; fi
+	done
 	rm -f -- "$entropy_fixture"
 	if [ "$true_bytes" = "$(printf '00%.0s' {1..32})" ] && \
 	   [ "$other_seed_bytes" = "$(printf '00%.0s' {1..32})" ] && \
 	   ! random --true-random -d --seed 1 -c 1 >/dev/null 2>&1; then
-		echo "✓ --true-random overrides $RANDOM_TEST_SEED_ENV; $RANDOM_TEST_OTHER_SEED_ENV is inert"
+		echo "✓ --true-random overrides $RANDOM_TEST_SEED_ENV; other frontend seed environments are inert"
 	else
 		echo "✗ true-random/seed-environment separation failed: true='$true_bytes' other='$other_seed_bytes'" >&2
 		(( fails++ ))

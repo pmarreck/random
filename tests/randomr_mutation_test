@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# Demonstrate that each independent randomr control can actually turn red.
+set -u
+set -o pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+target_dir="$(cd "$root" && cargo metadata --no-deps --format-version 1 |
+	sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')"
+rust_cli="$target_dir/release/randomr"
+zig_cli="$root/zig-out/bin/randomz"
+mutant_root="$(mktemp -d "${TMPDIR:-/tmp}/randomr-mutant.XXXXXX")" || exit 1
+trap 'rm -rf -- "$mutant_root"' EXIT
+fails=0
+
+(cd "$root" && cargo build --locked --release -p randomr-cli) >/dev/null || exit 1
+(cd "$root" && zig build -Doptimize=ReleaseFast) >/dev/null || exit 1
+false_cli="$(type -P false)"
+if [ -z "$false_cli" ] || [ ! -x "$false_cli" ]; then
+	echo "randomr mutation test requires an executable false command" >&2
+	exit 1
+fi
+bash_cli="$(type -P bash)"
+if [ -z "$bash_cli" ] || [ ! -x "$bash_cli" ]; then
+	echo "randomr mutation test requires an executable bash command" >&2
+	exit 1
+fi
+
+expect_red() {
+	local label="$1"
+	shift
+	if "$@" >"$mutant_root/$label.log" 2>&1; then
+		echo "randomr mutation FAILED: $label mutation escaped detection" >&2
+		fails=$((fails + 1))
+	else
+		echo "  ✓ $label mutation made its control red"
+	fi
+}
+
+expect_red candidate-selector env CANDIDATE_CLI="$false_cli" CANDIDATE_KIND=rust \
+	"$root/tests/frontend_differential"
+if grep -q 'is not executable' "$mutant_root/candidate-selector.log" ||
+	! grep -q 'differential FAILED' "$mutant_root/candidate-selector.log"; then
+	echo "randomr mutation FAILED: candidate selector did not reach comparison" >&2
+	fails=$((fails + 1))
+fi
+
+zig_mutant="$mutant_root/zig-success-mutant"
+printf '#!%s\n' "$bash_cli" >"$zig_mutant"
+printf '%s\n' \
+	'"${RANDOMR_MUTANT_REAL:?}" "$@"' \
+	'status=$?' \
+	'if [ "$status" -eq 0 ]; then printf x; fi' \
+	'exit "$status"' >>"$zig_mutant"
+chmod +x "$zig_mutant"
+expect_red second-oracle env RANDOMR_MUTANT_REAL="$zig_cli" \
+	RANDOMZ_DIFFERENTIAL_ONLY=1 ORACLE_KIND=zig ORACLE_CLI="$zig_mutant" \
+	CANDIDATE_CLI="$rust_cli" CANDIDATE_KIND=rust \
+	"$root/tests/frontend_differential"
+if grep -q 'is not executable' "$mutant_root/second-oracle.log" ||
+	! grep -q 'frontend differential FAILED' "$mutant_root/second-oracle.log" ||
+	! grep -q '(zig=0 rust=0;' "$mutant_root/second-oracle.log"; then
+	echo "randomr mutation FAILED: successful second oracle did not reach final comparison" >&2
+	fails=$((fails + 1))
+fi
+
+mkdir -p "$mutant_root/purity-source/rust"
+cp -R "$root/rust/randomr" "$mutant_root/purity-source/rust/"
+printf '%s\n' \
+	'' \
+	'#[cfg(feature = "entropy")]' \
+	'fn mutant_ambient_entropy() {' \
+	'\tlet mut byte = [0_u8; 1];' \
+	'\tlet _ = getrandom::fill(&mut byte);' \
+	'}' >>"$mutant_root/purity-source/rust/randomr/src/drbg.rs"
+expect_red purity-boundary "$root/tests/randomr_purity_check" \
+	"$mutant_root/purity-source"
+if ! grep -q 'deterministic core contains forbidden I/O or FFI' \
+	"$mutant_root/purity-boundary.log"; then
+	echo "randomr mutation FAILED: feature-gated core impurity was not named" >&2
+	fails=$((fails + 1))
+fi
+
+mkdir -p "$mutant_root/source"
+cp "$root/Cargo.toml" "$root/Cargo.lock" "$mutant_root/source/"
+cp -R "$root/rust" "$mutant_root/source/"
+sed -i \
+	's/7_244_019_458_077_122_842/7_244_019_000_000_000_000/' \
+	"$mutant_root/source/rust/randomr/src/fixed.rs"
+if ! grep -q '7_244_019_000_000_000_000' \
+	"$mutant_root/source/rust/randomr/src/fixed.rs"; then
+	echo "randomr mutation FAILED: nonlinear source mutation was not applied" >&2
+	exit 1
+fi
+mutant_target="$mutant_root/target"
+(cd "$mutant_root/source" && CARGO_TARGET_DIR="$mutant_target" \
+	cargo build --locked --offline --release -p randomr-cli) >/dev/null || exit 1
+nonlinear_vector_control() {
+	local expected actual candidate_status
+	expected="$("$root/bin/random" -d --seed 42 --log-normal --mean=-0.25 \
+		--stddev=1.75 -c 32 2>/dev/null)"
+	actual="$("$mutant_target/release/randomr" -d --seed 42 --log-normal \
+		--mean=-0.25 --stddev=1.75 -c 32 2>/dev/null)"
+	candidate_status=$?
+	if [ "$candidate_status" -ne 0 ] || [ -z "$expected" ] || [ -z "$actual" ]; then
+		echo "normal mutation control could not execute both producers" >&2
+		return 2
+	fi
+	if [ "$expected" != "$actual" ]; then
+		echo "normal vector differs from oracle" >&2
+		return 1
+	fi
+	return 0
+}
+expect_red nonlinear-kernel nonlinear_vector_control
+if ! grep -q 'normal vector differs from oracle' "$mutant_root/nonlinear-kernel.log"; then
+	echo "randomr mutation FAILED: nonlinear mutation was not caught by the live normal vector" >&2
+	fails=$((fails + 1))
+fi
+
+expect_red entropy-failure env RANDOMR_MUTANT_REAL="$rust_cli" \
+	RANDOM_TEST_CLI="$root/tests/fixtures/randomr-entropy-mutant" \
+	RANDOM_TEST_CLI_KIND=rust "$root/tests/drbg_test"
+if ! grep -q 'empty explicit random source did not fail closed' \
+	"$mutant_root/entropy-failure.log"; then
+	echo "randomr mutation FAILED: entropy mutant was not named by the fail-closed control" >&2
+	fails=$((fails + 1))
+fi
+
+if [ "$fails" -ne 0 ]; then
+	exit "$fails"
+fi
+echo "randomr mutation test PASSED: selector, second oracle, purity, nonlinear kernel, and entropy failure"

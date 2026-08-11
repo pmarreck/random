@@ -28,7 +28,7 @@ ran=0
 # tests ran, but nothing said so. Every suite name this project ships is
 # listed here explicitly; missing OR non-executable is now a hard,
 # named failure, not a quietly smaller passing count.
-REQUIRED_SUITES=(blake3_test drbg_test entropy_backend_test fixed_test golden_test random_test random_jit_diff_test randomz_abi_test randomz_cross_compile_test randomz_test randomz_wasm_test zig_package_test kernel_bc_sweep kernel_jit_diff zig_differential)
+REQUIRED_SUITES=(blake3_test drbg_test entropy_backend_test fixed_test golden_test random_test random_jit_diff_test randomr_architecture_test randomr_mutation_test randomr_test randomz_abi_test randomz_cross_compile_test randomz_test randomz_wasm_test zig_package_test kernel_bc_sweep kernel_jit_diff zig_differential)
 missing=0
 for name in "${REQUIRED_SUITES[@]}"; do
 	suite="$here/tests/$name"

@@ -10,6 +10,7 @@ checks.x86_64-linux.random-test
 checks.x86_64-linux.stats-smoke
 checks.x86_64-linux.package-smoke
 checks.x86_64-linux.random-crossarch
+checks.x86_64-linux.randomr-cross-compile
 checks.x86_64-linux.windows-x64-smoke
 
 # The combined package: proves the Lua CLI, C CLI, static Zig library and public

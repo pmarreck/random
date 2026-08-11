@@ -82,7 +82,9 @@ if [ -z "$tc" ]; then
 		exit 1
 	fi
 	note "Building pinned cross toolchains (first run compiles LuaJIT three ways)..."
-	tc="$(cd "$root" && nix build --no-link --print-out-paths '.#crossToolchains' 2>/dev/null)"
+	# path:. includes intentional untracked files during pre-commit development;
+	# the Git-flake spelling omits them and can test a silently smaller tree.
+	tc="$(cd "$root" && nix build --no-link --print-out-paths 'path:.#crossToolchains' 2>/dev/null)"
 	if [ -z "$tc" ] || [ ! -d "$tc/bin" ]; then
 		echo "cross_arch_diff: FAIL -- could not build .#crossToolchains" >&2
 		exit 1
@@ -316,8 +318,8 @@ fi
 # in this session compared --normalized at 0..99, got "identical" on all three
 # legs, and had proven almost nothing. So: 512 contiguous raw BLAKE3 XOF bytes,
 # wide integer ranges (12+ significant digits through the u64 sampler), and the
-# distributions that actually print fractions (exponential / log-normal / beta
-# emit 6 decimal places, exercising ln, exp, pow, sqrt and tostring end to end).
+# distributions that actually print 18-digit fractions (exponential / log-normal / beta),
+# exercising ln, exp, pow, sqrt and tostring end to end.
 CLI_CASES=(
 	"-b -c 512"
 	"--hex -c 200 0..4294967295"
@@ -422,7 +424,55 @@ for leg in "${ZIG_LEG_NAMES[@]}"; do
 	fi
 done
 if [ "$randomz_fail" -eq 0 ]; then
-	ok "42 invocations: Lua oracle == ${#ZIG_LEG_NAMES[@]} Zig/C targets"
+	payload_cases="$(grep -c '^RANDOMZ-CASE ' "$tmp/randomz.lua-oracle")"
+	ok "$payload_cases invocations: Lua oracle == ${#ZIG_LEG_NAMES[@]} Zig/C targets"
+fi
+
+# =============================================================================
+# RUST LIBRARY / CLI -- the same payload through native and emulated aarch64
+# Rust artifacts built from the locked Cargo workspace.
+# =============================================================================
+note ""
+note "PAYLOAD: randomr Rust CLI through the public randomr crate"
+randomr_fail=0
+RUST_LEG_NAMES=(x86_64-glibc aarch64-glibc)
+if [ "${RUST_LEG_NAMES[*]}" != "x86_64-glibc aarch64-glibc" ] || \
+	[ "${#RUST_LEG_NAMES[@]}" -ne 2 ]; then
+	echo "cross_arch_diff: FAIL -- required Rust platform manifest changed or shrank" >&2
+	exit 1
+fi
+rust_artifact() {
+	case "$1" in
+		x86_64-glibc) printf '%s' "$tc/bin/randomr-x86_64-glibc" ;;
+		aarch64-glibc) printf '%s' "$tc/bin/randomr-aarch64-glibc" ;;
+	esac
+}
+rust_runner() {
+	case "$1" in
+		x86_64-glibc) printf '%s' "" ;;
+		aarch64-glibc) printf '%s' "$QEMU -L /" ;;
+	esac
+}
+for leg in "${RUST_LEG_NAMES[@]}"; do
+	cli="$(rust_artifact "$leg")"
+	runner="$(rust_runner "$leg")"
+	FRONTEND_RUNNER="$runner" "$here/randomz_cross_payload" "$cli" \
+		>"$tmp/randomr.$leg" 2>"$tmp/randomr.$leg.err"
+	rc=$?
+	if [ "$rc" -ne 0 ] || [ ! -s "$tmp/randomr.$leg" ]; then
+		bad "randomr on $leg: exit $rc or empty output"
+		randomr_fail=$((randomr_fail + 1))
+	fi
+done
+for leg in "${RUST_LEG_NAMES[@]}"; do
+	if ! cmp -s "$tmp/randomz.lua-oracle" "$tmp/randomr.$leg"; then
+		bad "randomr $leg != LuaJIT oracle -- public Rust contract violated"
+		randomr_fail=$((randomr_fail + 1))
+	fi
+done
+if [ "$randomr_fail" -eq 0 ]; then
+	payload_cases="$(grep -c '^RANDOMZ-CASE ' "$tmp/randomz.lua-oracle")"
+	ok "$payload_cases invocations: Lua oracle == ${#RUST_LEG_NAMES[@]} Rust targets"
 fi
 
 # =============================================================================

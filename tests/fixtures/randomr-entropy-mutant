@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Test-only mutant: incorrectly treats exhausted explicit entropy as success.
+set -u
+
+for argument in "$@"; do
+	if [ "$argument" = "--random-source=/dev/null" ]; then
+		exit 0
+	fi
+done
+exec "${RANDOMR_MUTANT_REAL:?RANDOMR_MUTANT_REAL is required}" "$@"

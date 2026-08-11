@@ -99,13 +99,15 @@
                 $out/bin/luajit-aarch64-glibc
           ln -s ${pkgs.qemu-user}/bin/qemu-aarch64 $out/bin/qemu-aarch64
           ln -s ${pkgs.zig_0_16}/bin/zig $out/bin/zig
+          ln -s ${randomr}/bin/randomr $out/bin/randomr-x86_64-glibc
+          ln -s ${randomrCrossAarch64}/bin/randomr $out/bin/randomr-aarch64-glibc
         '';
 
         # LuaJIT is the only runtime dependency (ffi + bit are built in).
         runtimeTools = [ luajitFixed ];
         # External tools the executable shells out to / the test suite needs.
         testTools = with pkgs; [
-          bashInteractive coreutils gnugrep gawk bc xxd binutils gnutar
+          bashInteractive coreutils gnugrep ripgrep gawk bc xxd binutils gnutar
           stdenv.cc libsixel imagemagick nodejs wasm-tools
         ];
 
@@ -114,6 +116,77 @@
         # nixpkgs bump to 0.17 cannot silently change the compiler underneath a
         # port whose entire point is bit-reproducible output.
         zigTools = [ pkgs.zig_0_16 ];
+
+        rustCargoDeps = pkgs.rustPlatform.importCargoLock {
+          lockFile = ./Cargo.lock;
+        };
+        rustTools = [
+          pkgs.cargo
+          pkgs.clippy
+          pkgs.rustc
+          pkgs.rustfmt
+          pkgs.rustPlatform.cargoSetupHook
+        ];
+
+        mkRandomr = rustPkgs: runTests: rustPkgs.rustPlatform.buildRustPackage {
+          pname = "randomr";
+          version = "0.1.0";
+          src = ./.;
+          cargoLock.lockFile = ./Cargo.lock;
+          cargoBuildFlags = [ "-p" "randomr-cli" ];
+          cargoTestFlags = [ "--workspace" ];
+          doCheck = runTests;
+          nativeBuildInputs = pkgs.lib.optionals runTests [ pkgs.makeWrapper ];
+          installPhase = ''
+            runHook preInstall
+            randomr_suffix="${rustPkgs.stdenv.hostPlatform.extensions.executable}"
+            randomr_binary="target/${rustPkgs.stdenv.hostPlatform.rust.rustcTarget}/release/randomr$randomr_suffix"
+            install -Dm755 "$randomr_binary" "$out/bin/randomr$randomr_suffix"
+            ln -s "randomr$randomr_suffix" "$out/bin/nrandomr$randomr_suffix"
+            ln -s "randomr$randomr_suffix" "$out/bin/drandomr$randomr_suffix"
+			${pkgs.lib.optionalString runTests ''
+			  install -Dm755 tests/random_test "$out/share/randomr/tests/random_test"
+			  install -Dm644 tests/cli_test_setup.sh "$out/share/randomr/tests/cli_test_setup.sh"
+			  patchShebangs "$out/share/randomr/tests/random_test"
+			  wrapProgram "$out/bin/randomr" \
+			    --set-default RANDOM_TEST_FILE "$out/share/randomr/tests/random_test" \
+			    --prefix PATH : ${pkgs.lib.makeBinPath (runtimeTools ++ testTools)}
+			''}
+            runHook postInstall
+          '';
+          meta = with pkgs.lib; {
+            description = "Rust library and CLI for the cross-platform-identical random CSPRNG";
+            license = licenses.mit;
+            mainProgram = "randomr";
+          };
+        };
+        randomr = mkRandomr pkgs true;
+        crossWithUnsupported = crossPkgs: import nixpkgs {
+          localSystem = system;
+          crossSystem = crossPkgs.stdenv.hostPlatform;
+          # Several Rust targets are compile-capable even though Nixpkgs does
+          # not advertise the target as a package execution platform.
+          config.allowUnsupportedSystem = true;
+        };
+        rustCrossTargetNames = [
+          "linux-aarch64"
+          "windows-x86_64"
+        ];
+        rustCrossSets = if crossSupported then {
+          linux-aarch64 = crossWithUnsupported pkgs.pkgsCross.aarch64-multiplatform;
+          windows-x86_64 = crossWithUnsupported pkgs.pkgsCross.mingw-ucrt-x86_64;
+        } else { };
+        randomrCrossPackages = pkgs.lib.mapAttrs
+          (_name: rustPkgs: mkRandomr rustPkgs false)
+          rustCrossSets;
+        randomrCrossAarch64 = if crossSupported then
+          randomrCrossPackages.linux-aarch64
+        else null;
+        randomrCrossTargets = assert
+          builtins.attrNames rustCrossSets == rustCrossTargetNames;
+          pkgs.linkFarm "randomr-cross-targets"
+            (pkgs.lib.mapAttrsToList (name: path: { inherit name path; })
+              randomrCrossPackages);
 
         random = pkgs.stdenv.mkDerivation {
           pname = "random";
@@ -139,17 +212,20 @@
             cp lib/*.lua $out/lib/
             cp tests/random_test tests/cli_test_setup.sh $out/tests/
             cp zig-out/bin/randomz $out/bin/randomz
+            cp ${randomr}/bin/randomr $out/bin/randomr
             cp zig-out/bin/randomz-wasi.wasm $out/lib/randomz-wasi.wasm
             cp zig-out/lib/librandomz.a $out/lib/
             cp zig-out/include/randomz.h $out/include/
             cp LICENSE $out/share/licenses/random/LICENSE
-            chmod +x $out/bin/random $out/bin/randomz $out/tests/random_test
+            chmod +x $out/bin/random $out/bin/randomz $out/bin/randomr $out/tests/random_test
             # Mode-by-invocation-name: nrandom => normalized, drandom => deterministic
             ln -s random $out/bin/nrandom
             ln -s random $out/bin/drandom
             # The C frontend dogfoods librandomz exclusively through randomz.h.
             ln -s randomz $out/bin/nrandomz
             ln -s randomz $out/bin/drandomz
+            ln -s randomr $out/bin/nrandomr
+            ln -s randomr $out/bin/drandomr
             # Resolve '#!/usr/bin/env luajit' to the store luajit
             patchShebangs $out/bin/random $out/tests/random_test
             wrapProgram $out/tests/random_test \
@@ -157,7 +233,7 @@
             runHook postInstall
           '';
           meta = with pkgs.lib; {
-            description = "Cross-platform-identical CSPRNG CLIs in LuaJIT and Zig/C";
+            description = "Cross-platform-identical CSPRNG CLIs in LuaJIT, Zig/C, and Rust";
             license = licenses.mit;
             platforms = platforms.unix;
             mainProgram = "random";
@@ -175,6 +251,7 @@
           default = random;
           random = random;
           randomz = random;
+          randomr = randomr;
 
           # Exposed so a machine of ANY architecture can build the exact
           # interpreter tests/cross_arch_diff pins, without also needing the
@@ -191,6 +268,8 @@
           # Only meaningful on x86_64-linux: pkgsCross/pkgsMusl and qemu-user are
           # what make the aarch64 and musl legs buildable from this host at all.
           crossToolchains = crossToolchains;
+          randomrAarch64 = randomrCrossAarch64;
+          randomrCrossTargets = randomrCrossTargets;
         };
 
         apps.randomz = {
@@ -199,14 +278,35 @@
           meta.description = "Run the C CLI over the Zig randomz library";
         };
 
+        apps.randomr = {
+          type = "app";
+          program = "${randomr}/bin/randomr";
+          meta.description = "Run the Rust randomr CLI";
+        };
+
         # Hermetic CI check: runs the FULL suite runner (./test), not just
         # tests/random_test, so fixed_test/golden_test/kernel_bc_sweep are
         # actually exercised here too, not just the CLI-behavior suite.
         checks.random-test = pkgs.runCommand "random-test"
-          { nativeBuildInputs = runtimeTools ++ testTools ++ zigTools; } ''
+          {
+            nativeBuildInputs = runtimeTools ++ testTools ++ zigTools ++ rustTools;
+            cargoDeps = rustCargoDeps;
+          } ''
             cp -r ${./.} work
             chmod -R u+w work
             cd work
+			# runCommand has no unpack/patch phases, so cargoSetupHook's normal
+			# phase hooks do not fire automatically. Apply them explicitly to
+			# point Cargo at importCargoLock's vendored source tree.
+			cargoSetupPostUnpackHook
+			cargoSetupPostPatchHook
+			export CARGO_HOME="$TMPDIR/cargo-home"
+			mkdir -p "$CARGO_HOME"
+			cp .cargo/config.toml "$CARGO_HOME/config.toml"
+			substituteInPlace "$CARGO_HOME/config.toml" \
+			  --replace-fail 'directory = "cargo-vendor-dir"' \
+			  "directory = \"$PWD/cargo-vendor-dir\""
+			export CARGO_NET_OFFLINE=true
             # Zig writes to a global cache; the sandbox has no writable HOME by
             # default, and without this `zig build` fails before compiling
             # anything. No network is needed -- build.zig.zon declares no
@@ -228,10 +328,22 @@
           '';
 
         checks.stats-smoke = pkgs.runCommand "random-stats-smoke"
-          { nativeBuildInputs = runtimeTools ++ testTools ++ zigTools; } ''
+          {
+            nativeBuildInputs = runtimeTools ++ testTools ++ zigTools ++ rustTools;
+            cargoDeps = rustCargoDeps;
+          } ''
             cp -r ${./.} work
             chmod -R u+w work
             cd work
+			cargoSetupPostUnpackHook
+			cargoSetupPostPatchHook
+			export CARGO_HOME="$TMPDIR/cargo-home"
+			mkdir -p "$CARGO_HOME"
+			cp .cargo/config.toml "$CARGO_HOME/config.toml"
+			substituteInPlace "$CARGO_HOME/config.toml" \
+			  --replace-fail 'directory = "cargo-vendor-dir"' \
+			  "directory = \"$PWD/cargo-vendor-dir\""
+			export CARGO_NET_OFFLINE=true
             export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
             export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-local"
             mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
@@ -254,14 +366,25 @@
             ${random}/bin/randomz --about >/dev/null
             ${random}/bin/drandomz --seed 42 -c 1 >/dev/null
             ${random}/bin/nrandomz --seed 42 -c 1 >/dev/null
+            ${random}/bin/randomr --about >/dev/null
+            ${random}/bin/drandomr --seed 42 -c 1 >/dev/null
+            ${random}/bin/nrandomr --seed 42 -c 1 >/dev/null
             ${random}/bin/drandom --seed 42 -c 1 >/dev/null
             ${random}/bin/nrandom --seed 42 -c 1 >/dev/null
             test "$(${random}/bin/random --seed 42 -c 8)" = \
               "$(${random}/bin/randomz --seed 42 -c 8)"
+            test "$(${random}/bin/random --seed 42 -c 8)" = \
+              "$(${random}/bin/randomr --seed 42 -c 8)"
             ${random}/bin/random --test
             ${random}/bin/randomz --test
+            RANDOM_TEST_FILE=${random}/tests/random_test ${random}/bin/randomr --test
+			${randomr}/bin/randomr --test
             touch $out
           '';
+
+        # On aarch64-darwin this is the macOS target gate; cross-linking it
+        # from Linux currently fails inside Nixpkgs' xcbuild before Rust runs.
+        checks.randomr-native = randomr;
 
         checks.random-crossarch = if crossSupported then
           pkgs.runCommand "random-crossarch"
@@ -278,6 +401,23 @@
               touch $out
             ''
           else pkgs.runCommand "random-crossarch-not-applicable" { } "touch $out";
+
+        checks.randomr-cross-compile = if crossSupported then
+          pkgs.runCommand "randomr-cross-compile"
+            { nativeBuildInputs = [ pkgs.file ]; } ''
+              test -s ${randomr}/bin/randomr
+              for target in ${pkgs.lib.escapeShellArgs rustCrossTargetNames}; do
+                case "$target" in
+                  windows-*) suffix=.exe ;;
+                  *) suffix= ;;
+                esac
+                test -s ${randomrCrossTargets}/"$target"/bin/randomr"$suffix"
+              done
+              file ${randomrCrossTargets}/linux-aarch64/bin/randomr | grep -q 'ARM aarch64'
+              file ${randomrCrossTargets}/windows-x86_64/bin/randomr.exe | grep -q 'x86-64'
+              touch $out
+            ''
+          else pkgs.runCommand "randomr-cross-compile-not-applicable" { } "touch $out";
 
         checks.windows-x64-smoke = if crossSupported then
           pkgs.runCommand "random-windows-x64-smoke"
@@ -311,7 +451,8 @@
           else pkgs.runCommand "random-windows-x64-smoke-not-applicable" { } "touch $out";
 
         devShells.default = pkgs.mkShell {
-          packages = runtimeTools ++ testTools ++ zigTools ++ [ pkgs.openssh pkgs.rsync ];
+          packages = runtimeTools ++ testTools ++ zigTools ++
+            [ pkgs.cargo pkgs.clippy pkgs.rustc pkgs.rustfmt pkgs.openssh pkgs.rsync ];
         };
       });
 }

@@ -20,6 +20,8 @@ local distribution_charts = require("distribution_charts")
 local distribution_view = require("distribution_view")
 
 local argv = arg or {}
+local DEFAULT_FRACTION_DIGITS = 18
+local MAX_FRACTION_DIGITS = 18
 
 -- ===== FFI declarations =====
 -- Solaris declares getrandom() with an int result; Linux uses ssize_t. Giving
@@ -913,7 +915,9 @@ local function print_help(invocation, distribution)
 	print("  -c, --count N       Output N numbers (default: 1, or 1024 with -b)")
 	print("  -d, --deterministic Use the cross-platform-identical BLAKE3 keyed XOF")
 	print("      --true-random   Force fresh OS/source CSPRNG entropy; ignore DRANDOM_SEED")
-	print("      --delimiter S   Set delimiter for output/input (default: newline)")
+		print("      --delimiter S   Set delimiter for output/input (default: newline)")
+		print("      --precision N   Truncate fractional output to 0..18 places (default: 18)")
+		print("      --truncate N    Alias for --precision")
 	print("  -h, --help          Show this help message")
 	print("      --hex           Output as hexadecimal")
 	print("      --base64        Output as base64 (for binary)")
@@ -1013,7 +1017,9 @@ local function parse_args()
 		no_wait = false,
 		chart_renderer_flag = false,
 		view = false,
-		generation_option_seen = false,
+			generation_option_seen = false,
+			precision = DEFAULT_FRACTION_DIGITS,
+			precision_set = false,
 		start_val = nil,
 		end_val = nil,
 		mean = nil,
@@ -1038,10 +1044,10 @@ local function parse_args()
 		local attached_option, attached_value = arg_val:match("^(%-%-[%w%-]+)=(.*)$")
 		if arg_val == "--about" or arg_val == "-a" then
 			print_about(invocation)
-			os.exit(0)
+			os.exit(io.stdout:flush() and 0 or 1)
 		elseif arg_val == "--help" or arg_val == "-h" then
 			print_help(invocation, help_distribution(invocation))
-			os.exit(0)
+			os.exit(io.stdout:flush() and 0 or 1)
 		elseif arg_val == "--test" then
 			local self = (arg and arg[0]) or ""
 			local self_dir = self:match("^(.*)/[^/]+$")
@@ -1168,6 +1174,23 @@ local function parse_args()
 				stderr_write("Error: --count must be a nonnegative whole number no larger than 2^53\n")
 				os.exit(1)
 			end
+		elseif arg_val == "--precision" or arg_val == "--truncate" or
+			attached_option == "--precision" or attached_option == "--truncate" then
+			options.generation_option_seen = true
+			local name = attached_option or arg_val
+			local value = attached_value
+			if value == nil then i = i + 1; value = argv[i] end
+			if value == nil or value == "" then
+				stderr_write("Error: " .. name .. " requires a number\n")
+				os.exit(1)
+			end
+			local precision = fx.parse_int_safe(value)
+			if precision == nil or precision < 0 or precision > MAX_FRACTION_DIGITS then
+				stderr_write("Error: " .. name .. " must be a whole number from 0 to 18\n")
+				os.exit(1)
+			end
+			options.precision = precision
+			options.precision_set = true
 		elseif arg_val == "--seed" then
 			options.generation_option_seen = true
 			i = i + 1
@@ -1359,7 +1382,7 @@ local function parse_args()
 		stderr_write("Error: --base64 requires --binaryoutput\n")
 		os.exit(1)
 	end
-	if options.hex_output and options.base64_output then
+		if options.hex_output and options.base64_output then
 		stderr_write("Error: --hex and --base64 are mutually exclusive\n")
 		os.exit(1)
 	end
@@ -1428,6 +1451,11 @@ local function parse_args()
 		if env_seed_raw and env_seed_raw ~= "" then
 			options.deterministic = true
 		end
+	end
+
+	if options.binary_output and options.precision_set then
+		stderr_write("Error: --precision/--truncate do not apply to binary output\n")
+		os.exit(1)
 	end
 
 	return options, positionals, invocation
@@ -1706,7 +1734,7 @@ local function main()
 				if type(v) == "number" then
 					formatted = string.format("%x", v)
 				else
-					formatted = fx.tostring(v[1], v[2], 6)
+					formatted = fx.tostring(v[1], v[2], options.precision)
 				end
 				if output_delimiter == "\n" then
 					print(formatted)
@@ -1742,7 +1770,7 @@ local function main()
 					local vfm, vfe = fx.from_int(v)
 					formatted = fx.tostring(vfm, vfe, 0)
 				else
-					formatted = fx.tostring(v[1], v[2], 6)
+					formatted = fx.tostring(v[1], v[2], options.precision)
 				end
 				if output_delimiter == "\n" then
 					print(formatted)
@@ -1759,3 +1787,4 @@ local function main()
 end
 
 main()
+if not io.stdout:flush() then os.exit(1) end

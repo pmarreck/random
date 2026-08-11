@@ -2,11 +2,12 @@
 # One byte-framed deterministic CLI payload for cross-target comparisons.
 set -u
 
-cli="${1:?usage: randomz_cross_payload /path/to/randomz}"
+cli="${1:?usage: randomz_cross_payload /path/to/frontend}"
 shift
 runner=()
-if [ -n "${RANDOMZ_RUNNER:-}" ]; then
-	read -r -a runner <<<"$RANDOMZ_RUNNER"
+frontend_runner="${FRONTEND_RUNNER:-${RANDOMZ_RUNNER:-}}"
+if [ -n "$frontend_runner" ]; then
+	read -r -a runner <<<"$frontend_runner"
 fi
 
 run_cli() {
@@ -25,7 +26,7 @@ emit_case() {
 	fi
 	local rc=$?
 	if [ "$rc" -ne 0 ] || [ ! -s "$output" ]; then
-		echo "randomz cross payload case $case_no failed or emitted no bytes (exit=$rc)" >&2
+		echo "frontend cross payload case $case_no failed or emitted no bytes (exit=$rc)" >&2
 		return 1
 	fi
 	printf '\nRANDOMZ-CASE %d SEED %s ARGS %s BYTES %d\n' \

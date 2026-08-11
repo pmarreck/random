@@ -1,0 +1,294 @@
+#!/usr/bin/env bash
+# Compare release-build CLI throughput across LuaJIT, Zig/C, and Rust.
+# Seeded outputs are proved byte-identical before any timing is recorded.
+set -u
+set -o pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$here" || exit 1
+IFS=$' \t\n'
+
+mode=full
+case "${1-}" in
+	"") ;;
+	--quick) mode=quick ;;
+	--check) mode=check ;;
+	--help|-h)
+		printf '%s\n' \
+			'Usage: ./bm [--quick|--check]' \
+			'' \
+			'Benchmarks byte-identical deterministic work through random (LuaJIT),' \
+			'randomz (Zig/C), and randomr (Rust). Builds happen before timing.' \
+			'' \
+			'  --quick  Use smaller workloads and three measured runs' \
+			'  --check  Build and prove every benchmark workload identical; do not time' \
+			'' \
+			'Environment: BM_SKIP_BUILD=1, BM_RUNS, BM_WARMUP, BM_COUNT,' \
+			'BM_RAW_BYTES, BM_MACHINE_ID, BM_RESULTS_FILE.'
+		exit 0
+		;;
+	*)
+		echo "Unknown argument: $1" >&2
+		exit 1
+		;;
+esac
+
+require_command() {
+	if ! command -v "$1" >/dev/null 2>&1; then
+		echo "./bm requires $1" >&2
+		exit 1
+	fi
+}
+
+if [ "${BM_SKIP_BUILD:-0}" != 1 ]; then
+	"$here/build" || exit 1
+fi
+
+lua_cli="$here/zig-out/bin/random"
+zig_cli="$here/zig-out/bin/randomz"
+rust_cli="$here/zig-out/bin/randomr"
+implementations=(luajit zig rust)
+executables=("$lua_cli" "$zig_cli" "$rust_cli")
+for executable in "${executables[@]}"; do
+	if [ ! -x "$executable" ]; then
+		echo "./bm requires a release executable: $executable" >&2
+		echo "Run ./build, or unset BM_SKIP_BUILD." >&2
+		exit 1
+	fi
+done
+
+if [ "$mode" = quick ]; then
+	default_runs=3
+	default_warmup=1
+	default_count=5000
+	default_raw_bytes=1048576
+else
+	default_runs=7
+	default_warmup=2
+	default_count=20000
+	default_raw_bytes=8388608
+fi
+runs="${BM_RUNS:-$default_runs}"
+warmup="${BM_WARMUP:-$default_warmup}"
+count="${BM_COUNT:-$default_count}"
+raw_bytes="${BM_RAW_BYTES:-$default_raw_bytes}"
+for numeric_setting in "$runs" "$warmup" "$count" "$raw_bytes"; do
+	if ! [[ "$numeric_setting" =~ ^[0-9]+$ ]]; then
+		echo "Benchmark counts and run settings must be non-negative integers" >&2
+		exit 1
+	fi
+done
+if [ "$runs" -eq 0 ] || [ "$count" -eq 0 ] || [ "$raw_bytes" -eq 0 ]; then
+	echo "BM_RUNS, BM_COUNT, and BM_RAW_BYTES must be positive" >&2
+	exit 1
+fi
+
+case_names=(
+	raw_bytes
+	hex_bytes
+	base64_bytes
+	uniform_small
+	uniform_wide
+	normal
+	exponential
+	poisson
+	log_normal
+	beta
+)
+case_arguments=(
+	"-d --seed 42 --binaryoutput --count $raw_bytes"
+	"-d --seed 42 --binaryoutput --hex --count $raw_bytes"
+	"-d --seed 42 --binaryoutput --base64 --count $raw_bytes"
+	"-d --seed 42 --count $count 0..99"
+	"-d --seed 42 --count $count -1000000000000..1000000000000"
+	"-d --seed 42 --normalized --mean=-0.25 --stddev=1.75 --count $count"
+	"-d --seed 42 --exponential --rate=1.75 --count $count"
+	"-d --seed 42 --poisson --lambda=5 --count $count"
+	"-d --seed 42 --log-normal --mean=-0.25 --stddev=1.75 --count $count"
+	"-d --seed 42 --beta=3 --alpha=1 --count $count"
+)
+
+benchmark_tmp="$(mktemp -d "${TMPDIR:-/tmp}/random-benchmark.XXXXXX")" || exit 1
+move_benchmark_tmp_to_trash() {
+	if [ -z "${benchmark_tmp:-}" ] || [ ! -e "$benchmark_tmp" ]; then
+		return
+	fi
+	data_root="${XDG_DATA_HOME:-${HOME-}/.local/share}"
+	if [ -z "$data_root" ]; then
+		echo "Benchmark temporary files remain at $benchmark_tmp (no Trash location)" >&2
+		return
+	fi
+	trash_files="$data_root/Trash/files"
+	mkdir -p "$trash_files" || {
+		echo "Benchmark temporary files remain at $benchmark_tmp (could not open Trash)" >&2
+		return
+	}
+	trash_name="$(basename "$benchmark_tmp")"
+	trash_target="$trash_files/$trash_name"
+	trash_counter=1
+	while [ -e "$trash_target" ]; do
+		trash_target="$trash_files/$trash_name.$trash_counter"
+		trash_counter=$((trash_counter + 1))
+	done
+	mv -- "$benchmark_tmp" "$trash_target" || {
+		echo "Benchmark temporary files remain at $benchmark_tmp (Trash move failed)" >&2
+		return
+	}
+	benchmark_tmp=""
+}
+trap move_benchmark_tmp_to_trash EXIT
+
+echo "Checking benchmark workload equivalence..."
+for case_index in "${!case_names[@]}"; do
+	case_name="${case_names[$case_index]}"
+	read -r -a args <<<"${case_arguments[$case_index]}"
+	for implementation_index in "${!implementations[@]}"; do
+		"${executables[$implementation_index]}" "${args[@]}" \
+			>"$benchmark_tmp/$case_name.${implementations[$implementation_index]}" || {
+			echo "Benchmark producer failed: $case_name/${implementations[$implementation_index]}" >&2
+			exit 1
+		}
+	done
+	if ! cmp -s "$benchmark_tmp/$case_name.luajit" "$benchmark_tmp/$case_name.zig" ||
+	   ! cmp -s "$benchmark_tmp/$case_name.luajit" "$benchmark_tmp/$case_name.rust"; then
+		echo "Benchmark workload differs across implementations: $case_name" >&2
+		sha256sum "$benchmark_tmp/$case_name."* >&2
+		exit 1
+	fi
+	printf '  ✓ %s\n' "$case_name"
+done
+echo "All ${#case_names[@]} benchmark workloads are byte-identical."
+
+if [ "$mode" = check ]; then
+	exit 0
+fi
+
+require_command hyperfine
+require_command jq
+require_command sha256sum
+
+machine_raw="${BM_MACHINE_ID:-}"
+if [ -z "$machine_raw" ] && [ -r /etc/machine-id ]; then
+	machine_raw="$(tr -d '\n' </etc/machine-id)"
+fi
+if [ -z "$machine_raw" ]; then
+	machine_raw="$(hostname 2>/dev/null || uname -n)"
+fi
+machine_id="$(printf '%s' "$machine_raw" | tr -c 'A-Za-z0-9._-' '_')"
+history_file="${BM_RESULTS_FILE:-$here/benchmarks/$machine_id.ndjson}"
+mkdir -p "$(dirname "$history_file")" || exit 1
+touch "$history_file" || exit 1
+
+timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+git_commit="$(git rev-parse HEAD 2>/dev/null || printf unknown)"
+if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+	git_dirty=true
+else
+	git_dirty=false
+fi
+platform="$(uname -srm)"
+cpu_model="$(lscpu 2>/dev/null | sed -n 's/^Model name:[[:space:]]*//p' | head -n 1)"
+lua_shebang="$(head -n 1 "$lua_cli")"
+case "$lua_shebang" in
+	'#!'/*)
+		lua_interpreter="${lua_shebang#\#!}"
+		luajit_version="$("$lua_interpreter" -v 2>&1 | head -n 1)"
+		;;
+	*) luajit_version="$(luajit -v 2>&1 | head -n 1)" ;;
+esac
+zig_version="$(zig version 2>/dev/null || printf unknown)"
+rust_version="$(rustc --version 2>/dev/null || printf unknown)"
+hyperfine_version="$(hyperfine --version 2>/dev/null || printf unknown)"
+
+echo
+echo "Benchmarking release executables ($runs runs, $warmup warmups)..."
+echo "History: $history_file"
+for case_index in "${!case_names[@]}"; do
+	case_name="${case_names[$case_index]}"
+	arguments="${case_arguments[$case_index]}"
+	result_json="$benchmark_tmp/$case_name.json"
+	hyperfine_args=(
+		-N --warmup "$warmup" --runs "$runs" --style basic --sort command
+		--output null --export-json "$result_json"
+	)
+	for implementation_index in "${!implementations[@]}"; do
+		hyperfine_args+=(
+			-n "${implementations[$implementation_index]}"
+			"${executables[$implementation_index]} $arguments"
+		)
+	done
+	echo
+	echo "== $case_name: $arguments =="
+	hyperfine "${hyperfine_args[@]}" || exit 1
+
+	while IFS= read -r result; do
+		implementation="$(jq -r '.command' <<<"$result")"
+		mean_seconds="$(jq -r '.mean' <<<"$result")"
+		user_seconds="$(jq -r '.user' <<<"$result")"
+		system_seconds="$(jq -r '.system' <<<"$result")"
+		cpu_seconds="$(jq -r '.user + .system' <<<"$result")"
+		median_seconds="$(jq -r '.median' <<<"$result")"
+		stddev_seconds="$(jq -r '.stddev' <<<"$result")"
+		baseline="$(jq -r --arg case "$case_name" --arg implementation "$implementation" \
+			--arg arguments "$arguments" \
+			'select(.case == $case and .implementation == $implementation and
+			 .arguments == $arguments and .output_sink == "null") | .cpu_seconds' \
+			"$history_file" 2>/dev/null | tail -n 1)"
+		if [ -n "$baseline" ] && [ "$baseline" != null ] && [ "$baseline" != 0 ]; then
+			awk -v current="$cpu_seconds" -v baseline="$baseline" \
+				-v label="$case_name/$implementation" 'BEGIN {
+					ratio = current / baseline
+					if (ratio > 1.15) {
+						printf "  WARNING: %s CPU time regressed %.1f%% versus prior machine baseline\n", label, (ratio - 1) * 100
+					} else if (ratio < 0.85) {
+						printf "  REVIEW: %s CPU time improved %.1f%%; verify no work was lost\n", label, (1 - ratio) * 100
+					}
+				}'
+		fi
+		case "$implementation" in
+			luajit) measured_executable="$lua_cli" ;;
+			zig) measured_executable="$zig_cli" ;;
+			rust) measured_executable="$rust_cli" ;;
+			*) echo "Unknown hyperfine result: $implementation" >&2; exit 1 ;;
+		esac
+		binary_sha256="$(sha256sum "$measured_executable" | awk '{print $1}')"
+		jq -cn \
+			--arg timestamp "$timestamp" \
+			--arg machine_id "$machine_id" \
+			--arg git_commit "$git_commit" \
+			--argjson git_dirty "$git_dirty" \
+			--arg platform "$platform" \
+			--arg cpu_model "$cpu_model" \
+			--arg case "$case_name" \
+			--arg implementation "$implementation" \
+			--arg arguments "$arguments" \
+			--arg binary_sha256 "$binary_sha256" \
+			--arg luajit_version "$luajit_version" \
+			--arg zig_version "$zig_version" \
+			--arg rust_version "$rust_version" \
+			--arg hyperfine_version "$hyperfine_version" \
+			--argjson runs "$runs" \
+			--argjson warmup "$warmup" \
+			--argjson mean_seconds "$mean_seconds" \
+			--argjson median_seconds "$median_seconds" \
+			--argjson stddev_seconds "$stddev_seconds" \
+			--argjson user_seconds "$user_seconds" \
+			--argjson system_seconds "$system_seconds" \
+			--argjson cpu_seconds "$cpu_seconds" \
+			'{schema_version: 1, timestamp: $timestamp, machine_id: $machine_id,
+			  git_commit: $git_commit, git_dirty: $git_dirty, platform: $platform,
+			  cpu_model: $cpu_model, case: $case, implementation: $implementation,
+			  arguments: $arguments, output_sink: "null", runs: $runs, warmup: $warmup,
+			  mean_seconds: $mean_seconds, median_seconds: $median_seconds,
+			  stddev_seconds: $stddev_seconds, user_seconds: $user_seconds,
+			  system_seconds: $system_seconds, cpu_seconds: $cpu_seconds,
+			  binary_sha256: $binary_sha256,
+			  luajit_version: $luajit_version, zig_version: $zig_version,
+			  rust_version: $rust_version, hyperfine_version: $hyperfine_version}' \
+			>>"$history_file" || exit 1
+	done < <(jq -c '.results[]' "$result_json")
+done
+
+echo
+echo "Benchmark results appended to $history_file"
+echo "Two-sided ±15% CPU-time changes are reported for review, not auto-accepted."

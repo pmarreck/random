@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Cargo linker adapter for Rust targets that Zig can link without a host SDK.
+set -u
+zig_target="${RANDOMR_ZIG_TARGET:?RANDOMR_ZIG_TARGET is required}"
+args=()
+for argument in "$@"; do
+	case "$argument" in
+		-nolibc|--unwindlib=none|-lmsvcrt|-Wl,-O1) ;;
+		-lkvm|-lmemstat|-lprocstat|-ldevstat)
+			case "$zig_target" in
+				*-freebsd) ;;
+				*) args+=("$argument") ;;
+			esac
+			;;
+		*) args+=("$argument") ;;
+	esac
+done
+exec zig cc -target "$zig_target" -lc "${args[@]}"

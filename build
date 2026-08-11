@@ -4,7 +4,7 @@
 #
 # `result/` is a symlink into the read-only nix store whose target changes on
 # every rebuild, so we also copy the CLIs into `zig-out/bin/` (gitignored) for
-# a stable, writable location -- `./zig-out/bin/randomz`, `./zig-out/bin/random`.
+# stable, writable `random`, `randomz`, and `randomr` paths.
 #
 # Usage: ./build                 # ReleaseFast, all optimizations (default)
 #        ./build --print-build-logs   # any extra args pass through to `nix build`
@@ -17,19 +17,29 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$here" || exit 1
 
 # The flake's package runs `zig build -Doptimize=ReleaseFast` and installs both
-# the LuaJIT `random` and the Zig/C `randomz` CLIs.
-nix build .#default "$@"
+# the LuaJIT `random`, Zig/C `randomz`, and Rust `randomr` CLIs.
+# Use a path flake so a pre-commit worktree includes newly created source files.
+# Git-flake semantics hide untracked files, making the build unable to validate
+# a new crate (or any other new file) until it has already been staged.
+nix build path:.#default "$@"
 rc=$?
 if [ "$rc" -ne 0 ]; then
 	echo "build FAILED (nix build exited $rc)" >&2
 	exit "$rc"
 fi
 
-mkdir -p zig-out/bin
+mkdir -p zig-out/bin zig-out/lib
 # `result/bin/*` are mode-555 store files; install -m755 gives writable copies.
 install -m755 result/bin/randomz zig-out/bin/randomz
 install -m755 result/bin/random  zig-out/bin/random
+install -m755 result/bin/randomr zig-out/bin/randomr
+# The LuaJIT frontend resolves these relative to its copied executable.
+install -m644 result/lib/blake3.lua             zig-out/lib/blake3.lua
+install -m644 result/lib/fixed.lua              zig-out/lib/fixed.lua
+install -m644 result/lib/distribution_charts.lua zig-out/lib/distribution_charts.lua
+install -m644 result/lib/distribution_view.lua   zig-out/lib/distribution_view.lua
 
 echo "Built:"
 echo "  $here/zig-out/bin/randomz   ($("$here/zig-out/bin/randomz" --about 2>/dev/null))"
 echo "  $here/zig-out/bin/random    (LuaJIT frontend)"
+echo "  $here/zig-out/bin/randomr   ($("$here/zig-out/bin/randomr" --about 2>/dev/null))"

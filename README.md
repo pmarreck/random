@@ -9,16 +9,17 @@ normal, exponential, Poisson, log-normal, and beta distributions. True-random
 mode instead draws fresh entropy from the operating system CSPRNG and is
 intentionally not reproducible.
 
-The project ships matching implementations: the original
-[LuaJIT](https://luajit.org/) oracle and a Zig core exposed through a public C
-ABI, driven by a C CLI that dogfoods that ABI. A seeded BLAKE3 keyed XOF powers
-cross-platform-identical deterministic streams; stdin operations and multiple
-output encodings make the same small tool useful beyond number generation.
+The project ships three matching implementations: the original
+[LuaJIT](https://luajit.org/) oracle, a Zig core exposed through a public C ABI
+and dogfooded by a C CLI, and a pure-core Rust library with a separate Rust CLI.
+A seeded BLAKE3 keyed XOF powers cross-platform-identical deterministic streams;
+stdin operations and multiple output encodings make the same small tool useful
+beyond number generation.
 
-It ships two equivalent command families: `random`/`nrandom`/`drandom` use the
-LuaJIT implementation, while `randomz`/`nrandomz`/`drandomz` use the C frontend
-over the Zig library. The invocation name selects normalized or deterministic
-mode in either family.
+It ships three equivalent command families: `random`/`nrandom`/`drandom` use
+LuaJIT, `randomz`/`nrandomz`/`drandomz` use the C frontend over Zig, and
+`randomr`/`nrandomr`/`drandomr` use Rust. The invocation name selects normalized
+or deterministic mode in every family.
 
 ## Features
 
@@ -35,9 +36,16 @@ mode in either family.
 - **Reproducible across platforms:** seeded streams are bit-identical across machines, operating systems and CPU architectures — verified on x86_64-glibc, x86_64-musl, aarch64-Linux and native aarch64-macOS — because all math runs on an integer-only kernel instead of the platform's libm — see [Determinism](#determinism) below
 - **Embeddable core:** `librandomz.a` plus `randomz.h`; callers own DRBG state
   and provide entropy through a callback, so the Zig core performs no I/O
+- **Native Rust library:** the `randomr` crate exposes the caller-owned DRBG,
+  integer-only fixed arithmetic, samplers, and curve generation; only its
+  explicitly selected `entropy` module performs I/O
 - **WASM build:** `randomz-wasi.wasm` exports the same deterministic core plus
-  a fail-closed adapter to the host's WASI `random_get`
-- **Small runtime surface:** LuaJIT for the oracle CLI; libc only for `randomz`
+  a fail-closed adapter to the host's WASI `random_get`; the pure Rust core is
+  compile-gated for `wasm32-wasip1`, while an equivalent Rust artifact is
+  deferred until a measured size/performance comparison decides whether
+  shipping one or both is useful
+- **Small runtime surface:** LuaJIT for the oracle CLI; libc for `randomz`;
+  `randomr` is a native Rust executable
 
 ### Determinism
 
@@ -79,6 +87,8 @@ fragile controls that *must* diverge (platform libm across libcs, out-of-range
 `double`→int conversion across architectures), because an "identical" verdict
 from a comparison that could not have detected a difference proves nothing.
 Results and caveats: [`docs/cross-architecture-evidence.md`](docs/cross-architecture-evidence.md).
+The same local run compares 54 end-to-end invocations from native x86_64 and
+emulated aarch64 Rust executables to the LuaJIT oracle.
 
 While building this kernel we found and filed
 [LuaJIT/LuaJIT#1499](https://github.com/LuaJIT/LuaJIT/issues/1499), an
@@ -121,6 +131,7 @@ random -n --mean 50 --stddev 10     # normal distribution
 random --exponential --rate 4       # exponential with rate 4
 random --poisson --lambda 5         # --mean 5 remains an exact alias
 random --beta=3 --alpha=1 --view    # chart Beta(alpha=1, beta=3)
+random --exponential --precision 6  # truncate fractional output to 6 places
 random -d --seed 42 -c 5            # 5 reproducible numbers
 random --true-random -b -c 32       # force entropy even if DRANDOM_SEED is set
 random --hex -c 5                   # 5 hex values
@@ -129,6 +140,10 @@ printf 'rare:1,common:10' | random --weighted --delimiter ','
 ```
 
 Run `random -h` for the full option list.
+
+Fractional distributions print 18 deterministic decimal places by default.
+Use `--precision N` or its `--truncate N` alias to truncate (never round) to
+0–18 places; integer and binary stream semantics are unchanged.
 
 Distribution-qualified help is order-independent: for example,
 `random --normalized --help` and `random --help --normalized` show the normal
@@ -180,6 +195,13 @@ x86_64 and aarch64. Solaris/illumos and DragonFly have pinned source selectors,
 but Zig 0.16 currently lacks usable cross-libc support for their full artifacts;
 native runtime validation remains pending and support is not yet claimed.
 
+For Rust, the cross-build gate covers Linux aarch64, Windows x86_64/ARM64,
+FreeBSD x86_64, and NetBSD x86_64 in addition to native Linux. Rust 1.97 does
+not distribute standard libraries for OpenBSD or BSD ARM64, so those are
+explicit target-library gaps rather than silent skips. Native ARM64 macOS and
+Windows workflow legs are configured to verify the architecture, a frozen raw
+stream plus all nonlinear distributions and stdin shuffling, and OS entropy.
+
 Backend flags are normalized to numeric `0`/`1` values and tested by value,
 never by macro presence. The build rejects zero or multiple selected backends;
 the test suite additionally defines disabled backends as `0` and proves they
@@ -189,7 +211,8 @@ deterministic fallback.
 
 The CLIs never persist deterministic state. Reusing a seed restarts the same
 stream; omitting it prints a replayable seed. The LuaJIT CLI uses
-`DRANDOM_SEED`; the C/FFI CLI uses the separately namespaced `DRANDOMZ_SEED`.
+`DRANDOM_SEED`; the C/FFI CLI uses `DRANDOMZ_SEED`; the Rust CLI uses
+`DRANDOMR_SEED`. Each frontend ignores the other two namespaces.
 An inherited frontend-specific seed variable makes a plain invocation
 deterministic, so security-sensitive callers should use `--true-random`, which
 overrides that frontend's environment variable and rejects deterministic flags.
@@ -206,6 +229,7 @@ LuaJIT-only gist has no separately visible license.
 ```sh
 nix run github:pmarreck/random            # run without installing
 nix run github:pmarreck/random#randomz    # C CLI over the Zig FFI
+nix run github:pmarreck/random#randomr    # Rust CLI
 nix profile install github:pmarreck/random
 ```
 
@@ -216,6 +240,11 @@ C CLI and static library, run `zig build -Doptimize=ReleaseFast` and use
 `zig-out/bin/randomz`, `zig-out/include/randomz.h`, and
 `zig-out/lib/librandomz.a`. `nrandomz` and `drandomz` are installed aliases;
 the Nix package installs them as symlinks.
+
+For Rust, run `cargo build --locked --release -p randomr-cli`; Cargo emits
+`randomr`, and the Nix package supplies `nrandomr` and `drandomr` aliases. Rust
+programs can depend on the workspace crate at `rust/randomr` and use `Drbg` as a
+`ByteSource` for any exported sampler without involving CLI I/O or formatting.
 
 The same build emits `zig-out/bin/randomz-wasi.wasm`, a WASI Preview 1 reactor
 module. It exports memory, the public deterministic `randomz_*` ABI, and
@@ -260,31 +289,44 @@ A dev shell with LuaJIT and the test tooling is provided:
 direnv allow      # or: nix develop
 ./test            # FAST mode (quick, quiet on success)
 FAST= ./test      # full statistical run
-./stats           # separate, deeper sanity analysis of both implementations
-nix flake check   # hermetic CI check (runs all 13 suites, but FORCES FAST=1 --
+./stats           # separate, deeper sanity analysis of all three implementations
+nix flake check   # hermetic CI check (runs all 18 suites, but FORCES FAST=1 --
                    # kernel_jit_diff's 60000-iteration deep JIT differential
                    # is deep-mode-only by design and is SKIPPED here, not run;
                    # run `FAST= ./test` locally for the full non-FAST suite)
 ```
 
 `./test` runs every suite under `tests/` (official BLAKE3 vectors, an independent
-Zig DRBG reference check, the same 77-check Bash CLI contract against both
-executables, 142 exact LuaJIT-vs-C cases, a C-compiled public-ABI conformance
-test, isolated Zig-package reconstruction, five-target cross-compilation
+Zig DRBG reference check, the same 79-check Bash CLI contract against all three
+executables, all three pairwise 141-case exact frontend matrices, Rust
+mutation/downstream-library controls, a C-compiled public-ABI conformance
+test, isolated Zig-package reconstruction, 11-target Zig cross-compilation
 (including Windows ARM64), Wine-executed Windows x86_64 parity, kernel unit
 tests, golden vectors, the `bc` sweep, and the deep-mode-only JIT differential).
 Set `RANDOM_TEST_CLI` to
 run `tests/random_test` or `tests/drbg_test` against another compatible binary.
 The suites are hermetic and concurrency-safe.
+Cold `./test` and Nix runs are dominated by ReleaseFast compilation and the
+multi-target artifact gates, not by the pure arithmetic checks themselves.
 
 `./stats` is intentionally separate from the correctness suite. It streams raw
 bytes and distribution samples without writing them to disk, checks obvious
 bias/shape failures, and first proves its thresholds reject deliberately bad
-generators. Use `./stats --lua`, `./stats --c`, or `./stats --cli PATH`; `FAST=1`
+generators. Use `./stats --lua`, `./stats --c`, `./stats --rust`, or
+`./stats --cli PATH`; `FAST=1`
 reduces sample sizes. A pass is a statistical smoke test, not a cryptographic
 security certification. The sensitivity set rejects seven deliberately bad
 generators: an all-zero byte stream plus constant uniform, normal,
 exponential, Poisson, log-normal, and beta samples.
+
+`./bm` compares release-built LuaJIT, Zig/C, and Rust CLIs over raw, encoded,
+uniform, normal, exponential, Poisson, log-normal, and beta workloads. It
+first requires every seeded workload to be byte-identical across all three,
+then measures direct processes with Hyperfine and appends CPU/wall data
+to `benchmarks/<machine-id>.ndjson`. Prior results on the same machine and
+argument set provide a two-sided ±15% review threshold: regressions are loud,
+and surprising speedups are flagged in case work disappeared. Use `--quick`
+for a short run or `--check` to perform only the cross-implementation proof.
 
 ## Layout
 
@@ -301,10 +343,17 @@ src/randomz_cli.c   C CLI; accesses the Zig core only through randomz.h
 src/distribution_view.c C-side UTF-8/Kitty/Sixel runtime rasterizer
 tools/generate_distribution_charts.lua deterministic shared chart generator
 include/randomz.h   public caller-owned-state C API
+rust/randomr/       importable pure-core Rust library plus isolated entropy module
+rust/randomr-cli/   Rust I/O, argument parsing, formatting, and chart frontend
 tests/random_test   CLI behavior + statistical distribution suite (bash)
-tests/randomz_test  shared C-CLI contract + exact LuaJIT differential matrix
+tests/randomz_test  shared later-frontend contract + exact LuaJIT differential matrix
+tests/randomr_test  Rust architecture, shared-contract, and two-oracle gate
+tests/randomr_mutation_test  proves five Rust acceptance controls can turn red
+tests/randomr_bsd_targets  Rust 1.97 distributed BSD-target cross-link gate
 tests/randomz_cross_compile_test  Linux/macOS/Windows x86_64/aarch64 build gate
 stats               standalone raw/distribution statistical sanity analysis
+bm                  three-implementation release benchmark and parity preflight
+benchmarks/         per-machine append-only NDJSON benchmark history
 tests/fixed_test    unit tests for lib/fixed.lua (bash)
 tests/golden_test   verifies committed golden vectors still reproduce
 tests/kernel_bc_sweep sweeps the kernel against `bc -l` as an independent oracle

@@ -267,3 +267,178 @@ correctness blockers.
 - **Remaining — planned:** the benchmark suite is intentionally still open;
   gamma, Weibull, Pareto/Zipf, geometric/binomial, Cauchy/Student-t,
   edge-biased, and log-uniform modes are recorded as post-shipment work.
+
+---
+
+# Rust `randomr` milestone addendum
+
+**Date:** 2026-08-11
+**Scope:** the importable Rust core, Rust CLI, shared three-frontend controls,
+Cargo/Nix packaging, cross targets, and native-target workflow.
+**Method:** independent passes over review dimensions 1–4, 5–8, and 9–12,
+followed by reproduction and revalidation against the changing tree.
+**Result:** no critical findings or release-blocking warnings remain. All
+reproduced warnings were fixed; only explicitly deferred performance and
+organization advisories remain.
+
+## 1. Inconsistent, incomplete, or undefined functionality
+
+- **Fixed — WARNING:** Rust binary output allocated the entire requested count
+  (plus a second base64 buffer) and aborted on valid large requests. It now
+  streams fixed 64 KiB chunks, carries 0–2 base64 bytes between chunks, and is
+  proven byte-identical at counts 65,535–65,538 under all three encodings. A
+  128 MiB request must complete beneath a 64 MiB virtual-memory limit.
+- **Fixed — WARNING:** the first streaming edit duplicated the final raw chunk.
+  Independent review caught it before acceptance; the all-encoding boundary
+  matrix would also turn red for that implementation.
+- **Fixed:** fractional distributions now default to the deterministic maximum
+  of 18 decimal places. `--precision N` and `--truncate N` explicitly truncate
+  to 0–18 places without rounding in all three frontends.
+- **Fixed:** `randomr` stdin is byte-oriented, preserves non-UTF-8/NBSP bytes,
+  and accepts non-UTF-8 `--random-source` paths through `OsString`/`PathBuf`.
+
+## 2. Inadequate test coverage
+
+- **Fixed — WARNING:** direct library tests now pin every sampler's exact API
+  output and byte consumption, u32/u64 rejection, typed source failures,
+  invalid domains, DRBG state/cap/endian/zeroization behavior, and exact/EOF
+  path entropy. The public doctest and downstream no-default-features consumer
+  both compile.
+- **Fixed — WARNING:** the pinned `getrandom` Linux backend treats `EPERM` as
+  unavailable and falls back to `/dev/urandom`, which could turn a sandbox
+  policy denial into silent success. The Linux/Android adapter now owns the
+  blocking syscall policy: it retries `EINTR`, continues exact partial reads,
+  reports `EAGAIN` distinctly for nonblocking calls, falls back only on
+  `ENOSYS`, and fails closed on `EPERM`, zero-byte returns, and hard errors.
+  Injected syscall controls cover the policy-denial, missing-syscall,
+  interruption, partial-read, and would-block paths without kernel faults.
+- **Fixed:** Windows/macOS ARM64 workflow payloads cover raw DRBG, every
+  nonlinear distribution, a wide range, stdin shuffle, and OS entropy. The
+  Windows leg also probes the Bash `--test` launcher; these become runtime
+  evidence only after the remote workflow is green.
+
+## 3. Futile or falsely reassuring tests
+
+- **Fixed — WARNING:** selector/oracle mutations used nonexistent `/bin/false`
+  and went red at executable preflight. The candidate selector now resolves a
+  real failing executable and requires a downstream diagnostic. The final
+  Zig-vs-Rust oracle mutation uses an executable wrapper whose Zig producer
+  succeeds but corrupts its output; the control requires the named final
+  differential with both producer statuses equal to zero.
+- **Fixed — ADVISORY:** the purity check only searched a short list of `std`
+  I/O paths. A dedicated gate now also rejects `getrandom`, `libc`, unsafe/FFI,
+  output macros, ambient state, and entropy feature escape hatches everywhere
+  outside `entropy.rs`; it verifies both OS dependencies remain optional and
+  feature-confined. A feature-gated `getrandom` mutation in `drbg.rs` proves
+  this stronger boundary can turn red.
+- **Fixed — WARNING:** the shared `--test` probe accepted the formerly vacuous
+  Rust implementation. It now requires child depth zero, and installed-package
+  testing caught/fixed a recursive Nix wrapper before release.
+- **Fixed:** architecture controls pin BLAKE3's zeroize feature and every
+  seed/key/Hasher/OutputReader zeroizing guard, so deleting a wipe guard makes
+  a source-level control red even though residual memory is not behaviorally
+  observable.
+
+## 4. Fast-test issues
+
+- **Fixed — WARNING:** all three pairwise comparisons reran the complete shared
+  acceptance/chart stack. Each frontend now runs local acceptance once, while
+  the third pair uses an explicit differential-only mode. All three 141-case
+  exact matrices remain mandatory.
+- **Fixed — ADVISORY:** the nonlinear mutation still compiles an isolated
+  release workspace, but now judges one frozen log-normal vector instead of
+  rerunning the full acceptance/chart/differential stack. Producer independence
+  is retained while routine mutation latency is sharply bounded.
+
+## 5. Superfluous or duplicated functionality
+
+- **Fixed:** the dead public `Error::BufferTooSmall` variant was removed, and
+  the duplicated fixed exponent-validity predicate plus raw 2^53 literals now
+  have one core owner.
+- **Remaining — ADVISORY:** five cross-target/stat scripts repeat the same
+  minimal `cargo metadata` target-directory extraction. A sourced Rust test
+  setup helper would reduce maintenance without affecting behavior.
+
+## 6. Suboptimal, inconcise, or disorganized code
+
+- **Fixed:** generalized differential diagnostics now identify the actual
+  oracle/candidate pair rather than claiming every comparison is Lua-versus-C.
+- **Remaining — ADVISORY:** Rust CLI token interpretation is split across early
+  actions, generation parsing, distribution help, and renderer selection.
+  `Options::parse` also mixes consumption and cross-option validation. A typed
+  command/action classifier should precede post-push CLI expansion.
+- **Remaining — ADVISORY:** numeric CLI parameters remain tuple-encoded as
+  `Option<(Fixed, String)>`; a `ParsedFixed` type would make value/spelling
+  ownership clearer before adding more distributions.
+
+## 7. Algorithmic complexity and performance
+
+- **Fixed — WARNING:** encoded binary output is O(1) memory rather than
+  O(requested output), while retaining O(n) time and exact byte order.
+- **Remaining — ADVISORY:** beta/log-normal curve rendering calculates every
+  expensive score twice to find and then normalize the maximum. A bounded
+  score vector can halve transcendental work.
+- **Remaining — ADVISORY:** scalar 4/8-byte sampler draws reconstruct a keyed
+  BLAKE3 XOF reader. Measure this in the planned benchmark suite before adding
+  a zeroized cache that could complicate state/clone semantics.
+
+## 8. Files without clear purpose
+
+No orphaned Rust file was found. The generated chart module, entropy mutant,
+downstream fixture, BSD/Windows link gates, and linker adapters each have a
+named consumer. The Windows ARM64 cross-link gate is now executed in CI rather
+than merely syntax-checked.
+
+## 9. Rust language and public API design
+
+- **Fixed:** path-bearing argv uses `OsString`/`PathBuf`; arbitrary stdin items
+  remain bytes. Rustfmt is repository-configured with `hard_tabs = true`.
+- **Fixed:** the crate has a compiling example and complete public rustdoc;
+  documentation builds deny both warnings and missing docs. Seed secrecy,
+  exported derived-key sensitivity, state restoration, and caller wipe
+  ownership are visible at the API site. Planned-to-grow `Error` and
+  `Distribution` enums are non-exhaustive.
+
+## 10. Memory safety, resource ownership, and secrets
+
+- **Fixed — WARNING:** BLAKE3's feature alone does not wipe on drop. Incremental
+  KDF and keyed-XOF Hashers, Hash/OutputReader temporaries, derived-key locals,
+  restored-state parameters, option seeds, parsed environment seeds, and
+  auto-seed storage now use zeroizing guards or explicit wipes. `Drbg` remains
+  `ZeroizeOnDrop`; caller-owned seed/state copies are documented as caller
+  responsibility.
+- **Fixed:** help/about/view/generation writes return ordinary I/O errors rather
+  than panicking on `/dev/full`; the same audit also fixed buffered help/about
+  write failures in the LuaJIT and C frontends.
+
+## 11. FFI and cross-target boundaries
+
+The Rust deterministic implementation uses no C ABI and shares no code with
+either oracle. Its sole unsafe block is the scoped Linux/Android `getrandom`
+call over a valid remaining slice; other entropy access uses safe Rust APIs.
+FreeBSD/NetBSD manifest identity is exact, Windows ARM64 is both cross-linked
+through Zig and configured for first-party native execution, and the pure core
+is compile-gated for `wasm32-wasip1`. Equivalent shippable Zig/Rust WASI
+artifacts remain a measured post-port decision.
+
+## 12. Error handling and packaging
+
+- **Fixed — WARNING:** `randomr --test` formerly launched the shared suite at
+  recursion depth one, so it returned green without tests. It now selects the
+  Rust frontend at depth zero, propagates status, invokes Bash directly, and
+  works from the standalone Nix package.
+- **Fixed — WARNING:** the first standalone wrapper forced its suite path and
+  recursively defeated the suite's test probe. `--set-default` preserves
+  explicit overrides, and package smoke invokes the standalone self-test.
+- **Fixed:** `Unsupported`, `WouldBlock`, EOF, and generic entropy failures have
+  distinct typed errors and CLI diagnostics; path open errors retain path and
+  OS cause. Output errors fail cleanly without panic diagnostics.
+- **Remaining — ADVISORY:** Nix Rust derivations still hash the full
+  multi-language repository (`src = ./.`). A fileset limited to Cargo inputs
+  would improve cache reuse, but changing source filtering immediately before
+  shipment adds more packaging risk than value.
+
+## 13. Database access patterns
+
+Not applicable. The project and all three deterministic cores have no database
+or persistent RNG state.

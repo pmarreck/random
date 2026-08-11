@@ -6,8 +6,10 @@ set -o pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$here/.."
-lua_cli="$root/bin/random"
+lua_cli="${ORACLE_CLI:-$root/bin/random}"
 c_cli="${RANDOMZ_TEST_CLI:-$root/zig-out/bin/randomz}"
+oracle_label="${ORACLE_KIND:-luajit}"
+candidate_label="${RANDOM_TEST_CLI_KIND:-zig}"
 fails=0
 cases=0
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/randomz-differential.XXXXXX")" || exit 1
@@ -18,21 +20,28 @@ trap 'rm -rf -- "$tmp"' EXIT
 if [ -z "${RANDOMZ_TEST_CLI:-}" ]; then
 	zig build -Doptimize=ReleaseFast >/dev/null || exit 1
 fi
+if [ ! -x "$lua_cli" ]; then
+	echo "randomz test FAILED: oracle CLI is not executable: $lua_cli" >&2
+	exit 1
+fi
 if [ ! -x "$c_cli" ]; then
 	echo "randomz test FAILED: C CLI is not executable: $c_cli" >&2
 	exit 1
 fi
 
-echo "Testing the shared CLI contract through the Zig/C FFI..."
-RANDOM_TEST_CLI="$c_cli" RANDOM_TEST_DEPTH=0 "$here/random_test"
-rc=$?
-if [ "$rc" -ne 0 ]; then fails=$((fails + 1)); fi
+if [ -z "${RANDOMZ_DIFFERENTIAL_ONLY:-}" ]; then
+	echo "Testing the shared CLI contract through the selected frontend..."
+	RANDOM_TEST_CLI="$c_cli" RANDOM_TEST_CLI_KIND="${RANDOM_TEST_CLI_KIND:-zig}" \
+		RANDOM_TEST_DEPTH=0 "$here/random_test"
+	rc=$?
+	if [ "$rc" -ne 0 ]; then fails=$((fails + 1)); fi
 
-RANDOM_TEST_CLI="$c_cli" "$here/drbg_test"
-rc=$?
-if [ "$rc" -ne 0 ]; then fails=$((fails + 1)); fi
+	RANDOM_TEST_CLI="$c_cli" RANDOM_TEST_CLI_KIND="${RANDOM_TEST_CLI_KIND:-zig}" \
+		"$here/drbg_test"
+	rc=$?
+	if [ "$rc" -ne 0 ]; then fails=$((fails + 1)); fi
 
-if [ -e /dev/full ]; then
+	if [ -e /dev/full ]; then
 	echo "Testing C frontend write failures are reported..."
 	for spec in "-b -c 64" "-b --hex -c 64" "-b --base64 -c 64"; do
 		read -r -a argv <<<"$spec"
@@ -52,13 +61,26 @@ if [ -e /dev/full ]; then
 		echo "randomz I/O control FAILED: auto-seed succeeded without reporting replay seed" >&2
 		fails=$((fails + 1))
 	fi
+	for output_cli in "$lua_cli" "$c_cli"; do
+		for output_spec in '--help' '--about' '--beta --view --utf8'; do
+			read -r -a output_argv <<<"$output_spec"
+			output_err="$tmp/output-error.$cases"
+			cases=$((cases + 1))
+			"$output_cli" "${output_argv[@]}" >/dev/full 2>"$output_err"
+			if [ "$?" -eq 0 ] || grep -Fq 'panicked at' "$output_err"; then
+				echo "frontend I/O control FAILED: $output_cli '$output_spec' did not report /dev/full cleanly" >&2
+				fails=$((fails + 1))
+			fi
+		done
+	done
 fi
 
 echo "Testing generated distribution help parity and terminal framing..."
-if ! luajit "$root/tools/generate_distribution_charts.lua" --check; then
-	fails=$((fails + 1))
-fi
-if command -v sixel2png >/dev/null 2>&1 && command -v magick >/dev/null 2>&1; then
+if [ -z "${RANDOMZ_SKIP_CHART_SOURCE_CONTROLS:-}" ]; then
+	if ! luajit "$root/tools/generate_distribution_charts.lua" --check; then
+		fails=$((fails + 1))
+	fi
+	if command -v sixel2png >/dev/null 2>&1 && command -v magick >/dev/null 2>&1; then
 	echo "Checking Sixel charts through the independent libsixel decoder..."
 	for chart_name in normal exponential poisson log_normal beta; do
 		png="$tmp/$chart_name.png"
@@ -105,8 +127,9 @@ if command -v sixel2png >/dev/null 2>&1 && command -v magick >/dev/null 2>&1; th
 		echo "Parameterized Sixel decode control FAILED" >&2
 		fails=$((fails + 1))
 	fi
-else
-	echo "Skipping independent Sixel decode control (libsixel/ImageMagick unavailable)"
+  else
+		echo "Skipping independent Sixel decode control (libsixel/ImageMagick unavailable)"
+	fi
 fi
 
 compare_help() {
@@ -246,6 +269,8 @@ for cli in "$lua_cli" "$c_cli"; do
 	fi
 done
 
+fi # full selected-frontend acceptance
+
 compare_args() {
 	local label="$1"
 	shift
@@ -258,11 +283,11 @@ compare_args() {
 	local c_rc=$?
 	if [ "$lua_rc" -ne 0 ] || [ "$c_rc" -ne 0 ] || \
 	   [ ! -s "$lua_out" ] || [ ! -s "$c_out" ] || ! cmp -s "$lua_out" "$c_out"; then
-		echo "randomz differential FAILED: $label (Lua=$lua_rc C=$c_rc; bytes=$(wc -c <"$lua_out")/$(wc -c <"$c_out"))" >&2
+		echo "frontend differential FAILED: $label ($oracle_label=$lua_rc $candidate_label=$c_rc; bytes=$(wc -c <"$lua_out")/$(wc -c <"$c_out"))" >&2
 		echo "  args: $*" >&2
 		diff -u <(xxd -p -c 32 <"$lua_out") <(xxd -p -c 32 <"$c_out") >&2 || true
-		if [ "$lua_rc" -ne 0 ]; then sed 's/^/  Lua stderr: /' <"$lua_err" >&2; fi
-		if [ "$c_rc" -ne 0 ]; then sed 's/^/  C stderr: /' <"$c_err" >&2; fi
+		if [ "$lua_rc" -ne 0 ]; then sed "s/^/  $oracle_label stderr: /" <"$lua_err" >&2; fi
+		if [ "$c_rc" -ne 0 ]; then sed "s/^/  $candidate_label stderr: /" <"$c_err" >&2; fi
 		fails=$((fails + 1))
 	fi
 }
@@ -279,7 +304,7 @@ compare_failure() {
 	local c_rc=$?
 	if [ "$lua_rc" -eq 0 ] || [ "$c_rc" -eq 0 ] || [ "$lua_rc" -ne "$c_rc" ] ||
 	   ! cmp -s "$lua_out" "$c_out" || ! cmp -s "$lua_err" "$c_err"; then
-		echo "randomz failure differential FAILED: $label (Lua=$lua_rc C=$c_rc)" >&2
+		echo "frontend failure differential FAILED: $label ($oracle_label=$lua_rc $candidate_label=$c_rc)" >&2
 		echo "  args: $*" >&2
 		diff -u "$lua_err" "$c_err" >&2 || true
 		fails=$((fails + 1))
@@ -297,13 +322,13 @@ compare_stdin() {
 	c_out="$(printf '%s' "$input" | "$c_cli" "$@" 2>/dev/null)"
 	c_rc=$?
 	if [ "$lua_rc" -ne 0 ] || [ "$c_rc" -ne 0 ] || [ "$lua_out" != "$c_out" ]; then
-		echo "randomz stdin differential FAILED: $label (Lua=$lua_rc C=$c_rc)" >&2
-		printf '  Lua: %q\n  C:   %q\n' "$lua_out" "$c_out" >&2
+		echo "frontend stdin differential FAILED: $label ($oracle_label=$lua_rc $candidate_label=$c_rc)" >&2
+		printf '  %s: %q\n  %s: %q\n' "$oracle_label" "$lua_out" "$candidate_label" "$c_out" >&2
 		fails=$((fails + 1))
 	fi
 }
 
-echo "Testing exact LuaJIT-vs-C output over the seed/flag matrix..."
+echo "Testing exact $oracle_label-vs-$candidate_label output over the seed/flag matrix..."
 compare_failure "legacy lone endpoint" 10
 compare_failure "legacy endpoint pair" 10 20
 compare_failure "empty exclusive range" 1...1
@@ -312,6 +337,10 @@ compare_failure "range on custom normal" --normalized --mean 5 0..9
 compare_failure "nonpositive beta parameter" --beta=0
 compare_failure "removed beta-param spelling" --beta-param 3
 compare_failure "unknown long option" --heop
+compare_failure "negative fractional precision" --exponential --precision -1
+compare_failure "excess fractional precision" --exponential --precision=19
+compare_failure "fractional precision" --exponential --truncate 1.5
+compare_failure "precision does not apply to binary" --exponential -b --precision 6
 max_seed=0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 for seed in 0 1 42 "$max_seed"; do
 	compare_args "raw XOF boundaries, seed=$seed" -d --seed "$seed" -b -c 131
@@ -340,6 +369,18 @@ for seed in 0 1 42 "$max_seed"; do
 	compare_args "beta binary, seed=$seed" -d --seed "$seed" -b --hex --beta 5 --alpha 2 -c 65
 	compare_args "delimiter, seed=$seed" -d --seed "$seed" --delimiter '::' -c 17 0..100
 done
+compare_args "maximum fractional precision" -d --seed 42 --exponential -c 8
+compare_args "explicit six-place truncation" -d --seed 42 --exponential --precision=6 -c 8
+compare_args "truncate alias" -d --seed 42 --exponential --truncate 6 -c 8
+compare_args "integer truncation" -d --seed 42 --exponential --precision 0 -c 8
+for boundary_count in 65535 65536 65537 65538; do
+	compare_args "raw streaming chunk boundary, count=$boundary_count" \
+		-d --seed 42 -b -c "$boundary_count"
+	compare_args "hex streaming chunk boundary, count=$boundary_count" \
+		-d --seed 42 -b --hex -c "$boundary_count"
+	compare_args "base64 streaming chunk boundary, count=$boundary_count" \
+		-d --seed 42 -b --base64 -c "$boundary_count"
+done
 
 stdin_lines=$'alpha\nbeta\ngamma\ndelta\nepsilon\n'
 stdin_csv='alpha,beta,gamma,delta,epsilon'
@@ -353,8 +394,8 @@ done
 compare_stdin "CRLF item normalization" $'alpha\r\nbeta\r\ngamma\r\n' --shuffle -d --seed 42
 
 if [ "$fails" -ne 0 ]; then
-	echo "randomz test FAILED: $fails control(s) failed across $cases exact differential cases" >&2
+	echo "frontend test FAILED: $fails control(s) failed across $cases cases ($oracle_label vs $candidate_label)" >&2
 	exit "$fails"
 fi
 
-echo "randomz test PASSED: shared contract + $cases exact differential cases"
+echo "frontend test PASSED: shared contract + $cases cases ($oracle_label vs $candidate_label)"

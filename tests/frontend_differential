@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Reuse the mature LuaJIT-oracle differential matrix for any later frontend.
+set -u
+set -o pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+candidate="${CANDIDATE_CLI:-}"
+kind="${CANDIDATE_KIND:-}"
+oracle="${ORACLE_CLI:-}"
+
+if [ -z "$candidate" ] || [ ! -x "$candidate" ]; then
+	echo "frontend differential FAILED: CANDIDATE_CLI is not executable: $candidate" >&2
+	exit 1
+fi
+case "$kind" in
+	zig|rust) ;;
+	*)
+		echo "frontend differential FAILED: CANDIDATE_KIND must be zig or rust" >&2
+		exit 1
+		;;
+esac
+if [ -n "$oracle" ] && [ ! -x "$oracle" ]; then
+	echo "frontend differential FAILED: ORACLE_CLI is not executable: $oracle" >&2
+	exit 1
+fi
+
+export RANDOM_TEST_CLI_KIND="$kind"
+RANDOMZ_TEST_CLI="$candidate" "$root/tests/randomz_test"

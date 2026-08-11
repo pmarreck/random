@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Enforce the Rust library/CLI dependency and purity boundary.
+set -u
+set -o pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fixture_tmp="$(mktemp -d "${TMPDIR:-/tmp}/randomr-consumer.XXXXXX")" || exit 1
+cleanup_fixture() {
+	rm -rf "$fixture_tmp"
+}
+trap cleanup_fixture EXIT
+
+for required in \
+	"$root/Cargo.toml" \
+	"$root/Cargo.lock" \
+	"$root/rust/randomr/Cargo.toml" \
+	"$root/rust/randomr/src/lib.rs" \
+	"$root/rust/randomr/src/entropy.rs" \
+	"$root/rust/randomr-cli/Cargo.toml" \
+	"$root/rust/randomr-cli/src/main.rs" \
+	"$root/tests/randomr_purity_check" \
+	"$root/tests/randomr_bsd_targets" \
+	"$root/tests/randomr_windows_arm64" \
+	"$root/tools/zig-rust-linker" \
+	"$root/tools/zig-aarch64-windows-linker" \
+	"$root/tests/fixtures/randomr-consumer/Cargo.toml" \
+	"$root/tests/fixtures/randomr-consumer/src/main.rs"; do
+	if [ ! -f "$required" ]; then
+		echo "randomr architecture RED: required file is absent: ${required#"$root/"}" >&2
+		exit 1
+	fi
+done
+
+"$root/tests/randomr_purity_check" "$root" || exit 1
+
+if ! rg -q 'randomr[[:space:]]*=.*path[[:space:]]*=.*\.\./randomr' \
+	"$root/rust/randomr-cli/Cargo.toml"; then
+	echo "randomr architecture FAILED: CLI does not depend on the public randomr crate" >&2
+	exit 1
+fi
+
+if rg -q 'randomr-cli' "$root/rust/randomr/Cargo.toml"; then
+	echo "randomr architecture FAILED: core depends on the CLI" >&2
+	exit 1
+fi
+
+for zeroize_control in \
+	'features = ["pure", "zeroize"]' \
+	'ZeroizeOnDrop' \
+	'Zeroizing::new(blake3::Hasher::new_derive_key' \
+	'Zeroizing::new(blake3::Hasher::new_keyed' \
+	'Zeroizing::new(hasher.finalize_xof' \
+	'Zeroizing::new([0_u8; 32])'; do
+	if ! rg -q -F "$zeroize_control" "$root/Cargo.toml" \
+		"$root/rust/randomr/src/drbg.rs" "$root/rust/randomr-cli/src/main.rs"; then
+		echo "randomr architecture FAILED: key/seed zeroization guard is absent: $zeroize_control" >&2
+		exit 1
+	fi
+done
+
+bash -n "$root/tests/randomr_bsd_targets" \
+	"$root/tests/randomr_windows_arm64" \
+	"$root/tests/randomr_purity_check" \
+	"$root/tools/zig-rust-linker" \
+	"$root/tools/zig-aarch64-windows-linker" || exit 1
+
+(cd "$root" && cargo test --locked -p randomr --lib) || exit 1
+(cd "$root" && cargo test --locked -p randomr --doc) || exit 1
+(cd "$root" && RUSTDOCFLAGS='-D warnings' cargo doc --locked -p randomr --no-deps) || exit 1
+cp -R "$root/tests/fixtures/randomr-consumer/." "$fixture_tmp/"
+sed -i "s|../../../rust/randomr|$root/rust/randomr|" "$fixture_tmp/Cargo.toml"
+(cd "$fixture_tmp" && cargo check --offline) || exit 1
+echo "randomr architecture test PASSED: importable library and isolated entropy boundary"

@@ -27,6 +27,8 @@
 #endif
 
 #define MAX_EXACT_INTEGER INT64_C(9007199254740992)
+#define DEFAULT_FRACTION_DIGITS 18
+#define MAX_FRACTION_DIGITS 18
 #define STREAM_CHUNK 65536
 
 typedef enum distribution {
@@ -67,6 +69,8 @@ typedef struct options {
 	bool chart_renderer_flag;
 	bool view;
 	bool generation_option_seen;
+	bool precision_set;
+	size_t precision;
 	const char *delimiter;
 	const char *random_source;
 	bool count_set;
@@ -411,6 +415,8 @@ static void print_help(distribution dist, chart_renderer renderer)
 	puts("  -d, --deterministic Use the cross-platform-identical BLAKE3 keyed XOF");
 	puts("      --true-random   Force fresh OS/source CSPRNG entropy; ignore DRANDOMZ_SEED");
 	puts("      --delimiter S   Set delimiter for output/input (default: newline)");
+	puts("      --precision N   Truncate fractional output to 0..18 places (default: 18)");
+	puts("      --truncate N    Alias for --precision");
 	puts("  -h, --help          Show this help message");
 	puts("      --hex           Output as hexadecimal");
 	puts("      --base64        Output as base64 (for binary)");
@@ -627,6 +633,7 @@ static int parse_arguments(int argc, char **argv, options *opts)
 	memset(opts, 0, sizeof(*opts));
 	opts->dist = DIST_UNIFORM;
 	opts->delimiter = "\n";
+	opts->precision = DEFAULT_FRACTION_DIGITS;
 	opts->deterministic = deterministic_invocation(program_name);
 	if (normal_invocation(program_name)) select_distribution(opts, DIST_NORMAL);
 
@@ -637,14 +644,14 @@ static int parse_arguments(int argc, char **argv, options *opts)
 		const char *value;
 		if (strcmp(arg, "--about") == 0 || strcmp(arg, "-a") == 0) {
 			print_about();
-			exit(0);
+			exit(fflush(stdout) == 0 ? 0 : 1);
 		} else if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0) {
 			distribution help_dist = help_distribution_from_args(argc, argv);
 			chart_renderer renderer = CHART_UTF8;
 			if (help_dist != DIST_UNIFORM &&
 				!chart_renderer_for_help(argc, argv, &renderer)) return 1;
 			print_help(help_dist, renderer);
-			exit(0);
+			exit(fflush(stdout) == 0 ? 0 : 1);
 		} else if (strcmp(arg, "--test") == 0) {
 			exit(run_test_suite());
 		} else if (strcmp(arg, "--deterministic") == 0 || strcmp(arg, "-d") == 0) {
@@ -748,6 +755,32 @@ static int parse_arguments(int argc, char **argv, options *opts)
 				return 1;
 			}
 			opts->count_set = true;
+		} else if (strcmp(arg, "--precision") == 0 || strcmp(arg, "--truncate") == 0 ||
+			attached_option_value(arg, "--precision") != NULL ||
+			attached_option_value(arg, "--truncate") != NULL) {
+			opts->generation_option_seen = true;
+			const char *name = strncmp(arg, "--truncate", 10) == 0
+				? "--truncate" : "--precision";
+			value = attached_option_value(arg, name);
+			if (value == NULL) {
+				if (++i >= argc) {
+					fprintf(stderr, "Error: %s requires a number\n", name);
+					return 1;
+				}
+				value = argv[i];
+			}
+			if (*value == '\0') {
+				fprintf(stderr, "Error: %s requires a number\n", name);
+				return 1;
+			}
+			int64_t precision;
+			if (parse_safe_int(value, &precision) != RANDOMZ_OK ||
+				precision < 0 || precision > MAX_FRACTION_DIGITS) {
+				fprintf(stderr, "Error: %s must be a whole number from 0 to 18\n", name);
+				return 1;
+			}
+			opts->precision = (size_t)precision;
+			opts->precision_set = true;
 		} else if (strcmp(arg, "--seed") == 0) {
 			opts->generation_option_seen = true;
 			if (require_next(argc, argv, &i, "--seed requires a value", &value)) return 1;
@@ -907,6 +940,10 @@ static int parse_arguments(int argc, char **argv, options *opts)
 	}
 	if (opts->hex_output && opts->base64_output) {
 		print_error("--hex and --base64 are mutually exclusive");
+		return 1;
+	}
+	if (opts->binary_output && opts->precision_set) {
+		print_error("--precision/--truncate do not apply to binary output");
 		return 1;
 	}
 	if (opts->mean_set && !(opts->dist == DIST_NORMAL || opts->dist == DIST_POISSON ||
@@ -1473,7 +1510,7 @@ static int emit_text(const options *opts, rng_source *source,
 		if (opts->hex_output && !value.is_fixed) {
 			printf("%" PRIx64, (uint64_t)value.integer);
 		} else if (value.is_fixed) {
-			status = format_fixed(value.fixed, 6, formatted, sizeof(formatted));
+			status = format_fixed(value.fixed, opts->precision, formatted, sizeof(formatted));
 			if (status != RANDOMZ_OK) return rng_failure(status);
 			fputs(formatted, stdout);
 		} else {

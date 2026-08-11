@@ -1,0 +1,19 @@
+[package]
+name = "randomr"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+description = "Cross-platform-identical BLAKE3 CSPRNG and integer-only distributions"
+
+[features]
+default = ["std", "entropy"]
+std = ["blake3/std"]
+entropy = ["std", "dep:getrandom", "dep:libc"]
+
+[dependencies]
+blake3.workspace = true
+getrandom = { workspace = true, optional = true }
+libc = { workspace = true, optional = true }
+zeroize.workspace = true

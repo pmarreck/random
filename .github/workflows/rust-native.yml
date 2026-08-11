@@ -1,0 +1,118 @@
+name: Rust native targets
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bsd-cross:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install pinned Zig
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+        with:
+          version: 0.16.0
+      - name: Cross-link distributed Rust BSD targets
+        run: RANDOMR_RUST_TOOLCHAIN=1.97.0 tests/randomr_bsd_targets
+      - name: Cross-link Windows ARM64 through the license-free Zig toolchain
+        run: RANDOMR_RUST_TOOLCHAIN=1.97.0 tests/randomr_windows_arm64
+      - name: Check the pure core for WASI
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal --target wasm32-wasip1
+          cargo +1.97.0 check --locked -p randomr --no-default-features --target wasm32-wasip1
+
+  windows-arm64:
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.97.0 --profile minimal
+      - name: Test and build
+        run: |
+          cargo +1.97.0 test --locked --workspace
+          cargo +1.97.0 build --locked --release -p randomr-cli
+      - name: Prove native architecture and deterministic runtime
+        shell: pwsh
+        run: |
+          if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64') {
+            throw 'windows-11-arm did not provide an ARM64 process'
+          }
+          $first = & .\target\release\randomr.exe --seed 42 --binaryoutput --hex --count 131
+          $second = & .\target\release\randomr.exe --seed 42 --binaryoutput --hex --count 131
+          if ($LASTEXITCODE -ne 0 -or $first -ne $second -or $first.Length -ne 262) {
+            throw 'Windows ARM64 deterministic runtime control failed'
+          }
+          $bytes = [Text.Encoding]::ASCII.GetBytes([string]$first)
+          $digest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+          if ($digest -ne '462ad9cf0529e1b97dd89604fe3a898c73f502054e393f2ef845fd0c4a97c474') {
+            throw 'Windows ARM64 deterministic stream differs from the frozen oracle'
+          }
+          $payloadParts = @(
+            ((& .\target\release\randomr.exe -d --seed 42 -c 4 '-4000000000..4000000000') -join ',')
+            ((& .\target\release\randomr.exe -d --seed 42 --normalized --mean=-7.25 --stddev=2.5 -c 4) -join ',')
+            ((& .\target\release\randomr.exe -d --seed 42 --exponential --rate=4 -c 4) -join ',')
+            ((& .\target\release\randomr.exe -d --seed 42 --poisson --lambda=5.5 -c 4) -join ',')
+            ((& .\target\release\randomr.exe -d --seed 42 --log-normal --mean=-0.25 --stddev=1.75 -c 4) -join ',')
+            ((& .\target\release\randomr.exe -d --seed 42 --beta=7.75 --alpha=2.5 -c 4) -join ',')
+            ((@('alpha', 'beta', 'gamma', 'delta', 'epsilon') | & .\target\release\randomr.exe --shuffle -d --seed 42) -join ',')
+          )
+          $payload = $payloadParts -join '|'
+          $payloadDigest = [Convert]::ToHexString(
+            [Security.Cryptography.SHA256]::HashData([Text.Encoding]::ASCII.GetBytes($payload))
+          ).ToLowerInvariant()
+          if ($payloadDigest -ne 'c161c80f3b048d94b248e08aec25259aadfdd72e3646c1627b0343801fdee4d7') {
+            throw 'Windows ARM64 distribution/stdin payload differs from the frozen oracle'
+          }
+          $probe = Join-Path $env:RUNNER_TEMP 'randomr-test-probe.sh'
+          $probeLines = @(
+            '#!/usr/bin/env bash'
+            '[ "${FAST:-}" = 1 ] || exit 91'
+            '[ "${RANDOM_TEST_DEPTH:-}" = 0 ] || exit 92'
+            '[ "${RANDOM_TEST_CLI_KIND:-}" = rust ] || exit 93'
+            '[ -n "${RANDOM_TEST_CLI:-}" ] || exit 94'
+          )
+          [IO.File]::WriteAllText(
+            $probe,
+            ($probeLines -join "`n") + "`n",
+            [Text.UTF8Encoding]::new($false)
+          )
+          $env:RANDOM_TEST_FILE = $probe
+          & .\target\release\randomr.exe --test
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Windows ARM64 Bash self-test launcher control failed'
+          }
+          $env:RANDOM_TEST_FILE = $null
+          $fresh = & .\target\release\randomr.exe --true-random --binaryoutput --hex --count 32
+          if ($LASTEXITCODE -ne 0 -or $fresh.Length -ne 64) {
+            throw 'Windows ARM64 OS-entropy runtime control failed'
+          }
+
+  macos-arm64:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.97.0 --profile minimal
+      - name: Test and build
+        run: |
+          cargo +1.97.0 test --locked --workspace
+          cargo +1.97.0 build --locked --release -p randomr-cli
+      - name: Prove native architecture and deterministic runtime
+        run: |
+          test "$(uname -m)" = arm64
+          first="$(target/release/randomr --seed 42 --binaryoutput --hex --count 131)"
+          second="$(target/release/randomr --seed 42 --binaryoutput --hex --count 131)"
+          test "$first" = "$second"
+          test "${#first}" -eq 262
+          test "$(printf %s "$first" | shasum -a 256 | awk '{print $1}')" = \
+            462ad9cf0529e1b97dd89604fe3a898c73f502054e393f2ef845fd0c4a97c474
+          payload="$(target/release/randomr -d --seed 42 -c 4 -4000000000..4000000000 | paste -sd, -)|$(target/release/randomr -d --seed 42 --normalized --mean=-7.25 --stddev=2.5 -c 4 | paste -sd, -)|$(target/release/randomr -d --seed 42 --exponential --rate=4 -c 4 | paste -sd, -)|$(target/release/randomr -d --seed 42 --poisson --lambda=5.5 -c 4 | paste -sd, -)|$(target/release/randomr -d --seed 42 --log-normal --mean=-0.25 --stddev=1.75 -c 4 | paste -sd, -)|$(target/release/randomr -d --seed 42 --beta=7.75 --alpha=2.5 -c 4 | paste -sd, -)|$(printf 'alpha\nbeta\ngamma\ndelta\nepsilon\n' | target/release/randomr --shuffle -d --seed 42 | paste -sd, -)"
+          test "$(printf %s "$payload" | shasum -a 256 | awk '{print $1}')" = \
+            c161c80f3b048d94b248e08aec25259aadfdd72e3646c1627b0343801fdee4d7
+          fresh="$(target/release/randomr --true-random --binaryoutput --hex --count 32)"
+          test "${#fresh}" -eq 64

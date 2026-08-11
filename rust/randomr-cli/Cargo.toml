@@ -1,0 +1,16 @@
+[package]
+name = "randomr-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+description = "CLI frontend for the randomr deterministic CSPRNG library"
+
+[[bin]]
+name = "randomr"
+path = "src/main.rs"
+
+[dependencies]
+randomr = { path = "../randomr", version = "=0.1.0" }
+zeroize.workspace = true

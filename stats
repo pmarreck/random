@@ -6,13 +6,16 @@ set -u
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 lua_cli="$root/bin/random"
 c_cli="$root/zig-out/bin/randomz"
+rust_target="$(cd "$root" && cargo metadata --no-deps --format-version 1 |
+	sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')"
+rust_cli="$rust_target/release/randomr"
 
 usage() {
 	cat <<'EOF'
-Usage: ./stats [--all | --lua | --c | --cli PATH]
+Usage: ./stats [--all | --lua | --c | --rust | --cli PATH]
 
 Runs raw-stream and distribution sanity checks without writing sample data to
-disk. Default: both the LuaJIT oracle and the C CLI over the Zig FFI.
+disk. Default: the LuaJIT oracle, C CLI over the Zig FFI, and Rust CLI.
 
 Environment:
   RANDOM_STATS_BYTES=N       raw bytes per stream (default 4194304)
@@ -25,11 +28,13 @@ EOF
 targets=()
 case "${1:---all}" in
 	--all)
-		targets=("LuaJIT oracle:$lua_cli" "Zig core / C FFI:$c_cli") ;;
+		targets=("LuaJIT oracle:$lua_cli" "Zig core / C FFI:$c_cli" "Rust core / CLI:$rust_cli") ;;
 	--lua)
 		targets=("LuaJIT oracle:$lua_cli") ;;
 	--c)
 		targets=("Zig core / C FFI:$c_cli") ;;
+	--rust)
+		targets=("Rust core / CLI:$rust_cli") ;;
 	--cli)
 		if [ "$#" -ne 2 ]; then usage >&2; exit 2; fi
 		targets=("selected CLI:$2") ;;
@@ -41,6 +46,9 @@ esac
 
 if [ "${1:---all}" = "--all" ] || [ "${1:---all}" = "--c" ]; then
 	zig build -Doptimize=ReleaseFast >/dev/null || exit 1
+fi
+if [ "${1:---all}" = "--all" ] || [ "${1:---all}" = "--rust" ]; then
+	(cd "$root" && cargo build --locked --release -p randomr-cli) >/dev/null || exit 1
 fi
 
 failed=0

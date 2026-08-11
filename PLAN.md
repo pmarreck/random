@@ -132,14 +132,14 @@
       kernel payload before CLI quantization. Note the mutation finding:
       a CLI-level differential alone is too coarse to catch a 1-ulp kernel
       perturbation, so the Zig port needs a kernel-level digest payload too.
-- [ ] `./bm` benchmark suite covering **both** implementations — LuaJIT and Zig —
-      so the port's speedup is measured rather than assumed, and so a regression
-      in either is visible. Per the fleet convention: ndjson log per machine-id,
-      committed, two-sided tolerance (a surprise speedup may mean lost work),
-      CPU time for single-threaded kernels, ReleaseFast only. Note the existing
-      measured figure to beat: the `#1499` mitigation costs ~5.7x on the float
-      distributions on pre-fix LuaJIT and nothing on fixed builds, so the
-      benchmark must record which LuaJIT it ran under.
+- [x] `./bm` benchmark suite covering **all three** implementations — LuaJIT,
+      Zig/C, and Rust — over raw/encoded output, narrow/wide uniform ranges,
+      and every current nonlinear distribution. It proves seeded output parity
+      before timing release builds, appends CPU/wall results to a
+      per-machine NDJSON history, records toolchain and exact-binary identities,
+      and flags two-sided ±15% changes (a surprise speedup may mean lost work).
+      `--quick` shortens measurement; `--check` runs parity only. The recorded
+      LuaJIT version keeps the `#1499` mitigation cost attributable.
 - [x] Mechatron Prime CI targets for the correctness, statistical,
       installed-package, ReleaseFast cross-architecture, and Windows x86_64
       runtime gates
@@ -159,6 +159,32 @@
       Zig 0.16 currently provides neither a usable illumos/DragonFly libc
       cross-sysroot nor a successful full illumos build. Do not claim runtime
       support until native or cross execution proves it.
+
+## Next: Rust library and CLI
+
+- [x] Implement the accepted `randomr` design in
+      `docs/specs/2026-08-11-randomr-design.md`, beginning with persisted red
+      architecture and behavioral controls. (2026-08-11 EDT)
+- [x] Ship an importable `randomr` library with deterministic fixed arithmetic,
+      BLAKE3 DRBG, distributions, and curve generation isolated from all I/O;
+      keep the explicitly injected OS/path entropy adapter as the only impure
+      library module. (2026-08-11 EDT)
+- [x] Ship the separate `randomr` CLI crate with `nrandomr`/`drandomr` aliases,
+      `DRANDOMR_SEED`, the complete existing CLI/chart surface, and no direct
+      access to oracle implementations or the C ABI. (2026-08-11 EDT)
+- [x] Parameterize one shared CLI and exact-differential harness across LuaJIT,
+      Zig/C, and Rust. Require pairwise oracle agreement before accepting Rust,
+      then run the statistical, package, cross-target, and non-x86_64 runtime
+      gates. Rust 1.97 publishes BSD target libraries only for FreeBSD x86_64
+      and NetBSD x86_64; OpenBSD and BSD ARM64 remain named library gaps.
+      (2026-08-11 EDT)
+- [x] Compile-gate the pure `randomr` core without default features for
+      `wasm32-wasip1`, without pretending that a library-only check is an
+      equivalent shippable WASI reactor. (2026-08-11 EDT)
+- [ ] After native Rust parity, produce equivalent Zig and Rust WASI artifacts
+      and benchmark raw/compressed size, instantiation, DRBG throughput, and
+      nonlinear-distribution throughput under one runtime. Use the measurements
+      to decide whether one or both WASM implementations ship.
 
 ## Approved directives (Peter, 2026-08-04)
 
@@ -231,8 +257,9 @@ recorded on 2026-08-04).
       both bounds, powers of two, and powers-of-two ±1.
 - [ ] Add fuzzing-oriented `--log-uniform` sizes spanning orders of magnitude.
 - [ ] Implement each mode LuaJIT-first, freeze its byte-consumption contract,
-      port it through the Zig/C ABI, run the shared CLI suite and `./stats`
-      against both implementations, and add CLI-level differential vectors.
+      port it through the Zig/C ABI and Rust core, run the shared CLI suite,
+      `./stats`, and `./bm` against all three implementations, and add
+      CLI-level differential vectors.
 
 ## Post-shipment physical entropy
 
