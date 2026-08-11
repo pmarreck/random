@@ -3,6 +3,12 @@
 > **For agentic workers:** Follow the checked task sequence and preserve its
 > mechanically falsifiable controls. Steps use checkbox (`- [ ]`) syntax.
 
+> **Current status (2026-08-11):** this historical LuaJIT implementation plan
+> was followed by the completed Zig/C port and an independent pure-core Rust
+> library/CLI. All three seeded frontends are now pairwise differential-tested;
+> “two implementations” below refers to the original LuaJIT→Zig phase. See
+> `docs/specs/2026-08-11-randomr-design.md` for the Rust extension.
+
 **Goal:** Make `bin/random` produce bit-identical seeded streams on every platform by replacing all libm floating-point math with an integer-only normalized soft-float kernel.
 
 **Architecture:** A new `lib/fixed.lua` implements a software float (`value = m · 2^(e−62)`, `|m| ∈ [2^62, 2^63)`) using only 64-bit integer operations, plus `ln`/`exp`/`cos`/`sqrt`/`pow` built on it. `bin/random` converts its distributions to call that kernel, and closes the two remaining float boundaries (decimal parsing and decimal formatting). The LuaJIT implementation stays in place permanently as the differential oracle for the later Zig port.

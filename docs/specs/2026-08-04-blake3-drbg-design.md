@@ -1,7 +1,7 @@
 # BLAKE3 keyed-DRBG replacement for PCG32 — design
 
-**Date:** 2026-08-04 · **Status:** implemented and gated in LuaJIT and Zig/C ·
-**Supersedes:** the PCG32 deterministic generator in `bin/random`
+**Date:** 2026-08-04 · **Status:** implemented and gated in LuaJIT, Zig/C, and
+Rust · **Supersedes:** the PCG32 deterministic generator in `bin/random`
 
 ## Why
 
@@ -18,9 +18,11 @@ separation and a uniform key representation, not additional entropy.
 This was sequenced **before** the Zig FFI/CLI port (Tasks 8–10): porting the
 former generator and deleting it the same day would have been waste. The Zig
 core implements BLAKE3 directly (`std.crypto.hash.Blake3`); the legacy generator
-was never ported. `bin/random` (LuaJIT) remains the differential oracle. The C
-CLI now passes the same Bash contract plus an exact seed/flag/stdin matrix, and
-the construction remains directly gated against published official outputs.
+was never ported. `bin/random` (LuaJIT) remains the original behavioral oracle.
+The C and Rust CLIs now pass the same Bash contract plus exact
+seed/flag/distribution/stdin matrices, all three implementations are compared
+pairwise, and the construction remains directly gated against published
+official outputs.
 
 Terminology is important here: LuaJIT is the original implementation and the
 behavioral oracle the later Zig port must match. The small Zig-stdlib program
@@ -38,8 +40,10 @@ best-effort inference described under Vendoring & attribution below.
 re-bless deterministic golden vectors, and replace the coupled true-random and
 auto-seed entropy paths with fail-closed OS APIs.
 
-**Also implemented downstream:** the pure Zig core, caller-owned C ABI, and C
-CLI. Benchmarking and additional distributions remain separate work.
+**Also implemented downstream:** the pure Zig core, caller-owned C ABI and C
+CLI; and the importable pure-core `randomr` Rust library with its separate I/O
+and formatting CLI. Alternate distributions, the three-frontend differential
+gate, and comparative benchmarking are implemented.
 
 ## The generator: keyed XOF + seek
 
@@ -60,12 +64,16 @@ seek_to_draw(n, width): pos = n * width    # O(1) random access to draw N
   Zig stdlib.
 - Zig: `std.crypto.hash.Blake3` keyed, XOF via the public
   `finalizeSeek(seek, out)` API in Zig 0.16.
+- Rust: the official `blake3` crate's pure-Rust backend, using derive-key mode
+  and a keyed XOF reader with an explicit byte position. It shares neither
+  implementation code nor FFI with the LuaJIT or Zig core.
 - The keyed-hash *message* is empty; the key alone determines the stream. The
   KDF context string below domain-separates keys derived through this CLI.
 - LuaJIT numbers represent integers exactly only through 2^53. The Lua oracle
   therefore rejects any seek or consumption that would make `pos > 2^53`.
-  Zig may support a wider internal position later, but the shared public
-  contract remains capped until both implementations can represent it exactly.
+  Zig or Rust may support a wider internal position later, but the shared
+  public contract remains capped so all three implementations represent it
+  exactly.
 
 ### Endianness: BIG-ENDIAN, one rule everywhere
 
@@ -78,7 +86,7 @@ big-endian (network byte order = how the hex reads left to right), and it is the
 keystream hex `af1349b9f5f9a1a6…` is `0xaf1349b9f5f9a1a6`, read straight off,
 no mental byte-flip, checkable by hand or by an independent oracle. (Little-
 endian's only pull is that it is the x86 native freebie — void here, since we
-pin and convert explicitly on both implementations regardless. BLAKE3's
+pin and convert explicitly in all three implementations regardless. BLAKE3's
 internals are LE, but that governs its own word serialization, not how we read
 the output as draws.)
 
@@ -119,8 +127,9 @@ OS fallback), print them as a replayable `0x` seed, and feed the same canonical
 32 bytes through the KDF. This replaces `now_seed()` and fails closed if entropy
 is unavailable. Re-running with the printed seed must reproduce the stream.
 
-`DRANDOM_SEED` (LuaJIT CLI) and `DRANDOMZ_SEED` (C/FFI CLI) follow the same
-rules as `--seed`. Each frontend ignores the other frontend's variable.
+`DRANDOM_SEED` (LuaJIT CLI), `DRANDOMZ_SEED` (C/FFI CLI), and `DRANDOMR_SEED`
+(Rust CLI) follow the same rules as `--seed`. Each frontend ignores the other
+two frontends' variables.
 
 ## State and persistence
 
@@ -152,8 +161,8 @@ source changes from PCG32 to the BLAKE3 keystream:
 ## Public API preserved
 
 `-d`/`--deterministic`, `--seed`, the frontend-specific seed environment
-variable, and the `drandom`/`drandomz` argv[0] aliases remain. Seed grammar and
-deterministic streams deliberately change.
+variable, and the `drandom`/`drandomz`/`drandomr` argv[0] aliases remain. Seed
+grammar and deterministic streams deliberately change.
 Implicit cross-call state continuity and its two state environment variables
 are removed.
 
@@ -186,6 +195,10 @@ goldens for `lib/fixed.lua` are unaffected (the kernel is unchanged).
   catch a self-consistent Lua construction mistake, but LuaJIT remains the
   behavioral oracle for the port. Keep seek/chunk probes against published
   official expected bytes.
+- **Three-way differential:** require complete seeded CLI matrices for
+  LuaJIT↔Zig/C, Rust↔LuaJIT, and Rust↔Zig/C. Rust's official pure BLAKE3
+  backend and independent integer kernel make the two later implementations
+  separate judges rather than one copied oracle.
 - **Cross-architecture:** `./crossarch` compares 512 contiguous seeded BLAKE3
   bytes plus ranged and alternate-distribution CLI outputs on its platform
   matrix, so the DRBG's cross-platform identity is measured, not assumed.
@@ -202,9 +215,21 @@ goldens for `lib/fixed.lua` are unaffected (the kernel is unchanged).
 `include/randomz.h`. The caller owns `(key[32], byte_position)` state; the core
 does no I/O and distribution samplers obtain bytes only through a caller-supplied
 callback. `src/randomz_cli.c` is compiled as C and links the static library, so
-bypassing the public ABI is inexpressible. The CLI-level differential compares
-the two BLAKE3 implementations bit-for-bit, with official vectors and the
-independent Zig reference retaining control over a self-consistent mistake.
+bypassing the public ABI is inexpressible. The LuaJIT↔Zig/C differential
+compares those two BLAKE3 implementations bit-for-bit, with official vectors
+and the independent Zig reference retaining control over a self-consistent
+mistake.
+
+## Implemented Rust boundary
+
+`rust/randomr` is an importable deterministic library with caller-owned `Drbg`
+state and byte-source-driven samplers. Its default entropy feature is isolated
+in `entropy.rs`; the deterministic core builds without that feature and without
+`std`. `rust/randomr-cli` exclusively owns argv, environment variables, OS
+paths, stdin/stdout, formatting, and terminal chart protocols. Rust is judged
+independently by both the LuaJIT and Zig/C implementations across the complete
+seeded CLI matrix, while direct library vectors pin state, consumption, and
+every sampler without going through CLI formatting.
 
 ## Finalized boundary decisions
 
@@ -214,5 +239,6 @@ independent Zig reference retaining control over a self-consistent mistake.
   returns normalized heights and x-bounds to caller-owned storage; terminal
   protocols and rasterization remain in the CLIs. Panic-capable low-level
   arithmetic remains internal.
-- C and Zig share the Lua oracle's exact-integer position ceiling of 2^53 so
-  one serialized state has one meaning on every supported implementation.
+- C, Zig, and Rust share the Lua oracle's exact-integer position ceiling of
+  2^53 so one serialized state has one meaning on every supported
+  implementation.

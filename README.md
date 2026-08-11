@@ -199,8 +199,9 @@ For Rust, the cross-build gate covers Linux aarch64, Windows x86_64/ARM64,
 FreeBSD x86_64, and NetBSD x86_64 in addition to native Linux. Rust 1.97 does
 not distribute standard libraries for OpenBSD or BSD ARM64, so those are
 explicit target-library gaps rather than silent skips. Native ARM64 macOS and
-Windows workflow legs are configured to verify the architecture, a frozen raw
-stream plus all nonlinear distributions and stdin shuffling, and OS entropy.
+Windows workflow legs have passed with architecture-sensitive controls, a
+frozen raw stream plus all nonlinear distributions and stdin shuffling, OS
+entropy, and the installed CLI self-test.
 
 Backend flags are normalized to numeric `0`/`1` values and tested by value,
 never by macro presence. The build rejects zero or multiple selected backends;

@@ -5,6 +5,12 @@
 **Author:** Claude + Peter Marreck
 **Supersedes:** the float-based numerics in `bin/random`
 
+**CURRENT STATUS (2026-08-11):** the later Zig/C port and a third independent
+pure-core Rust library/CLI are now implemented. All three seeded frontends are
+pairwise differential-tested. References below to “two implementations” and a
+pending Zig port describe this document's original LuaJIT→Zig phase; see
+`docs/specs/2026-08-11-randomr-design.md` for the Rust extension.
+
 **AS-BUILT NOTE (2026-08-02):** this document was written BEFORE steps 1-4
 landed, as a forward-looking design proposal, and originally described the
 implementation it was proposing rather than what was actually shipped. A

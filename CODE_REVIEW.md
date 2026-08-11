@@ -375,6 +375,20 @@ organization advisories remain.
 
 - **Fixed — WARNING:** encoded binary output is O(1) memory rather than
   O(requested output), while retaining O(n) time and exact byte order.
+- **Remaining — ADVISORY:** `./bm` currently times the Nix Bash wrapper for
+  `randomr`, whose repeated `PATH` setup adds about 13 ms per process on the
+  measured Linux host. The inner Rust ELF starts in about 1.4 ms and generates
+  the 1 MiB raw case in about 2.6 ms, essentially matching Zig's 1.0 ms startup
+  and 2.7 ms raw case; the recorded wrapper results materially overstate core
+  Rust cost. A future benchmark should report packaged-command startup and
+  inner-executable throughput separately rather than conflating them.
+- **Remaining — ADVISORY:** Rust recomputes the log, exponential, sine, and
+  cosine series reciprocal coefficients at runtime through the kernel's
+  62-step bit-serial division. Zig constructs the identical tables at compile
+  time. With wrapper overhead removed, Rust matches or slightly beats Zig on
+  the uniform cases but remains roughly 1.7–2.4× slower on the measured
+  nonlinear cases. Frozen precomputed Rust tables should recover much of that
+  gap without changing a deterministic output bit.
 - **Remaining — ADVISORY:** beta/log-normal curve rendering calculates every
   expensive score twice to find and then normalize the maximum. A bounded
   score vector can halve transcendental work.
@@ -417,9 +431,9 @@ The Rust deterministic implementation uses no C ABI and shares no code with
 either oracle. Its sole unsafe block is the scoped Linux/Android `getrandom`
 call over a valid remaining slice; other entropy access uses safe Rust APIs.
 FreeBSD/NetBSD manifest identity is exact, Windows ARM64 is both cross-linked
-through Zig and configured for first-party native execution, and the pure core
-is compile-gated for `wasm32-wasip1`. Equivalent shippable Zig/Rust WASI
-artifacts remain a measured post-port decision.
+through Zig and proven by first-party native execution, and the pure core is
+compile-gated for `wasm32-wasip1`. Equivalent shippable Zig/Rust WASI artifacts
+remain a measured post-port decision.
 
 ## 12. Error handling and packaging
 

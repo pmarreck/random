@@ -160,7 +160,7 @@
       cross-sysroot nor a successful full illumos build. Do not claim runtime
       support until native or cross execution proves it.
 
-## Next: Rust library and CLI
+## Completed: Rust library and CLI
 
 - [x] Implement the accepted `randomr` design in
       `docs/specs/2026-08-11-randomr-design.md`, beginning with persisted red
@@ -214,10 +214,10 @@ recorded on 2026-08-04).
       Implemented contract: versioned KDF, keyed empty-message XOF, big-endian
       32/64-bit draws, strict 256-bit integer seeds, no persistent state, and
       direct full-range binary bytes. See the implemented design spec.
-- [x] **New functionality lands in LuaJIT first**, then ports to Zig using
-      LuaJIT as the differential oracle — the established pattern. (The
-      LuaJIT half and its independent controls are complete; the Zig port is
-      the next plan section.)
+- [x] **New functionality lands in LuaJIT first**, then ports independently to
+      Zig/C and Rust using LuaJIT as the original behavioral oracle and both
+      later implementations as mutual differential controls — the established
+      three-frontend pattern.
 
 ## Superseded future goal (recorded 2026-08-03, completed 2026-08-04)
 - [x] **Cryptographically secure deterministic generator.** Peter superseded

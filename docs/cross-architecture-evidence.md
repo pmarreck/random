@@ -119,16 +119,18 @@ linked with Zig), FreeBSD x86_64, and NetBSD x86_64. The latter two use the
 standard libraries Rust 1.97 actually distributes plus Zig's BSD sysroots.
 Rust 1.97 distributes no standard-library artifact for OpenBSD or for any of
 these BSD ARM64 targets; those four combinations are named target-library gaps,
-not passing skips. Native macOS ARM64 and Windows ARM64 workflow legs are
-configured to validate the architecture, compare a 131-byte stream and a
-wide-range/nonlinear/stdin payload to frozen oracle digests, and exercise OS
-entropy on first-party hosted ARM64 runners. These are configuration claims
-until the workflow has completed remotely.
+not passing skips. Native macOS ARM64 and Windows ARM64 workflow legs completed
+successfully for commit `5ae3524` in [GitHub Actions run
+31524554055](https://github.com/pmarreck/random/actions/runs/31524554055). Both
+validated their architecture, a 131-byte stream, the complete nonlinear and
+wide-range/stdin payload against frozen oracle digests, OS entropy, and the
+installed CLI self-test on first-party hosted ARM64 runners.
 
-Four test-only mutations prove the Rust controls are live: a broken candidate
-selector, a dead Zig second oracle, a perturbed trigonometric constant, and an
-entropy source that incorrectly reports EOF as success each make the expected
-gate red.
+Five test-only mutations prove the Rust controls are live: a broken candidate
+selector, a successfully executing Zig producer that corrupts the final
+Rust-versus-Zig comparison, feature-gated entropy injected across the pure-core
+boundary, a perturbed nonlinear fixed-point constant, and an entropy source
+that incorrectly reports EOF as success each make the expected gate red.
 
 ## Why the control rows are the important part
 
@@ -219,12 +221,13 @@ reflexivity cheerfully passed on a leg that had produced nothing. Both are now
 - **Only two executed architectures.** x86_64 and aarch64. No 32-bit, no big-endian,
   no RISC-V. The big-endian case is not merely untested: the controls'
   bit-extraction unions assert little-endianness and refuse to run.
-- **Only three Unix libcs** (glibc, musl, Apple libSystem). The C frontend
+- **Only three Unix libcs** (glibc, musl, Apple libSystem). The Zig/C frontend
   compiles for both x86_64 and ARM64 Windows. Windows x86_64 additionally runs
   under Wine in CI: its 131 raw deterministic bytes match the Lua oracle,
   `.exe` alias dispatch matches the explicit flag, true-random output has the
-  requested byte count, and binary stdout is not CRLF-expanded. Windows ARM64
-  runtime remains untested; its gate is compile plus PE-machine validation.
+  requested byte count, and binary stdout is not CRLF-expanded. Zig/C Windows
+  ARM64 runtime remains untested; its gate is compile plus PE-machine
+  validation. The separate Rust CLI has passed natively on Windows ARM64.
 - **One LuaJIT revision.** Held fixed on purpose, so this says nothing about
   behaviour across LuaJIT versions.
 - The `aarch64-darwin` leg is opt-in (`CROSS_ARCH_REMOTE=<host>`) and needs

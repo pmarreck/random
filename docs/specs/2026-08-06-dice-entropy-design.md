@@ -69,8 +69,9 @@ not a warranty.
 
 ## Canonical combination
 
-The LuaJIT oracle implements this first. Zig then matches frozen vectors.
-Values are serialized independently of host endianness as:
+The LuaJIT oracle implements this first. Zig/C and Rust then independently
+match the same frozen vectors, and all three CLIs must produce the identical
+derived seed. Values are serialized independently of host endianness as:
 
 ```text
 mode:       u8       (1 = OS plus ordered, 2 = OS plus sorted,
@@ -95,8 +96,8 @@ entropy to weak inputs.
 
 ## Controls required before implementation is complete
 
-- Frozen external BLAKE3 combination vectors plus LuaJIT-versus-Zig exact
-  differential vectors.
+- Frozen external BLAKE3 combination vectors plus exact pairwise differential
+  vectors across LuaJIT, Zig/C, and Rust.
 - Ordered permutations must differ; sorted permutations must match.
 - Boundary tests for every M/N/value/count rule and trailing transcript data.
 - A fault-injected OS source must abort combined mode while the same transcript

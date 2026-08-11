@@ -1,7 +1,9 @@
 # `randomr` Rust port design
 
-Status: accepted for implementation on 2026-08-11; implementation begins with
-persisted failing controls.
+Status: implemented and gated on 2026-08-11. Development began with persisted
+failing controls; the completed library, CLI, three-way differential,
+cross-target builds, native ARM64 workflows, and statistical/package gates are
+green.
 
 ## Objective
 
@@ -167,7 +169,7 @@ shippable equivalent CLI/reactor artifact.
 
 ## Completion gate
 
-The port is complete only when the canonical suite, Rust unit/doc/downstream
-tests, pairwise three-frontend differential, statistical suite, package smoke,
-cross-target builds, and cross-architecture runtime payload are green from a
-clean checkout. Only then may README/help/about claim three implementations.
+The completed port passed the canonical suite, Rust unit/doc/downstream tests,
+pairwise three-frontend differential, statistical suite, package smoke,
+cross-target builds, and cross-architecture runtime payload from a clean
+checkout. README/help/about may therefore claim all three implementations.

@@ -4,6 +4,12 @@
 correct, materially faster on DRBG-sized calls, and adopted with an explicit
 best-effort licensing/provenance notice pending author clarification.
 
+**Current implementation note (2026-08-11):** the project now has a third
+independent implementation: the pure-core Rust `randomr` library uses the
+official `blake3` crate's pure backend and matches both the LuaJIT and Zig/C
+oracles. References below to “both implementations” retain this research's
+original LuaJIT-versus-Zig meaning.
+
 ## Why this was tested
 
 The deferred CSPRNG mode (PLAN.md → Future goals) wants a keyed DRBG. The
