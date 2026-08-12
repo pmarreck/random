@@ -20,6 +20,7 @@ case "${1-}" in
 			'Benchmarks byte-identical deterministic work through random (LuaJIT),' \
 			'randomz (Zig/C), and randomr (Rust). Rust timing bypasses only the' \
 			'Nix self-test wrapper; the packaged CLI remains in the parity check.' \
+			'Parity payloads stream through SHA-256 and are never written to disk.' \
 			'Hyperfine executes each payload directly, without an intermediate shell,' \
 			'and large single-process batches amortize unavoidable program startup.' \
 			'Builds happen before timing.' \
@@ -114,59 +115,53 @@ case_arguments=(
 	"-d --seed 42 --beta=3 --alpha=1 --count $count"
 )
 
-benchmark_tmp="$(mktemp -d "${TMPDIR:-/tmp}/random-benchmark.XXXXXX")" || exit 1
-move_benchmark_tmp_to_trash() {
-	if [ -z "${benchmark_tmp:-}" ] || [ ! -e "$benchmark_tmp" ]; then
-		return
+require_command sha256sum
+
+digest_output() {
+	local case_name="$1"
+	local implementation="$2"
+	local executable="$3"
+	local digest
+	shift 3
+
+	digest="$("$executable" "$@" | sha256sum)" || {
+		echo "Benchmark producer or digest failed: $case_name/$implementation" >&2
+		return 1
+	}
+	digest="${digest%% *}"
+	if ! [[ "$digest" =~ ^[[:xdigit:]]{64}$ ]]; then
+		echo "Invalid SHA-256 digest for benchmark workload: $case_name/$implementation" >&2
+		return 1
 	fi
-	# The benchmark itself lives under TMPDIR, so keep its recoverable Trash on
-	# that same filesystem. This avoids an apparent `mv` becoming copy+delete
-	# across mounts, keeps RAM-backed TMPDIR data in RAM, and works in restricted
-	# environments that cannot write the user's home Trash.
-	trash_files="${TMPDIR:-/tmp}/.Trash-${UID}/files"
-	mkdir -p "$trash_files" || {
-		echo "Benchmark temporary files remain at $benchmark_tmp (could not open Trash)" >&2
-		return
-	}
-	trash_name="$(basename "$benchmark_tmp")"
-	trash_target="$trash_files/$trash_name"
-	trash_counter=1
-	while [ -e "$trash_target" ]; do
-		trash_target="$trash_files/$trash_name.$trash_counter"
-		trash_counter=$((trash_counter + 1))
-	done
-	mv -- "$benchmark_tmp" "$trash_target" || {
-		echo "Benchmark temporary files remain at $benchmark_tmp (Trash move failed)" >&2
-		return
-	}
-	benchmark_tmp=""
+	printf '%s' "$digest"
 }
-trap move_benchmark_tmp_to_trash EXIT
+
+parity_labels=("${implementations[@]}" rust-timing)
+parity_digest_executables=("${parity_executables[@]}" "$rust_timing_cli")
 
 echo "Checking benchmark workload equivalence..."
 for case_index in "${!case_names[@]}"; do
 	case_name="${case_names[$case_index]}"
 	read -r -a args <<<"${case_arguments[$case_index]}"
-	for implementation_index in "${!implementations[@]}"; do
-		"${parity_executables[$implementation_index]}" "${args[@]}" \
-			>"$benchmark_tmp/$case_name.${implementations[$implementation_index]}" || {
-			echo "Benchmark producer failed: $case_name/${implementations[$implementation_index]}" >&2
-			exit 1
-		}
+	parity_digests=()
+	for implementation_index in "${!parity_labels[@]}"; do
+		parity_digests+=("$(digest_output "$case_name" \
+			"${parity_labels[$implementation_index]}" \
+			"${parity_digest_executables[$implementation_index]}" "${args[@]}")") || exit 1
 	done
-	"$rust_timing_cli" "${args[@]}" >"$benchmark_tmp/$case_name.rust-timing" || {
-		echo "Benchmark producer failed: $case_name/rust-timing" >&2
-		exit 1
-	}
-	if ! cmp -s "$benchmark_tmp/$case_name.luajit" "$benchmark_tmp/$case_name.zig" ||
-	   ! cmp -s "$benchmark_tmp/$case_name.luajit" "$benchmark_tmp/$case_name.rust" ||
-	   ! cmp -s "$benchmark_tmp/$case_name.luajit" "$benchmark_tmp/$case_name.rust-timing"; then
+	parity_mismatch=false
+	for digest in "${parity_digests[@]:1}"; do
+		if [ "${parity_digests[0]}" != "$digest" ]; then
+			parity_mismatch=true
+			break
+		fi
+	done
+	if "$parity_mismatch"; then
 		echo "Benchmark workload differs across implementations: $case_name" >&2
-		sha256sum \
-			"$benchmark_tmp/$case_name.luajit" \
-			"$benchmark_tmp/$case_name.zig" \
-			"$benchmark_tmp/$case_name.rust" \
-			"$benchmark_tmp/$case_name.rust-timing" >&2
+		for implementation_index in "${!parity_labels[@]}"; do
+			printf '  %s  %s\n' "${parity_digests[$implementation_index]}" \
+				"${parity_labels[$implementation_index]}" >&2
+		done
 		exit 1
 	fi
 	printf '  ✓ %s\n' "$case_name"
@@ -179,7 +174,6 @@ fi
 
 require_command hyperfine
 require_command jq
-require_command sha256sum
 
 machine_raw="${BM_MACHINE_ID:-}"
 if [ -z "$machine_raw" ] && [ -r /etc/machine-id ]; then
@@ -223,10 +217,9 @@ timing_surface="implementation-payload-v1"
 for case_index in "${!case_names[@]}"; do
 	case_name="${case_names[$case_index]}"
 	arguments="${case_arguments[$case_index]}"
-	result_json="$benchmark_tmp/$case_name.json"
 	hyperfine_args=(
 		-N --warmup "$warmup" --runs "$runs" --style basic --sort command
-		--output null --export-json "$result_json"
+		--output null --export-json /dev/fd/3
 	)
 	for implementation_index in "${!implementations[@]}"; do
 		hyperfine_args+=(
@@ -236,7 +229,10 @@ for case_index in "${!case_names[@]}"; do
 	done
 	echo
 	echo "== $case_name: $arguments =="
-	hyperfine "${hyperfine_args[@]}" || exit 1
+	# Keep Hyperfine's report visible on stderr while its JSON export travels
+	# through fd 3 into this in-memory text string. No temporary result
+	# file is created.
+	result_json="$(hyperfine "${hyperfine_args[@]}" 3>&1 1>&2)" || exit 1
 
 	while IFS= read -r result; do
 		implementation="$(jq -r '.command' <<<"$result")"
@@ -306,7 +302,7 @@ for case_index in "${!case_names[@]}"; do
 			  luajit_version: $luajit_version, zig_version: $zig_version,
 			  rust_version: $rust_version, hyperfine_version: $hyperfine_version}' \
 			>>"$history_file" || exit 1
-	done < <(jq -c '.results[]' "$result_json")
+	done < <(jq -c '.results[]' <<<"$result_json")
 done
 
 echo
