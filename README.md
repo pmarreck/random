@@ -320,14 +320,39 @@ security certification. The sensitivity set rejects seven deliberately bad
 generators: an all-zero byte stream plus constant uniform, normal,
 exponential, Poisson, log-normal, and beta samples.
 
-`./bm` compares release-built LuaJIT, Zig/C, and Rust CLIs over raw, encoded,
-uniform, normal, exponential, Poisson, log-normal, and beta workloads. It
-first requires every seeded workload to be byte-identical across all three,
-then measures direct processes with Hyperfine and appends CPU/wall data
-to `benchmarks/<machine-id>.ndjson`. Prior results on the same machine and
-argument set provide a two-sided ±15% review threshold: regressions are loud,
-and surprising speedups are flagged in case work disappeared. Use `--quick`
-for a short run or `--check` to perform only the cross-implementation proof.
+`./bm` compares release-built LuaJIT, Zig/C, and Rust implementation payloads
+over raw, encoded, uniform, and every nonlinear distribution. Before timing,
+it requires every seeded workload to be byte-identical across all three
+packaged CLIs and the unwrapped Rust payload. Rust timing bypasses only the Nix
+Bash wrapper that makes installed `--test` self-contained, so wrapper startup
+is not misreported as core computation. Hyperfine runs with `--shell=none`, so
+no shell participates in a measured invocation. The full suite emits 8 MiB or
+20,000 samples per process, amortizing the remaining loader and CLI startup;
+this is deliberately a direct-process throughput benchmark rather than a
+single-draw latency benchmark. Measurements, timing-surface identity, and exact
+executable/toolchain hashes append to
+`benchmarks/<machine-id>.ndjson`. Prior results on the same machine, argument
+set, and timing surface provide a two-sided ±15% review threshold: regressions
+are loud, and surprising speedups are flagged in case work disappeared. Use
+`--quick` for a short run or `--check` for only the cross-implementation proof.
+
+The Rust compile-time coefficient change was measured before and after on an
+AMD Ryzen Threadripper 3990X, using the quick suite's 5,000-sample batches and
+CPU time (three measured runs after one warmup):
+
+| Distribution | Rust before | Rust after | Improvement | Rust after vs. Zig |
+|---|---:|---:|---:|---:|
+| Normal | 30.92 ms | 19.00 ms | 38.6% | 1.14x |
+| Exponential | 21.76 ms | 14.72 ms | 32.3% | 1.30x |
+| Poisson | 77.51 ms | 39.16 ms | 49.5% | 0.96x |
+| Log-normal | 43.67 ms | 26.09 ms | 40.3% | 1.27x |
+| Beta | 77.70 ms | 52.05 ms | 33.0% | 1.04x |
+
+Raw, encoded, and uniform control workloads changed by -2.7% to +4.4%, which
+supports attributing the nonlinear gains to removal of runtime coefficient
+division rather than unrelated machine noise or missing work. Every measured
+payload remained byte-identical across LuaJIT, Zig/C, the packaged Rust CLI,
+and the unwrapped Rust executable.
 
 ## Layout
 

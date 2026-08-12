@@ -375,20 +375,21 @@ organization advisories remain.
 
 - **Fixed — WARNING:** encoded binary output is O(1) memory rather than
   O(requested output), while retaining O(n) time and exact byte order.
-- **Remaining — ADVISORY:** `./bm` currently times the Nix Bash wrapper for
-  `randomr`, whose repeated `PATH` setup adds about 13 ms per process on the
-  measured Linux host. The inner Rust ELF starts in about 1.4 ms and generates
-  the 1 MiB raw case in about 2.6 ms, essentially matching Zig's 1.0 ms startup
-  and 2.7 ms raw case; the recorded wrapper results materially overstate core
-  Rust cost. A future benchmark should report packaged-command startup and
-  inner-executable throughput separately rather than conflating them.
-- **Remaining — ADVISORY:** Rust recomputes the log, exponential, sine, and
-  cosine series reciprocal coefficients at runtime through the kernel's
-  62-step bit-serial division. Zig constructs the identical tables at compile
-  time. With wrapper overhead removed, Rust matches or slightly beats Zig on
-  the uniform cases but remains roughly 1.7–2.4× slower on the measured
-  nonlinear cases. Frozen precomputed Rust tables should recover much of that
-  gap without changing a deterministic output bit.
+- **Fixed — ADVISORY:** `./bm` formerly timed the Nix Bash wrapper for
+  `randomr`, whose repeated `PATH` setup added about 13 ms per process on the
+  measured Linux host. The build now preserves the identical unwrapped ELF for
+  timing while retaining the packaged CLI in the parity preflight. History
+  schema 2 names this timing surface, so wrapper-era results cannot become a
+  false regression baseline.
+- **Fixed — ADVISORY:** Rust formerly recomputed the log, exponential, sine,
+  and cosine series reciprocal coefficients at runtime through the kernel's
+  62-step bit-serial division. It now builds exact tables during const
+  evaluation, matching Zig's comptime policy. A red-before/green-after call
+  counter proves `ln`, `exp`, and cosine no longer divide for coefficients;
+  another test regenerates every table through the runtime kernel. Quick A/B
+  CPU time improved 32–49% across the five nonlinear distributions while raw
+  and uniform controls remained materially flat, and all benchmark payloads
+  remained byte-identical across both Rust surfaces and both external oracles.
 - **Remaining — ADVISORY:** beta/log-normal curve rendering calculates every
   expensive score twice to find and then normalize the maximum. A bounded
   score vector can halve transcendental work.

@@ -141,6 +141,7 @@
             runHook preInstall
             randomr_suffix="${rustPkgs.stdenv.hostPlatform.extensions.executable}"
             randomr_binary="target/${rustPkgs.stdenv.hostPlatform.rust.rustcTarget}/release/randomr$randomr_suffix"
+            install -Dm755 "$randomr_binary" "$out/libexec/randomr$randomr_suffix"
             install -Dm755 "$randomr_binary" "$out/bin/randomr$randomr_suffix"
             ln -s "randomr$randomr_suffix" "$out/bin/nrandomr$randomr_suffix"
             ln -s "randomr$randomr_suffix" "$out/bin/drandomr$randomr_suffix"
@@ -204,7 +205,7 @@
           '';
           installPhase = ''
             runHook preInstall
-            mkdir -p $out/bin $out/lib $out/include $out/tests $out/share/licenses/random
+            mkdir -p $out/bin $out/lib $out/libexec $out/include $out/tests $out/share/licenses/random
             cp bin/random $out/bin/random
             # bin/random resolves '../lib/?.lua' relative to itself -- without
             # this, the packaged binary can find lib/fixed.lua only inside the
@@ -213,11 +214,13 @@
             cp tests/random_test tests/cli_test_setup.sh $out/tests/
             cp zig-out/bin/randomz $out/bin/randomz
             cp ${randomr}/bin/randomr $out/bin/randomr
+            cp ${randomr}/libexec/randomr $out/libexec/randomr
             cp zig-out/bin/randomz-wasi.wasm $out/lib/randomz-wasi.wasm
             cp zig-out/lib/librandomz.a $out/lib/
             cp zig-out/include/randomz.h $out/include/
             cp LICENSE $out/share/licenses/random/LICENSE
-            chmod +x $out/bin/random $out/bin/randomz $out/bin/randomr $out/tests/random_test
+            chmod +x $out/bin/random $out/bin/randomz $out/bin/randomr \
+              $out/libexec/randomr $out/tests/random_test
             # Mode-by-invocation-name: nrandom => normalized, drandom => deterministic
             ln -s random $out/bin/nrandom
             ln -s random $out/bin/drandom
@@ -367,6 +370,7 @@
             ${random}/bin/drandomz --seed 42 -c 1 >/dev/null
             ${random}/bin/nrandomz --seed 42 -c 1 >/dev/null
             ${random}/bin/randomr --about >/dev/null
+            ${random}/libexec/randomr --about >/dev/null
             ${random}/bin/drandomr --seed 42 -c 1 >/dev/null
             ${random}/bin/nrandomr --seed 42 -c 1 >/dev/null
             ${random}/bin/drandom --seed 42 -c 1 >/dev/null
@@ -375,6 +379,8 @@
               "$(${random}/bin/randomz --seed 42 -c 8)"
             test "$(${random}/bin/random --seed 42 -c 8)" = \
               "$(${random}/bin/randomr --seed 42 -c 8)"
+            test "$(${random}/bin/randomr --seed 42 -c 8)" = \
+              "$(${random}/libexec/randomr --seed 42 -c 8)"
             ${random}/bin/random --test
             ${random}/bin/randomz --test
             RANDOM_TEST_FILE=${random}/tests/random_test ${random}/bin/randomr --test

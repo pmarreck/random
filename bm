@@ -18,13 +18,17 @@ case "${1-}" in
 			'Usage: ./bm [--quick|--check]' \
 			'' \
 			'Benchmarks byte-identical deterministic work through random (LuaJIT),' \
-			'randomz (Zig/C), and randomr (Rust). Builds happen before timing.' \
+			'randomz (Zig/C), and randomr (Rust). Rust timing bypasses only the' \
+			'Nix self-test wrapper; the packaged CLI remains in the parity check.' \
+			'Hyperfine executes each payload directly, without an intermediate shell,' \
+			'and large single-process batches amortize unavoidable program startup.' \
+			'Builds happen before timing.' \
 			'' \
 			'  --quick  Use smaller workloads and three measured runs' \
 			'  --check  Build and prove every benchmark workload identical; do not time' \
 			'' \
 			'Environment: BM_SKIP_BUILD=1, BM_RUNS, BM_WARMUP, BM_COUNT,' \
-			'BM_RAW_BYTES, BM_MACHINE_ID, BM_RESULTS_FILE.'
+			'BM_RAW_BYTES, BM_MACHINE_ID, BM_RESULTS_FILE, BM_RUST_TIMING_CLI.'
 		exit 0
 		;;
 	*)
@@ -47,9 +51,11 @@ fi
 lua_cli="$here/zig-out/bin/random"
 zig_cli="$here/zig-out/bin/randomz"
 rust_cli="$here/zig-out/bin/randomr"
+rust_timing_cli="${BM_RUST_TIMING_CLI:-$here/zig-out/bin/.randomr-bench}"
 implementations=(luajit zig rust)
-executables=("$lua_cli" "$zig_cli" "$rust_cli")
-for executable in "${executables[@]}"; do
+parity_executables=("$lua_cli" "$zig_cli" "$rust_cli")
+timing_executables=("$lua_cli" "$zig_cli" "$rust_timing_cli")
+for executable in "${parity_executables[@]}" "$rust_timing_cli"; do
 	if [ ! -x "$executable" ]; then
 		echo "./bm requires a release executable: $executable" >&2
 		echo "Run ./build, or unset BM_SKIP_BUILD." >&2
@@ -113,12 +119,11 @@ move_benchmark_tmp_to_trash() {
 	if [ -z "${benchmark_tmp:-}" ] || [ ! -e "$benchmark_tmp" ]; then
 		return
 	fi
-	data_root="${XDG_DATA_HOME:-${HOME-}/.local/share}"
-	if [ -z "$data_root" ]; then
-		echo "Benchmark temporary files remain at $benchmark_tmp (no Trash location)" >&2
-		return
-	fi
-	trash_files="$data_root/Trash/files"
+	# The benchmark itself lives under TMPDIR, so keep its recoverable Trash on
+	# that same filesystem. This avoids an apparent `mv` becoming copy+delete
+	# across mounts, keeps RAM-backed TMPDIR data in RAM, and works in restricted
+	# environments that cannot write the user's home Trash.
+	trash_files="${TMPDIR:-/tmp}/.Trash-${UID}/files"
 	mkdir -p "$trash_files" || {
 		echo "Benchmark temporary files remain at $benchmark_tmp (could not open Trash)" >&2
 		return
@@ -143,16 +148,25 @@ for case_index in "${!case_names[@]}"; do
 	case_name="${case_names[$case_index]}"
 	read -r -a args <<<"${case_arguments[$case_index]}"
 	for implementation_index in "${!implementations[@]}"; do
-		"${executables[$implementation_index]}" "${args[@]}" \
+		"${parity_executables[$implementation_index]}" "${args[@]}" \
 			>"$benchmark_tmp/$case_name.${implementations[$implementation_index]}" || {
 			echo "Benchmark producer failed: $case_name/${implementations[$implementation_index]}" >&2
 			exit 1
 		}
 	done
+	"$rust_timing_cli" "${args[@]}" >"$benchmark_tmp/$case_name.rust-timing" || {
+		echo "Benchmark producer failed: $case_name/rust-timing" >&2
+		exit 1
+	}
 	if ! cmp -s "$benchmark_tmp/$case_name.luajit" "$benchmark_tmp/$case_name.zig" ||
-	   ! cmp -s "$benchmark_tmp/$case_name.luajit" "$benchmark_tmp/$case_name.rust"; then
+	   ! cmp -s "$benchmark_tmp/$case_name.luajit" "$benchmark_tmp/$case_name.rust" ||
+	   ! cmp -s "$benchmark_tmp/$case_name.luajit" "$benchmark_tmp/$case_name.rust-timing"; then
 		echo "Benchmark workload differs across implementations: $case_name" >&2
-		sha256sum "$benchmark_tmp/$case_name."* >&2
+		sha256sum \
+			"$benchmark_tmp/$case_name.luajit" \
+			"$benchmark_tmp/$case_name.zig" \
+			"$benchmark_tmp/$case_name.rust" \
+			"$benchmark_tmp/$case_name.rust-timing" >&2
 		exit 1
 	fi
 	printf '  ✓ %s\n' "$case_name"
@@ -202,7 +216,10 @@ hyperfine_version="$(hyperfine --version 2>/dev/null || printf unknown)"
 
 echo
 echo "Benchmarking release executables ($runs runs, $warmup warmups)..."
+echo "Execution: direct argv (Hyperfine --shell=none); startup amortized over each batch"
+echo "Rust timing payload: $rust_timing_cli (the packaged CLI remains in the parity preflight)"
 echo "History: $history_file"
+timing_surface="implementation-payload-v1"
 for case_index in "${!case_names[@]}"; do
 	case_name="${case_names[$case_index]}"
 	arguments="${case_arguments[$case_index]}"
@@ -214,7 +231,7 @@ for case_index in "${!case_names[@]}"; do
 	for implementation_index in "${!implementations[@]}"; do
 		hyperfine_args+=(
 			-n "${implementations[$implementation_index]}"
-			"${executables[$implementation_index]} $arguments"
+			"${timing_executables[$implementation_index]} $arguments"
 		)
 	done
 	echo
@@ -230,9 +247,10 @@ for case_index in "${!case_names[@]}"; do
 		median_seconds="$(jq -r '.median' <<<"$result")"
 		stddev_seconds="$(jq -r '.stddev' <<<"$result")"
 		baseline="$(jq -r --arg case "$case_name" --arg implementation "$implementation" \
-			--arg arguments "$arguments" \
+			--arg arguments "$arguments" --arg timing_surface "$timing_surface" \
 			'select(.case == $case and .implementation == $implementation and
-			 .arguments == $arguments and .output_sink == "null") | .cpu_seconds' \
+			 .arguments == $arguments and .output_sink == "null" and
+			 .timing_surface == $timing_surface) | .cpu_seconds' \
 			"$history_file" 2>/dev/null | tail -n 1)"
 		if [ -n "$baseline" ] && [ "$baseline" != null ] && [ "$baseline" != 0 ]; then
 			awk -v current="$cpu_seconds" -v baseline="$baseline" \
@@ -248,7 +266,7 @@ for case_index in "${!case_names[@]}"; do
 		case "$implementation" in
 			luajit) measured_executable="$lua_cli" ;;
 			zig) measured_executable="$zig_cli" ;;
-			rust) measured_executable="$rust_cli" ;;
+			rust) measured_executable="$rust_timing_cli" ;;
 			*) echo "Unknown hyperfine result: $implementation" >&2; exit 1 ;;
 		esac
 		binary_sha256="$(sha256sum "$measured_executable" | awk '{print $1}')"
@@ -262,6 +280,7 @@ for case_index in "${!case_names[@]}"; do
 			--arg case "$case_name" \
 			--arg implementation "$implementation" \
 			--arg arguments "$arguments" \
+			--arg timing_surface "$timing_surface" \
 			--arg binary_sha256 "$binary_sha256" \
 			--arg luajit_version "$luajit_version" \
 			--arg zig_version "$zig_version" \
@@ -275,10 +294,11 @@ for case_index in "${!case_names[@]}"; do
 			--argjson user_seconds "$user_seconds" \
 			--argjson system_seconds "$system_seconds" \
 			--argjson cpu_seconds "$cpu_seconds" \
-			'{schema_version: 1, timestamp: $timestamp, machine_id: $machine_id,
+			'{schema_version: 2, timestamp: $timestamp, machine_id: $machine_id,
 			  git_commit: $git_commit, git_dirty: $git_dirty, platform: $platform,
 			  cpu_model: $cpu_model, case: $case, implementation: $implementation,
-			  arguments: $arguments, output_sink: "null", runs: $runs, warmup: $warmup,
+			  arguments: $arguments, output_sink: "null", timing_surface: $timing_surface,
+			  runs: $runs, warmup: $warmup,
 			  mean_seconds: $mean_seconds, median_seconds: $median_seconds,
 			  stddev_seconds: $stddev_seconds, user_seconds: $user_seconds,
 			  system_seconds: $system_seconds, cpu_seconds: $cpu_seconds,

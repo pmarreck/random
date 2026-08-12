@@ -33,6 +33,10 @@ mkdir -p zig-out/bin zig-out/lib
 install -m755 result/bin/randomz zig-out/bin/randomz
 install -m755 result/bin/random  zig-out/bin/random
 install -m755 result/bin/randomr zig-out/bin/randomr
+# `randomr` is wrapped only to make its installed `--test` self-contained.
+# Benchmarks use the identical unwrapped ELF so Nix's Bash/PATH setup is not
+# charged to Rust's deterministic core on every measured invocation.
+install -m755 result/libexec/randomr zig-out/bin/.randomr-bench
 # The LuaJIT frontend resolves these relative to its copied executable.
 install -m644 result/lib/blake3.lua             zig-out/lib/blake3.lua
 install -m644 result/lib/fixed.lua              zig-out/lib/fixed.lua

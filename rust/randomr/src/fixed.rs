@@ -18,12 +18,38 @@ const COS_TERMS: usize = 14;
 const SQRT_REFINE: usize = 3;
 const EXP_MAX_CORRECTIONS: usize = 3;
 
+#[cfg(test)]
+std::thread_local! {
+	static DIV_MAGNITUDE_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 /// Canonical signed integer-only software-float value `(mantissa, exponent)`.
 pub struct Fixed {
 	m: i64,
 	e: i32,
 }
+
+const HALF: Fixed = Fixed {
+	m: TWO62 as i64,
+	e: -1,
+};
+const HALF_LN2: Fixed = Fixed {
+	m: LN2.m,
+	e: LN2.e - 1,
+};
+const NEG_HALF_LN2: Fixed = Fixed {
+	m: -LN2.m,
+	e: LN2.e - 1,
+};
+// Coefficient construction is compile-time work. `reciprocal` deliberately
+// uses the same bit-serial magnitude kernel as runtime division; unit tests
+// regenerate every entry through `Fixed::div` and separately count runtime
+// divisions so neither a wrong table nor per-sample recomputation can hide.
+const ODD_RECIP: [Fixed; ATANH_TERMS] = odd_reciprocals();
+const FACT_RECIP: [Fixed; EXP_TERMS] = factorial_reciprocals();
+const COS_RECIP: [Fixed; COS_TERMS] = cosine_reciprocals();
+const SIN_RECIP: [Fixed; COS_TERMS] = sine_reciprocals();
 
 // The named operations are deliberately fallible: unlike the standard
 // arithmetic traits, they surface exponent overflow and invalid domains.
@@ -237,11 +263,10 @@ impl Fixed {
 
 	/// Round to the nearest integer, with halves away from zero.
 	pub fn round_to_i64(self) -> Result<i64, Error> {
-		let half = Self::from_ratio(1, 2)?;
 		Ok(if self.m < 0 {
-			self.sub(half)?.to_i64_trunc()
+			self.sub(HALF)?.to_i64_trunc()
 		} else {
-			self.add(half)?.to_i64_trunc()
+			self.add(HALF)?.to_i64_trunc()
 		})
 	}
 
@@ -267,9 +292,8 @@ impl Fixed {
 		let t2 = t.mul(t)?;
 		let mut term = t;
 		let mut accumulator = t;
-		for index in 0..ATANH_TERMS {
+		for reciprocal in ODD_RECIP {
 			term = term.mul(t2)?;
-			let reciprocal = one.div(Self::from_i64((2 * (index + 1) + 1) as i64))?;
 			accumulator = accumulator.add(term.mul(reciprocal)?)?;
 		}
 		let mut result = accumulator.add(accumulator)?;
@@ -284,11 +308,10 @@ impl Fixed {
 		if self.m == 0 {
 			return Ok(Self::from_i64(1));
 		}
-		let half_ln2 = LN2.div(Self::from_i64(2))?;
 		let mut k = self.div(LN2)?.to_i64_trunc();
 		let mut remainder = reduce_remainder(self, k)?;
 		let mut corrections = 0_usize;
-		while remainder.cmp_value(half_ln2).is_gt() {
+		while remainder.cmp_value(HALF_LN2).is_gt() {
 			k = k.checked_add(1).ok_or(Error::Numeric)?;
 			remainder = reduce_remainder(self, k)?;
 			corrections += 1;
@@ -296,7 +319,7 @@ impl Fixed {
 				return Err(Error::Numeric);
 			}
 		}
-		while remainder.cmp_value(half_ln2.neg()).is_lt() {
+		while remainder.cmp_value(NEG_HALF_LN2).is_lt() {
 			k = k.checked_sub(1).ok_or(Error::Numeric)?;
 			remainder = reduce_remainder(self, k)?;
 			corrections += 1;
@@ -307,10 +330,7 @@ impl Fixed {
 		let one = Self::from_i64(1);
 		let mut accumulator = one;
 		let mut power = one;
-		let mut factorial = one;
-		for index in 0..EXP_TERMS {
-			factorial = factorial.mul(Self::from_i64((index + 1) as i64))?;
-			let reciprocal = one.div(factorial)?;
+		for reciprocal in FACT_RECIP {
 			power = power.mul(remainder)?;
 			let contribution = power.mul(reciprocal)?;
 			if contribution.m == 0 {
@@ -428,18 +448,94 @@ fn norm(mantissa: i64, exponent: i64) -> Result<Fixed, Error> {
 }
 
 fn div_magnitude(a: u64, b: u64) -> u64 {
+	#[cfg(test)]
+	DIV_MAGNITUDE_CALLS.with(|calls| calls.set(calls.get() + 1));
+	div_magnitude_const(a, b)
+}
+
+const fn div_magnitude_const(a: u64, b: u64) -> u64 {
 	let quotient = a / b;
 	let mut remainder = a % b;
 	let mut fraction = 0_u64;
-	for _ in 0..62 {
+	let mut bit = 0;
+	while bit < 62 {
 		remainder *= 2;
 		fraction *= 2;
 		if remainder >= b {
 			remainder -= b;
 			fraction += 1;
 		}
+		bit += 1;
 	}
 	quotient * TWO62 + fraction
+}
+
+const fn positive_integer(value: u64) -> Fixed {
+	assert!(value > 0 && value < 0x8000_0000_0000_0000);
+	let shift = value.leading_zeros() - 1;
+	Fixed {
+		m: (value << shift) as i64,
+		e: 62 - shift as i32,
+	}
+}
+
+const fn reciprocal(denominator: u64) -> Fixed {
+	let divisor = positive_integer(denominator);
+	let mut mantissa = div_magnitude_const(TWO62, divisor.m as u64);
+	let mut exponent = -divisor.e;
+	if mantissa < TWO62 {
+		let shift = mantissa.leading_zeros() - 1;
+		mantissa <<= shift;
+		exponent -= shift as i32;
+	}
+	Fixed {
+		m: mantissa as i64,
+		e: exponent,
+	}
+}
+
+const fn odd_reciprocals() -> [Fixed; ATANH_TERMS] {
+	let mut table = [Fixed::ZERO; ATANH_TERMS];
+	let mut index = 0;
+	while index < ATANH_TERMS {
+		table[index] = reciprocal((2 * index + 3) as u64);
+		index += 1;
+	}
+	table
+}
+
+const fn factorial_reciprocals() -> [Fixed; EXP_TERMS] {
+	let mut table = [Fixed::ZERO; EXP_TERMS];
+	let mut factorial = 1_u64;
+	let mut index = 0;
+	while index < EXP_TERMS {
+		factorial *= index as u64 + 1;
+		table[index] = reciprocal(factorial);
+		index += 1;
+	}
+	table
+}
+
+const fn cosine_reciprocals() -> [Fixed; COS_TERMS] {
+	let mut table = [Fixed::ZERO; COS_TERMS];
+	let mut index = 0;
+	while index < COS_TERMS {
+		let n = index as u64 + 1;
+		table[index] = reciprocal((2 * n - 1) * (2 * n));
+		index += 1;
+	}
+	table
+}
+
+const fn sine_reciprocals() -> [Fixed; COS_TERMS] {
+	let mut table = [Fixed::ZERO; COS_TERMS];
+	let mut index = 0;
+	while index < COS_TERMS {
+		let n = index as u64 + 1;
+		table[index] = reciprocal((2 * n) * (2 * n + 1));
+		index += 1;
+	}
+	table
 }
 
 fn reduce_remainder(value: Fixed, k: i64) -> Result<Fixed, Error> {
@@ -450,9 +546,9 @@ fn cos_radians(angle: Fixed) -> Result<Fixed, Error> {
 	let squared = angle.mul(angle)?;
 	let mut term = Fixed::from_i64(1);
 	let mut accumulator = term;
-	for n in 1..=COS_TERMS {
+	for reciprocal in COS_RECIP {
 		term = term.mul(squared)?;
-		term = term.mul(Fixed::from_ratio(1, ((2 * n - 1) * (2 * n)) as i64)?)?;
+		term = term.mul(reciprocal)?;
 		term = term.neg();
 		accumulator = accumulator.add(term)?;
 	}
@@ -463,9 +559,9 @@ fn sin_radians(angle: Fixed) -> Result<Fixed, Error> {
 	let squared = angle.mul(angle)?;
 	let mut term = angle;
 	let mut accumulator = angle;
-	for n in 1..=COS_TERMS {
+	for reciprocal in SIN_RECIP {
 		term = term.mul(squared)?;
-		term = term.mul(Fixed::from_ratio(1, ((2 * n) * (2 * n + 1)) as i64)?)?;
+		term = term.mul(reciprocal)?;
 		term = term.neg();
 		accumulator = accumulator.add(term)?;
 	}
@@ -475,6 +571,77 @@ fn sin_radians(angle: Fixed) -> Result<Fixed, Error> {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	fn reset_division_count() {
+		DIV_MAGNITUDE_CALLS.with(|calls| calls.set(0));
+	}
+
+	fn division_count() -> usize {
+		DIV_MAGNITUDE_CALLS.with(std::cell::Cell::get)
+	}
+
+	#[test]
+	fn transcendental_coefficients_do_not_divide_at_runtime() {
+		let logarithm_input = Fixed::from_ratio(5, 4).unwrap();
+		reset_division_count();
+		logarithm_input.ln().unwrap();
+		assert_eq!(
+			division_count(),
+			1,
+			"ln may divide only for its input reduction"
+		);
+
+		let exponential_input = Fixed::from_ratio(1, 4).unwrap();
+		reset_division_count();
+		exponential_input.exp().unwrap();
+		assert_eq!(
+			division_count(),
+			1,
+			"exp may divide only for its input reduction"
+		);
+
+		let cosine_input = Fixed::from_ratio(1, 8).unwrap();
+		reset_division_count();
+		cosine_input.cos_turns().unwrap();
+		assert_eq!(
+			division_count(),
+			0,
+			"cosine coefficients must be precomputed"
+		);
+	}
+
+	#[test]
+	fn compile_time_coefficients_match_the_runtime_kernel() {
+		let one = Fixed::from_i64(1);
+		for (index, coefficient) in ODD_RECIP.into_iter().enumerate() {
+			let denominator = Fixed::from_i64((2 * index + 3) as i64);
+			assert_eq!(coefficient, one.div(denominator).unwrap());
+		}
+
+		let mut factorial = one;
+		for (index, coefficient) in FACT_RECIP.into_iter().enumerate() {
+			factorial = factorial.mul(Fixed::from_i64((index + 1) as i64)).unwrap();
+			assert_eq!(coefficient, one.div(factorial).unwrap());
+		}
+
+		for (index, coefficient) in COS_RECIP.into_iter().enumerate() {
+			let n = index as i64 + 1;
+			assert_eq!(
+				coefficient,
+				one.div(Fixed::from_i64((2 * n - 1) * (2 * n))).unwrap()
+			);
+		}
+		for (index, coefficient) in SIN_RECIP.into_iter().enumerate() {
+			let n = index as i64 + 1;
+			assert_eq!(
+				coefficient,
+				one.div(Fixed::from_i64((2 * n) * (2 * n + 1))).unwrap()
+			);
+		}
+		assert_eq!(HALF, one.div(Fixed::from_i64(2)).unwrap());
+		assert_eq!(HALF_LN2, LN2.div(Fixed::from_i64(2)).unwrap());
+		assert_eq!(NEG_HALF_LN2, HALF_LN2.neg());
+	}
 
 	#[test]
 	fn representative_exact_operations() {

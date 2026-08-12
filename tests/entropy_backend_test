@@ -73,9 +73,13 @@ for selector in '__sun:getrandom' '__illumos__:getrandom' '__DragonFly__:arc4ran
 	else
 		expected_define='RANDOMZ_ENTROPY_BACKEND_ARC4RANDOM'
 	fi
+	macro_dump="$tmp/${macro}.defines"
 	if ! cc -dM -E -U__linux__ -D"$macro" -include "$root/src/entropy_backend.h" \
-		-x c /dev/null 2>"$tmp/${macro}.log" |
-		grep -Eq "^#define ${expected_define} 1$"; then
+		-x c /dev/null >"$macro_dump" 2>"$tmp/${macro}.log"; then
+		echo "entropy backend FAILED: $macro preprocessing failed" >&2
+		sed 's/^/    /' <"$tmp/${macro}.log" >&2
+		fails=$((fails + 1))
+	elif ! grep -Eq "^#define ${expected_define} 1$" "$macro_dump"; then
 		echo "entropy backend FAILED: $macro selector is not $expected" >&2
 		sed 's/^/    /' <"$tmp/${macro}.log" >&2
 		fails=$((fails + 1))
