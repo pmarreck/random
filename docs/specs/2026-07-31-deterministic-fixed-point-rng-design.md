@@ -325,7 +325,8 @@ closed as part of this work:
 - **Input** — `--mean`, `--stddev`, `--rate`, `--lambda`, `--alpha`, and
   optional `--beta[=B]` parse from decimal strings directly to soft-float by
   integer accumulation (`fx.parse`). The two components of the one atomic range
-  literal and `--weighted` weights parse via `fx.parse_int_safe`
+  literal, the positive face count in its `dN` shorthand (`dN` is exactly
+  `1..N`), and `--weighted` weights parse via `fx.parse_int_safe`
   (**AS-BUILT: capped at magnitude 2^53, not "plain i64" as originally
   proposed** -- added after this spec was written, once a downstream
   double-precision conversion path was found to silently corrupt integers

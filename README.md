@@ -171,9 +171,12 @@ parameter tokens are also present.
 
 Uniform and range-scaled normal modes accept at most one atomic integer range:
 `M-N` and `M..N` include both endpoints, while Ruby-style `M...N` excludes N.
-The default remains `0..99`. The former one/two bare endpoint grammar is not
-accepted. Ranges are rejected where a distribution's own parameters determine
-its output, including custom-parameter normal mode.
+For die rolling, `dN` is an exact alias for `1..N`, so `random d6`,
+`randomz d20`, and `randomr d100` select uniformly from the corresponding die
+faces. `N` must be a positive whole number no larger than 2^53. The default
+remains `0..99`. The former one/two bare endpoint grammar is not accepted.
+Ranges are rejected where a distribution's own parameters determine its
+output, including custom-parameter normal mode.
 
 `--test` runs the shared Bash contract suite. Nix installations close over its
 tool dependencies; manual Zig and Windows installations require Bash plus the

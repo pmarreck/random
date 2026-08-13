@@ -242,7 +242,7 @@ pub fn parse(args: &[String], program: &str) -> Result<Options, String> {
 		return Err("--view does not accept a range".to_owned());
 	}
 	if positional.len() > 1 {
-		return Err("expected at most one range (M-N, M..N, or M...N)".to_owned());
+		return Err("expected at most one range (dN, M-N, M..N, or M...N)".to_owned());
 	}
 	if !positional.is_empty() && !matches!(options.mode, Mode::Uniform | Mode::Normal) {
 		return Err("ranges do not apply to the selected distribution".to_owned());
@@ -262,7 +262,7 @@ pub fn parse(args: &[String], program: &str) -> Result<Options, String> {
 			return Err("an end-exclusive range must have M < N".to_owned());
 		}
 		options.range = Some(parse_range(literal).ok_or_else(|| {
-			"range must be M-N, M..N, or M...N using whole numbers no larger than 2^53 in magnitude"
+			"range must be dN, M-N, M..N, or M...N using positive dN and whole-number bounds no larger than 2^53 in magnitude"
 				.to_owned()
 		})?);
 	}
@@ -383,6 +383,10 @@ pub fn parse_seed(text: &str) -> Option<[u8; 32]> {
 }
 
 pub fn parse_range(text: &str) -> Option<(i64, i64)> {
+	if let Some(faces) = text.strip_prefix('d') {
+		let faces = parse_safe_i64(faces)?;
+		return (faces >= 1).then_some((1, faces));
+	}
 	let (separator, length, exclusive) = if let Some(index) = text.find("...") {
 		(index, 3, true)
 	} else if let Some(index) = text.find("..") {
@@ -510,6 +514,16 @@ mod tests {
 		assert_eq!(parse_range("1...3"), Some((1, 2)));
 		assert_eq!(parse_range("-17-981"), Some((-17, 981)));
 		assert_eq!(parse_range("1...1"), None);
+	}
+
+	#[test]
+	fn die_notation_is_an_inclusive_one_to_n_range() {
+		assert_eq!(parse_range("d6"), Some((1, 6)));
+		assert_eq!(parse_range("d20"), Some((1, 20)));
+		assert_eq!(parse_range("d1"), Some((1, 1)));
+		for invalid in ["d", "d0", "d-6", "d6.0", "D6", "d9007199254740993"] {
+			assert_eq!(parse_range(invalid), None, "accepted {invalid}");
+		}
 	}
 
 	#[test]

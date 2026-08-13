@@ -875,6 +875,12 @@ local function help_distribution(invocation)
 end
 
 local function parse_range_literal(value)
+	local die_end = value:match("^d(%d+)$")
+	if die_end then
+		die_end = fx.parse_int_safe(die_end)
+		if die_end == nil or die_end < 1 then return nil end
+		return 1, die_end, false
+	end
 	local first, last = value:match("^([+%-]?%d+)%.%.%.([+%-]?%d+)$")
 	local exclusive = first ~= nil
 	if not first then first, last = value:match("^([+%-]?%d+)%.%.([+%-]?%d+)$") end
@@ -887,7 +893,7 @@ local function parse_range_literal(value)
 end
 
 local function print_help(invocation, distribution)
-	print("Usage: " .. invocation .. " [options] [M-N|M..N|M...N]")
+	print("Usage: " .. invocation .. " [options] [dN|M-N|M..N|M...N]")
 	print("       echo 'items' | " .. invocation .. " --choose")
 	print("       echo 'items' | " .. invocation .. " --shuffle")
 	print("")
@@ -895,6 +901,7 @@ local function print_help(invocation, distribution)
 	print("Seeded mode provides cross-platform-identical deterministic streams.")
 	print("True-random mode uses fresh OS CSPRNG entropy; deterministic mode uses")
 	print("a seeded BLAKE3 keyed XOF. A public seed is reproducible, not secret.")
+	print("A positional dN rolls an N-sided die by selecting uniformly from 1..N.")
 	print("")
 	print("Distributions (mutually exclusive):")
 	print("  (default)           Uniform distribution")
@@ -952,6 +959,7 @@ local function print_help(invocation, distribution)
 	print("")
 	print("Examples:")
 	print("  random                    # Uniform random 0-99")
+	print("  random d20                # Roll a 20-sided die")
 	print("  random -n --mean 50 --stddev 10  # Normal, custom params")
 	print("  random -d --seed 42       # Deterministic")
 	print("  random --hex -c 5         # 5 hex numbers")
@@ -1308,7 +1316,7 @@ local function parse_args()
 		os.exit(1)
 	end
 	if #positionals > 1 then
-		stderr_write("Error: expected at most one range (M-N, M..N, or M...N)\n")
+		stderr_write("Error: expected at most one range (dN, M-N, M..N, or M...N)\n")
 		os.exit(1)
 	end
 	if #positionals > 0 and (options.exponential or options.poisson or
@@ -1336,7 +1344,7 @@ local function parse_args()
 		-- deliberately not chosen instead.
 		local start_val, end_val, exclusive = parse_range_literal(positionals[1])
 		if start_val == nil then
-			stderr_write("Error: range must be M-N, M..N, or M...N using whole numbers no larger than 2^53 in magnitude\n")
+			stderr_write("Error: range must be dN, M-N, M..N, or M...N using positive dN and whole-number bounds no larger than 2^53 in magnitude\n")
 			os.exit(1)
 		end
 		if exclusive then

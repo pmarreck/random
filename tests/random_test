@@ -100,6 +100,7 @@ test_random() {
 	if [ $help_status -eq 0 ] && echo "$help_output" | grep -q "Usage: random" && \
 	   grep -Fq 'Cryptographically secure random generator' <<<"$help_output" && \
 	   grep -Fq 'cross-platform-identical deterministic streams' <<<"$help_output" && \
+	   grep -Fq 'dN rolls an N-sided die' <<<"$help_output" && \
 	   [ $help_long_status -eq 0 ] && [ "$help_long_output" = "$help_output" ]; then
 		echo "✓ Help flag test passed"
 	else
@@ -341,6 +342,28 @@ test_random() {
 		echo "✗ Atomic inclusive/exclusive range spellings are not exact aliases"
 		(( fails++ ))
 	fi
+	(( tests++ ))
+	echo "Testing dN die-range aliases..."
+	local dice_d6 dice_d20 range_d6 range_d20 deterministic_d6
+	dice_d6=$(random -d --seed 314159 -c 64 d6 2>/dev/null)
+	range_d6=$(random -d --seed 314159 -c 64 1..6 2>/dev/null)
+	dice_d20=$(random -d --seed 314159 -c 64 d20 2>/dev/null)
+	range_d20=$(random -d --seed 314159 -c 64 1..20 2>/dev/null)
+	deterministic_d6=$(drandom --seed 314159 -c 64 d6 2>/dev/null)
+	if [ "$dice_d6" = "$range_d6" ] && [ "$dice_d20" = "$range_d20" ] &&
+	   [ "$deterministic_d6" = "$range_d6" ]; then
+		echo "✓ d6/d20 are exact 1..N aliases through random and drandom"
+	else
+		echo "✗ dN die notation differs from its 1..N range or drandom alias" >&2
+		(( fails++ ))
+	fi
+	local malformed_die
+	for malformed_die in d d0 d-6 d6.0 D6 d9007199254740993; do
+		if random "$malformed_die" >/dev/null 2>&1; then
+			echo "✗ Malformed die range '$malformed_die' was accepted" >&2
+			(( fails++ ))
+		fi
+	done
 	if random 10 >/dev/null 2>&1 || random 10 20 >/dev/null 2>&1; then
 		echo "✗ Legacy one/two-endpoint positional range grammar was accepted"
 		(( fails++ ))

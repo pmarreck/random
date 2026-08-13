@@ -29,6 +29,8 @@
       every new control, run the complete suite, and commit only green units.
 
 ## Done
+- [x] Accept `dN` as an exact `1..N` range alias across the LuaJIT, Zig/C,
+      and Rust CLIs for convenient N-sided die rolls. (2026-08-12 EDT)
 - [x] Replace ambiguous one/two bare range endpoints with one atomic range:
       `M-N`/`M..N` are inclusive and Ruby-style `M...N` excludes N. Reject
       ranges on distribution paths that do not consume them. (2026-08-05 EDT)

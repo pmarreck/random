@@ -698,13 +698,14 @@ fn selected_help_mode(args: &[String], program: &str) -> Mode {
 fn print_help(program: &str, args: &[String]) -> Result<(), String> {
 	let mode = selected_help_mode(args, program);
 	let text = format!(
-		"Usage: {program} [options] [M-N|M..N|M...N]\n\
+		"Usage: {program} [options] [dN|M-N|M..N|M...N]\n\
                 echo 'items' | {program} --choose\n\
                 echo 'items' | {program} --shuffle\n\n\
          Cryptographically secure random generator with alternate distributions.\n\
          Seeded mode provides cross-platform-identical deterministic streams.\n\
          True-random mode uses fresh OS CSPRNG entropy; deterministic mode uses\n\
-         a seeded BLAKE3 keyed XOF. A public seed is reproducible, not secret.\n\n\
+         a seeded BLAKE3 keyed XOF. A public seed is reproducible, not secret.\n\
+         A positional dN rolls an N-sided die by selecting uniformly from 1..N.\n\n\
          Distributions (mutually exclusive):\n\
            (default)           Uniform distribution\n\
            -n, --normalized    Normal (Gaussian) via Box-Muller\n\

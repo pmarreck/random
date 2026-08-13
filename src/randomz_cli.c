@@ -153,6 +153,13 @@ static int parse_range_part(const char *text, size_t length, int64_t *out)
 static int parse_range_literal(const char *text, int64_t *start, int64_t *end,
 	bool *exclusive)
 {
+	if (text[0] == 'd') {
+		if (parse_range_part(text + 1, strlen(text + 1), end) != RANDOMZ_OK || *end < 1)
+			return RANDOMZ_INVALID_ARGUMENT;
+		*start = 1;
+		*exclusive = false;
+		return RANDOMZ_OK;
+	}
 	const char *separator = strstr(text, "...");
 	size_t separator_length = 3;
 	*exclusive = separator != NULL;
@@ -386,7 +393,7 @@ static void print_distribution_help(distribution dist, chart_renderer renderer)
 
 static void print_help(distribution dist, chart_renderer renderer)
 {
-	printf("Usage: %s [options] [M-N|M..N|M...N]\n", program_name);
+	printf("Usage: %s [options] [dN|M-N|M..N|M...N]\n", program_name);
 	printf("       echo 'items' | %s --choose\n", program_name);
 	printf("       echo 'items' | %s --shuffle\n", program_name);
 	puts("");
@@ -394,6 +401,7 @@ static void print_help(distribution dist, chart_renderer renderer)
 	puts("Seeded mode provides cross-platform-identical deterministic streams.");
 	puts("True-random mode uses fresh OS CSPRNG entropy; deterministic mode uses");
 	puts("a seeded BLAKE3 keyed XOF. A public seed is reproducible, not secret.");
+	puts("A positional dN rolls an N-sided die by selecting uniformly from 1..N.");
 	puts("");
 	puts("Distributions (mutually exclusive):");
 	puts("  (default)           Uniform distribution");
@@ -882,7 +890,7 @@ static int parse_arguments(int argc, char **argv, options *opts)
 		return 1;
 	}
 	if (positional_count > 1) {
-		print_error("expected at most one range (M-N, M..N, or M...N)");
+		print_error("expected at most one range (dN, M-N, M..N, or M...N)");
 		return 1;
 	}
 	if (positional_count > 0 && !(opts->dist == DIST_UNIFORM || opts->dist == DIST_NORMAL)) {
@@ -898,7 +906,7 @@ static int parse_arguments(int argc, char **argv, options *opts)
 		bool exclusive;
 		if (parse_range_literal(range_literal, &opts->start, &opts->end,
 			&exclusive) != RANDOMZ_OK) {
-			print_error("range must be M-N, M..N, or M...N using whole numbers no larger than 2^53 in magnitude");
+			print_error("range must be dN, M-N, M..N, or M...N using positive dN and whole-number bounds no larger than 2^53 in magnitude");
 			return 1;
 		}
 		if (exclusive) {
