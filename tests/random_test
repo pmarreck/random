@@ -40,6 +40,14 @@ fi
 # clean sweep are kept here; nothing was discarded for failing.
 NORMAL_TEST_SEEDS=(90001 90006 90003 90004 90005)
 
+is_json_error() {
+	local output="$1"
+	[[ "$output" != *$'\n'* ]] &&
+		[[ "$output" == '{"sv":1,"rv":"0.2.0","error":{"code":"'* ]] &&
+		[[ "$output" == *'","message":"'* ]] &&
+		[[ "$output" == *'},"notices":[],"warnings":[]}' ]]
+}
+
 # Test the unified random function
 test_random() {
 	local fails=0
@@ -372,7 +380,8 @@ test_random() {
 	unknown_option_output=$(random --heop 2>&1)
 	unknown_option_status=$?
 	if [ "$unknown_option_status" -eq 0 ] ||
-	   [ "$unknown_option_output" != 'Error: unknown option: --heop' ]; then
+	   ! is_json_error "$unknown_option_output" ||
+	   [[ "$unknown_option_output" != *'"message":"unknown option: --heop"'* ]]; then
 		echo "✗ Unknown long option was not classified as an option: $unknown_option_output"
 		(( fails++ ))
 	fi
@@ -1174,7 +1183,7 @@ test_random() {
 	local empty_delim_output empty_delim_status
 	empty_delim_output=$(printf 'a,b\n' | random --choose --delimiter "" -d --seed 42 2>&1)
 	empty_delim_status=$?
-	if [ "$empty_delim_status" -ne 0 ] && [[ "$empty_delim_output" == Error:* ]] && \
+	if [ "$empty_delim_status" -ne 0 ] && is_json_error "$empty_delim_output" && \
 	   [[ "$empty_delim_output" != *"traceback"* ]]; then
 		echo "✓ Empty --delimiter rejection test passed"
 	else
@@ -1672,13 +1681,13 @@ verycommon:100"
 	echo "--- Section 12: Distribution parameter validation ---"
 
 	# Helper: assert `random <args...>` fails cleanly (non-zero exit, an
-	# "Error:" line on stderr, no raw Lua traceback) rather than crashing.
+	# structured JSON error on stderr, no raw Lua traceback) rather than crashing.
 	assert_clean_cli_error() {
 		local label="$1"; shift
 		local out status
 		out=$("$@" 2>&1)
 		status=$?
-		if [ "$status" -ne 0 ] && echo "$out" | grep -qi "^Error:" && ! echo "$out" | grep -qi "stack traceback"; then
+		if [ "$status" -ne 0 ] && is_json_error "$out" && ! echo "$out" | grep -qi "stack traceback"; then
 			echo "✓ $label"
 			return 0
 		else
@@ -1917,7 +1926,7 @@ verycommon:100"
 		local out status
 		out=$("$@" 2>&1)
 		status=$?
-		if [ "$status" -eq 0 ] || ! echo "$out" | grep -qi "^Error:" || echo "$out" | grep -qi "stack traceback"; then
+		if [ "$status" -eq 0 ] || ! is_json_error "$out" || echo "$out" | grep -qi "stack traceback"; then
 			echo "  ✗ $label not rejected cleanly (status=$status): $out" >&2
 			seed_grammar_fail=$((seed_grammar_fail + 1))
 		fi
@@ -2025,7 +2034,7 @@ verycommon:100"
 	if [ "$wover_status" -eq 124 ]; then
 		echo "✗ Overflowing weight test failed: timed out (infinite loop)" >&2
 		(( fails++ ))
-	elif [ "$wover_status" -eq 0 ] || ! echo "$wover_out" | grep -qi "^Error:"; then
+	elif [ "$wover_status" -eq 0 ] || ! is_json_error "$wover_out"; then
 		echo "✗ Overflowing weight test failed: not rejected cleanly (status=$wover_status): $wover_out" >&2
 		(( fails++ ))
 	else

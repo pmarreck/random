@@ -124,7 +124,9 @@ digest_output() {
 	local digest
 	shift 3
 
-	digest="$("$executable" "$@" | sha256sum)" || {
+	# Continuation metadata is deliberately not part of the benchmark payload;
+	# suppress its JSON stderr while pipefail still preserves producer failure.
+	digest="$("$executable" "$@" 2>/dev/null | sha256sum)" || {
 		echo "Benchmark producer or digest failed: $case_name/$implementation" >&2
 		return 1
 	}

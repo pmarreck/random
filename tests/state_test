@@ -1,0 +1,327 @@
+#!/usr/bin/env bash
+# Shared continuation-state contract for the LuaJIT, Zig/C, and Rust CLIs.
+# No temporary files: deterministic commands are replayed when stdout and
+# stderr need to be observed separately.
+set -u
+set -o pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+lua_cli="${STATE_TEST_LUA_CLI:-$root/bin/random}"
+zig_cli="${STATE_TEST_ZIG_CLI:-$root/zig-out/bin/randomz}"
+
+if [ -z "${STATE_TEST_ZIG_CLI:-}" ]; then
+	(cd "$root" && zig build -Doptimize=ReleaseFast) || exit 1
+fi
+
+rust_target="$(cd "$root" && cargo metadata --no-deps --format-version 1 |
+	sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')"
+rust_cli="${STATE_TEST_RUST_CLI:-$rust_target/release/randomr}"
+if [ -z "${STATE_TEST_RUST_CLI:-}" ]; then
+	(cd "$root" && cargo build --locked --release -p randomr-cli) || exit 1
+fi
+
+labels=(luajit zig rust)
+clis=("$lua_cli" "$zig_cli" "$rust_cli")
+fails=0
+checks=0
+
+fail()
+{
+	echo "state test FAILED: $*" >&2
+	fails=$((fails + 1))
+}
+
+stderr_only()
+{
+	"$@" 2>&1 >/dev/null
+}
+
+assert_state_shape()
+{
+	local label="$1" state="$2"
+	local state_pattern='^\{"sv":1,"rv":"0\.2\.0","seed":"0x[0-9a-f]{64}","next_pos":"[0-9]+","args":\{.*\},"notices":\[.*\],"warnings":\[.*\]\}$'
+	checks=$((checks + 1))
+	if [[ "$state" == *$'\n'* ]] ||
+	   [[ ! "$state" =~ $state_pattern ]]; then
+		fail "$label did not emit one canonical state object: $state"
+	fi
+	if [[ "$state" == *'"value"'* ]] || [[ "$state" == *'"values"'* ]]; then
+		fail "$label duplicated stdout values in state metadata"
+	fi
+}
+
+assert_error_json()
+{
+	local label="$1" cli="$2"
+	shift 2
+	local error status
+	error=$(stderr_only "$cli" "$@")
+	status=$?
+	checks=$((checks + 1))
+	if [ "$status" -eq 0 ] || [[ "$error" == *$'\n'* ]] ||
+	   [[ "$error" != '{"sv":1,"rv":"0.2.0","error":{"code":"'* ]] ||
+	   [[ "$error" != *'","message":"'* ]] ||
+	   [[ "$error" != *'},"notices":['* ]] ||
+	   [[ "$error" != *',"warnings":[]}' ]]; then
+		fail "$label was not one JSON error object (status=$status): $error"
+	fi
+}
+
+assert_error_json_contains()
+{
+	local label="$1" cli="$2" expected="$3"
+	shift 3
+	local error status
+	error=$(stderr_only "$cli" "$@")
+	status=$?
+	checks=$((checks + 1))
+	if [ "$status" -eq 0 ] || [[ "$error" != '{"sv":1,"rv":"0.2.0","error":{"code":"'* ]] ||
+	   [[ "$error" != *"$expected"* ]]; then
+		fail "$label did not emit the expected JSON error (status=$status): $error"
+	fi
+}
+
+echo "Testing canonical state JSON and structured stderr..."
+canonical_state=""
+for index in "${!clis[@]}"; do
+	cli="${clis[index]}"
+	label="${labels[index]}"
+	state=$(stderr_only "$cli" -d --seed 42 --count 3 d20)
+	status=$?
+	if [ "$status" -ne 0 ]; then
+		fail "$label rejected seeded state emission: $state"
+		continue
+	fi
+	assert_state_shape "$label" "$state"
+	if [[ "$state" != *'"args":{"distribution":"uniform","range":"1..20","count":"3","encoding":"text","delimiter":"\n"}'* ]]; then
+		fail "$label state did not contain canonical effective arguments: $state"
+	fi
+	if [ -z "$canonical_state" ]; then
+		canonical_state="$state"
+	elif [ "$state" != "$canonical_state" ]; then
+		fail "$label state differs byte-for-byte from the first implementation"
+	fi
+
+	assert_error_json "$label unknown option" "$cli" --heop
+	assert_error_json "$label malformed inline state" "$cli" --state '{"sv":1}'
+	assert_error_json "$label seed/state conflict" "$cli" --seed 42 --state "$state"
+
+	notice=$(stderr_only "$cli" --true-random --count 0)
+	status=$?
+	checks=$((checks + 1))
+	if [ "$status" -ne 0 ] ||
+	   [ "$notice" != '{"sv":1,"rv":"0.2.0","notices":["with the default range 0..99"],"warnings":[]}' ]; then
+		fail "$label default-range notice is not canonical JSON: $notice"
+	fi
+done
+
+join_output()
+{
+	local kind="$1" prefix="$2" suffix="$3"
+	if [ "$kind" = hex ]; then
+		printf '%s%s' "$prefix" "$suffix"
+	else
+		printf '%s\n%s' "$prefix" "$suffix"
+	fi
+}
+
+resume_case()
+{
+	local case_label="$1" join_kind="$2" prefix_count="$3" total_count="$4"
+	shift 4
+	local producer_index consumer_index producer consumer prefix state suffix suffix_state canonical_suffix_state combined baseline remaining
+	remaining=$((total_count - prefix_count))
+	for producer_index in "${!clis[@]}"; do
+		producer="${clis[producer_index]}"
+		prefix=$("$producer" -d --seed 42 --count "$prefix_count" "$@" 2>/dev/null)
+		state=$(stderr_only "$producer" -d --seed 42 --count "$prefix_count" "$@")
+		if [ "$?" -ne 0 ]; then
+			fail "$case_label ${labels[producer_index]} producer did not emit state: $state"
+			continue
+		fi
+		assert_state_shape "$case_label ${labels[producer_index]} producer" "$state"
+		baseline=$("$producer" -d --seed 42 --count "$total_count" "$@" 2>/dev/null)
+		canonical_suffix_state=""
+		for consumer_index in "${!clis[@]}"; do
+			consumer="${clis[consumer_index]}"
+			suffix=$("$consumer" --state "$state" --count "$remaining" 2>/dev/null)
+			suffix_state=$(stderr_only "$consumer" --state "$state" --count "$remaining")
+			status=$?
+			checks=$((checks + 1))
+			if [ "$status" -ne 0 ]; then
+				fail "$case_label ${labels[producer_index]}->${labels[consumer_index]} resume failed"
+				continue
+			fi
+			combined=$(join_output "$join_kind" "$prefix" "$suffix")
+			if [ "$combined" != "$baseline" ]; then
+				fail "$case_label ${labels[producer_index]}->${labels[consumer_index]} diverged"
+			fi
+			assert_state_shape "$case_label ${labels[producer_index]}->${labels[consumer_index]} state" "$suffix_state"
+			if [ -z "$canonical_suffix_state" ]; then
+				canonical_suffix_state="$suffix_state"
+			elif [ "$suffix_state" != "$canonical_suffix_state" ]; then
+				fail "$case_label resumed state differs for ${labels[producer_index]}->${labels[consumer_index]}"
+			fi
+		done
+	done
+}
+
+echo "Testing all same- and cross-implementation continuation directions..."
+resume_case "uniform die" text 5 14 d20
+resume_case "rejection-sampled wide range" text 5 14 0..2147483648
+resume_case "normal" text 3 9 --normalized -18...19
+resume_case "custom normal" text 3 9 --normalized --mean -3.25 --stddev 1.75
+resume_case "exponential" text 4 11 --exponential --rate 2.5
+resume_case "poisson" text 4 11 --poisson --lambda 5.5
+resume_case "log-normal" text 4 11 --log-normal --mean -0.25 --stddev 1.75
+resume_case "beta" text 4 11 --beta 0.75 --alpha 0.5
+resume_case "direct binary" hex 67 173 --binaryoutput --hex
+resume_case "sampled binary" hex 17 41 --binaryoutput --hex 64..192
+
+echo "Testing stdin state forms, --resume aliases, and stdin-operation conflicts..."
+for producer_index in "${!clis[@]}"; do
+	producer="${clis[producer_index]}"
+	state=$(stderr_only "$producer" -d --seed 42 --count 4 d20)
+	for consumer_index in "${!clis[@]}"; do
+		consumer="${clis[consumer_index]}"
+		inline=$("$consumer" --state "$state" --count 3 2>/dev/null)
+		from_dash=$(printf '%s\n' "$state" | "$consumer" --state - --count 3 2>/dev/null)
+		from_bare=$(printf '%s\n' "$state" | "$consumer" --resume --count 3 2>/dev/null)
+		checks=$((checks + 1))
+		if [ "$inline" != "$from_dash" ] || [ "$inline" != "$from_bare" ]; then
+			fail "state input forms differ for ${labels[producer_index]}->${labels[consumer_index]}"
+		fi
+	done
+done
+
+echo "Testing ordinary JSON flexibility, override precedence, and state validation..."
+reordered_state=' { "warnings" : [ ], "args" : { "delimiter" : "\n", "encoding" : "text", "count" : "3", "range" : "1..20", "distribution" : "uniform" }, "next_pos" : "12", "seed" : "0x000000000000000000000000000000000000000000000000000000000000002a", "rv" : "0.2.0", "sv" : 1, "notices" : [ ] } '
+non_json_whitespace_state=$'\v{"sv":1,"rv":"0.2.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{}}'
+invalid_utf8_state=$'{"sv":1,"rv":"0.2.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{"delimiter":"\xff"}}'
+invalid_utf8_delimiter=$'\xff'
+deep_value='"nested"'
+for _ in {1..128}; do deep_value="[$deep_value]"; done
+deep_state='{"sv":1,"rv":"0.2.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{},"notices":'"$deep_value"'}'
+wide_object='{'
+for item in {1..33}; do wide_object="${wide_object}\"k$item\":true,"; done
+wide_object="${wide_object}\"last\":true}"
+wide_items='['
+for _ in {1..1025}; do wide_items="${wide_items}\"notice\","; done
+wide_items="${wide_items}\"last\"]"
+wide_array='{"sv":1,"rv":"0.2.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{},"notices":'"$wide_items"'}'
+expected_reordered=$($lua_cli --state "$reordered_state" --count 3 2>/dev/null)
+informational_rv_state=${reordered_state/\"rv\" : \"0.2.0\"/\"rv\" : \"999.0.0\"}
+expected_override=$($lua_cli --state "$reordered_state" --exponential --rate 2 --count 2 2>/dev/null)
+beta_state=$(stderr_only "$lua_cli" -d --seed 42 --beta 0.75 --alpha 0.5 --count 2)
+expected_cross_distribution=$($lua_cli --state "$beta_state" --exponential --rate 2 --count 2 2>/dev/null)
+for index in "${!clis[@]}"; do
+	cli="${clis[index]}"
+	label="${labels[index]}"
+	actual=$($cli --state "$reordered_state" --count 3 2>/dev/null)
+	informational_rv=$($cli --state "$informational_rv_state" --count 3 2>/dev/null)
+	overridden=$($cli --state "$reordered_state" --exponential --rate 2 --count 2 2>/dev/null)
+	cross_distribution=$($cli --state "$beta_state" --exponential --rate 2 --count 2 2>/dev/null)
+	chosen_override=$(printf 'red\ngreen\nblue\n' | "$cli" --choose --state "$beta_state" 2>/dev/null)
+	checks=$((checks + 5))
+	[ "$actual" = "$expected_reordered" ] || fail "$label rejected or changed reordered state JSON"
+	[ "$informational_rv" = "$expected_reordered" ] || fail "$label treated informational rv as a compatibility gate"
+	[ "$overridden" = "$expected_override" ] || fail "$label did not give CLI arguments precedence over state args"
+	[ "$cross_distribution" = "$expected_cross_distribution" ] || fail "$label retained irrelevant parameters after a distribution override"
+	[ -n "$chosen_override" ] || fail "$label retained generation args after an stdin-operation override"
+	assert_error_json "$label duplicate state key" "$cli" --state '{"sv":1,"sv":1}'
+	assert_error_json "$label leading-zero JSON number" "$cli" --state '{"sv":01,"rv":"0.2.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{}}'
+	assert_error_json "$label non-JSON whitespace" "$cli" --state "$non_json_whitespace_state"
+	assert_error_json "$label missing object value" "$cli" --state '{"sv":1,"rv":"0.2.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{},"notices":}'
+	assert_error_json "$label invalid UTF-8" "$cli" --state "$invalid_utf8_state"
+	assert_error_json "$label invalid UTF-8 producer delimiter" "$cli" -d --seed 42 --count 0 --delimiter "$invalid_utf8_delimiter"
+	assert_error_json_contains "$label excessive JSON nesting" "$cli" 'nesting exceeds 64 levels' --state "$deep_state"
+	assert_error_json_contains "$label excessive object members" "$cli" 'object exceeds 32 members' --state "$wide_object"
+	assert_error_json_contains "$label excessive array items" "$cli" 'array exceeds 1024 items' --state "$wide_array"
+	assert_error_json "$label unknown state key" "$cli" --state '{"sv":1,"rv":"0.2.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{},"bogus":true}'
+	assert_error_json "$label noncanonical state seed prefix" "$cli" --state '{"sv":1,"rv":"0.2.0","seed":"0X000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{}}'
+	assert_error_json "$label invalid state position" "$cli" --state '{"sv":1,"rv":"0.2.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"9007199254740993","args":{}}'
+	assert_error_json "$label invalid inherited scale" "$cli" --state '{"sv":1,"rv":"0.2.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{"distribution":"exponential","rate":"0"}}'
+	assert_error_json "$label noncanonical dN state range" "$cli" --state '{"sv":1,"rv":"0.2.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{"range":"d20"}}'
+	assert_error_json "$label noncanonical hyphen state range" "$cli" --state '{"sv":1,"rv":"0.2.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{"range":"1-20"}}'
+	assert_error_json "$label state args type" "$cli" --state '{"sv":1,"rv":"0.2.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":[]}'
+	assert_error_json "$label notice type" "$cli" --state '{"sv":1,"rv":"0.2.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{},"notices":{}}'
+	assert_error_json "$label NUL state string" "$cli" --state '{"sv":1,"rv":"0.2.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{"delimiter":"\u0000"}}'
+	quiet=$($cli --true-random --count 0 0..0 2>&1 >/dev/null)
+	checks=$((checks + 1))
+	[ -z "$quiet" ] || fail "$label emitted stderr without metadata or a diagnostic: $quiet"
+done
+
+for index in "${!clis[@]}"; do
+	cli="${clis[index]}"
+	label="${labels[index]}"
+	choose_state=$(printf 'red\ngreen\nblue\n' |
+		stderr_only "$cli" -d --seed 42 --choose)
+	if [ "$?" -ne 0 ]; then
+		fail "$label could not emit inline-resumable choose state"
+	else
+		chosen=$(printf 'red\ngreen\nblue\n' | "$cli" --state "$choose_state" 2>/dev/null)
+		checks=$((checks + 1))
+		[ -n "$chosen" ] || fail "$label could not resume choose with inline state"
+	fi
+	assert_error_json "$label choose/stdin state conflict" "$cli" --choose --state -
+	assert_error_json "$label shuffle/bare state conflict" "$cli" --shuffle --resume
+	assert_error_json "$label weighted/stdin state conflict" "$cli" --weighted --resume -
+done
+
+stdin_resume_case()
+{
+	local case_label="$1" operation="$2" population="$3"
+	local producer_index consumer_index producer consumer state output resumed_state canonical_output canonical_state status input_pos resumed_pos
+	for producer_index in "${!clis[@]}"; do
+		producer="${clis[producer_index]}"
+		state=$(printf '%s' "$population" | stderr_only "$producer" -d --seed 42 "$operation")
+		if [ "$?" -ne 0 ]; then
+			fail "$case_label ${labels[producer_index]} producer did not emit state"
+			continue
+		fi
+		input_pos=$(printf '%s\n' "$state" | sed -n 's/.*"next_pos":"\([0-9][0-9]*\)".*/\1/p')
+		canonical_output=''
+		canonical_state=''
+		for consumer_index in "${!clis[@]}"; do
+			consumer="${clis[consumer_index]}"
+			output=$(printf '%s' "$population" | "$consumer" --state "$state" 2>/dev/null)
+			status=$?
+			if [ "$status" -ne 0 ] || [ -z "$output" ]; then
+				fail "$case_label ${labels[producer_index]}->${labels[consumer_index]} output failed"
+				continue
+			fi
+			resumed_state=$(printf '%s' "$population" |
+				stderr_only "$consumer" --state "$state")
+			status=$?
+			checks=$((checks + 1))
+			if [ "$status" -ne 0 ]; then
+				fail "$case_label ${labels[producer_index]}->${labels[consumer_index]} state failed"
+				continue
+			fi
+			assert_state_shape "$case_label ${labels[producer_index]}->${labels[consumer_index]}" "$resumed_state"
+			resumed_pos=$(printf '%s\n' "$resumed_state" |
+				sed -n 's/.*"next_pos":"\([0-9][0-9]*\)".*/\1/p')
+			if [ -z "$input_pos" ] || [ -z "$resumed_pos" ] || [ "$resumed_pos" -le "$input_pos" ]; then
+				fail "$case_label ${labels[producer_index]}->${labels[consumer_index]} did not advance state"
+			fi
+			if [ "$consumer_index" -eq 0 ]; then
+				canonical_output="$output"
+				canonical_state="$resumed_state"
+			elif [ "$output" != "$canonical_output" ] || [ "$resumed_state" != "$canonical_state" ]; then
+				fail "$case_label ${labels[producer_index]}->${labels[consumer_index]} diverged"
+			fi
+		done
+	done
+}
+
+echo "Testing all stdin-operation continuation directions..."
+stdin_resume_case "choose" --choose $'red\ngreen\nblue\nyellow\npurple\n'
+stdin_resume_case "shuffle" --shuffle $'one\ntwo\nthree\nfour\nfive\n'
+stdin_resume_case "weighted" --weighted $'rare:1\ncommon:10\nverycommon:100\n'
+
+if [ "$fails" -ne 0 ]; then
+	echo "state test FAILED: $fails failure(s) across $checks checks" >&2
+	exit "$fails"
+fi
+
+echo "state test PASSED: $checks shared-contract and continuation checks"

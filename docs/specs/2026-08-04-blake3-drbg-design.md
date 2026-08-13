@@ -55,7 +55,7 @@ state = { key: [32]u8, pos: exact_integer } # pos is a BYTE offset into the keys
 
 keystream = BLAKE3_keyed(key).xof()        # extendable output, seekable
 draw_bytes(n): b = keystream.seek(pos).read(n); pos += n; return b
-seek_to_draw(n, width): pos = n * width    # O(1) random access to draw N
+seek_to_draw(n, width): pos = n * width    # O(1) only for fixed-width raw draws
 ```
 
 - LuaJIT: the vendored LuaJIT-specific implementation's
@@ -74,6 +74,10 @@ seek_to_draw(n, width): pos = n * width    # O(1) random access to draw N
   Zig or Rust may support a wider internal position later, but the shared
   public contract remains capped so all three implementations represent it
   exactly.
+- Seeking to a known byte position is O(1). Locating distribution item N from
+  only a seed is generally O(N): rejection sampling and nonlinear samplers may
+  consume a variable number of bytes. Emitted continuation state records the
+  actual byte position, so resumption itself remains O(1).
 
 ### Endianness: BIG-ENDIAN, one rule everywhere
 
@@ -123,9 +127,9 @@ for an unguessable reproducible stream; a small decimal seed is suitable only
 for reproducibility.
 
 **No-seed path:** draw 32 bytes from `getrandom`/`getentropy` (or the documented
-OS fallback), print them as a replayable `0x` seed, and feed the same canonical
+OS fallback), emit them as a replayable `0x` seed in JSON state, and feed the same canonical
 32 bytes through the KDF. This replaces `now_seed()` and fails closed if entropy
-is unavailable. Re-running with the printed seed must reproduce the stream.
+is unavailable. Re-running with the emitted seed must reproduce the stream.
 
 `DRANDOM_SEED` (LuaJIT CLI), `DRANDOMZ_SEED` (C/FFI CLI), and `DRANDOMR_SEED`
 (Rust CLI) follow the same rules as `--seed`. Each frontend ignores the other
@@ -134,11 +138,32 @@ two frontends' variables.
 ## State and persistence
 
 The CLI performs no persistent writes. PCG32 state files, legacy seed files,
-`DRANDOM_CONTEXT`, and `DRANDOM_STATE_HOME` are removed without migration.
-Every invocation starts at byte position zero from an explicit seed or a newly
-generated seed printed to stderr. Consumers that later need continuation may
-store `(key, pos)` outside the core through an explicit API, but implicit disk
-state is not part of this CLI contract.
+`DRANDOM_CONTEXT`, and `DRANDOM_STATE_HOME` are removed without migration. A
+seed starts at byte position zero. Deterministic success emits one compact JSON
+object on stderr containing compatibility version `sv`, producer application
+version `rv`, the canonical root `seed`, the actual XOF byte cursor `next_pos`,
+effective semantic `args`, and `notices`/`warnings`. Output values remain solely
+on stdout and are never duplicated in metadata.
+
+`sv` is the enforced compatibility gate and must increment for any change to
+state or stream interpretation. `rv` records the producer application's version
+for diagnostics only; consumers deliberately accept other string values so an
+application-only version bump does not invalidate an otherwise compatible
+stream.
+
+`--state` and `--resume` are aliases. They accept inline JSON; `-` or an omitted
+value reads at most 1 MiB from stdin. Explicit CLI arguments override inherited
+`args`; state and `--seed` are mutually exclusive. Stdin population operations
+require inline state. The root seed—not the derived key—is serialized, and all
+three implementations reconstruct the DRBG then seek to `next_pos`. Thus state
+is implementation-neutral: every LuaJIT, Zig/C, and Rust producer→consumer
+direction is tested across every distribution and direct binary output.
+State JSON must be valid UTF-8 and is structurally bounded to 64 nested levels,
+32 members per object, and 1024 items per array so hostile input cannot overflow
+a recursive parser stack or trigger effectively unbounded schema-irrelevant work.
+
+All CLI-controlled diagnostics and notices are also JSON on stderr. When no
+state, notice, warning, or error exists, stderr is empty.
 
 ## Draw operations (API-preserving)
 
@@ -202,8 +227,9 @@ goldens for `lib/fixed.lua` are unaffected (the kernel is unchanged).
 - **Cross-architecture:** `./crossarch` compares 512 contiguous seeded BLAKE3
   bytes plus ranged and alternate-distribution CLI outputs on its platform
   matrix, so the DRBG's cross-platform identity is measured, not assumed.
-- **Seed replay:** an auto-generated printed seed, supplied explicitly on the
-  next invocation, must reproduce the exact stream.
+- **Seed replay:** an auto-generated seed emitted in JSON continuation state,
+  or supplied explicitly on the next invocation, must reproduce the exact
+  stream.
 - **Consumption:** chunked XOF reads must concatenate to the same bytes as one
   uninterrupted read, including block-boundary crossings.
 - **Mutation:** each new control is mutation-verified (break it, watch it fire,

@@ -57,6 +57,15 @@ impl Drbg {
 		self.position
 	}
 
+	/// Reposition this initialized stream without exposing or replacing its key.
+	pub fn seek(&mut self, position: u64) -> Result<(), Error> {
+		if position > MAX_EXACT_POSITION {
+			return Err(Error::PositionOverflow);
+		}
+		self.position = position;
+		Ok(())
+	}
+
 	/// Fill `out` with the next contiguous stream bytes and advance by its length.
 	pub fn fill(&mut self, out: &mut [u8]) -> Result<(), Error> {
 		let count = u64::try_from(out.len()).map_err(|_| Error::PositionOverflow)?;
@@ -156,6 +165,25 @@ mod tests {
 
 		source.zeroize();
 		assert_eq!(source.state(), ([0_u8; 32], 0));
+	}
+
+	#[test]
+	fn seek_repositions_a_seeded_stream_without_exporting_its_key() {
+		let seed = [0x39; 32];
+		let mut reference = Drbg::new(&seed);
+		let mut resumed = Drbg::new(&seed);
+		let mut skipped = [0_u8; 37];
+		let mut expected = [0_u8; 29];
+		let mut actual = [0_u8; 29];
+		reference.fill(&mut skipped).unwrap();
+		reference.fill(&mut expected).unwrap();
+		resumed.seek(37).unwrap();
+		resumed.fill(&mut actual).unwrap();
+		assert_eq!(actual, expected);
+		assert_eq!(
+			resumed.seek(MAX_EXACT_POSITION + 1),
+			Err(Error::PositionOverflow)
+		);
 	}
 
 	fn hex64(input: &[u8; 128]) -> [u8; 64] {

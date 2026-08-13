@@ -40,6 +40,9 @@ int main(void)
 	static const uint8_t expected_prefix[8] = {
 		0x69, 0xdf, 0xe2, 0xe9, 0xb5, 0x79, 0xcf, 0x6d,
 	};
+	static const uint8_t expected_second[8] = {
+		0xfe, 0x3d, 0x71, 0xb1, 0x10, 0x24, 0xdb, 0x6e,
+	};
 	uint8_t seed[32] = {0};
 	seed[31] = 42;
 	randomz_drbg state;
@@ -59,6 +62,12 @@ int main(void)
 	CHECK(resumed.position == 16);
 	CHECK(randomz_drbg_set_state(&resumed, key, RANDOMZ_MAX_EXACT_POSITION + 1) ==
 		RANDOMZ_POSITION_OVERFLOW);
+	CHECK(randomz_drbg_seek(&state, 8) == RANDOMZ_OK);
+	CHECK(randomz_drbg_fill(&state, bytes, sizeof(bytes)) == RANDOMZ_OK);
+	CHECK(memcmp(bytes, expected_second, sizeof(bytes)) == 0);
+	CHECK(randomz_drbg_seek(&state, RANDOMZ_MAX_EXACT_POSITION + 1) ==
+		RANDOMZ_POSITION_OVERFLOW);
+	CHECK(randomz_drbg_seek(NULL, 0) == RANDOMZ_INVALID_ARGUMENT);
 	CHECK(randomz_drbg_fill(&resumed, NULL, 0) == RANDOMZ_OK);
 	CHECK(randomz_drbg_init(NULL, seed) == RANDOMZ_INVALID_ARGUMENT);
 	CHECK(randomz_drbg_get_state(&state, NULL, &position) == RANDOMZ_INVALID_ARGUMENT);

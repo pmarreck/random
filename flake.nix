@@ -130,7 +130,7 @@
 
         mkRandomr = rustPkgs: runTests: rustPkgs.rustPlatform.buildRustPackage {
           pname = "randomr";
-          version = "0.1.0";
+          version = "0.2.0";
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
           cargoBuildFlags = [ "-p" "randomr-cli" ];
@@ -191,7 +191,7 @@
 
         random = pkgs.stdenv.mkDerivation {
           pname = "random";
-          version = "0.1.0";
+          version = "0.2.0";
           src = ./.;
           nativeBuildInputs = [ pkgs.makeWrapper pkgs.zig_0_16 ];
           buildInputs = runtimeTools;

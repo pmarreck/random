@@ -32,7 +32,9 @@ or deterministic mode in every family.
   graphics, WezTerm receives Sixel, and other terminals (including every
   automatic invocation inside tmux) receive Braille; use `--view` to render
   the shape from parameters supplied on that invocation
-- **Replayable invocations:** deterministic mode starts at stream position zero and never writes state to disk
+- **Portable continuation:** deterministic invocations emit resumable JSON
+  state on stderr; any implementation can continue state from either of the
+  others, without writing state to disk
 - **Reproducible across platforms:** seeded streams are bit-identical across machines, operating systems and CPU architectures — verified on x86_64-glibc, x86_64-musl, aarch64-Linux and native aarch64-macOS — because all math runs on an integer-only kernel instead of the platform's libm — see [Determinism](#determinism) below
 - **Embeddable core:** `librandomz.a` plus `randomz.h`; callers own DRBG state
   and provide entropy through a callback, so the Zig core performs no I/O
@@ -68,8 +70,8 @@ stream; other integer ranges use rejection sampling.
 
 The KDF provides domain separation, not extra entropy. A small or public seed
 is reproducible and therefore predictable. If deterministic mode is requested
-without a seed, the program obtains 32 bytes from the OS and prints a full
-`0x`-prefixed seed to stderr so the invocation can be replayed. Compromise of
+without a seed, the program obtains 32 bytes from the OS and includes the full
+`0x`-prefixed seed in its JSON stderr state. Compromise of
 that seed/key reveals the stream; this interface does not claim backtracking
 resistance or state-compromise recovery.
 
@@ -133,6 +135,9 @@ random --poisson --lambda 5         # --mean 5 remains an exact alias
 random --beta=3 --alpha=1 --view    # chart Beta(alpha=1, beta=3)
 random --exponential --precision 6  # truncate fractional output to 6 places
 random -d --seed 42 -c 5            # 5 reproducible numbers
+state=$(random -d --seed 42 d20 2>&1 >/dev/null)
+random --resume "$state"             # continue at the next die roll
+printf '%s\n' "$state" | random --state - --count 10
 random --true-random -b -c 32       # force entropy even if DRANDOM_SEED is set
 random --hex -c 5                   # 5 hex values
 printf 'a\nb\nc\n' | random --choose
@@ -140,6 +145,47 @@ printf 'rare:1,common:10' | random --weighted --delimiter ','
 ```
 
 Run `random -h` for the full option list.
+
+### Continuation state
+
+Generated values stay on stdout. A deterministic invocation writes one JSON
+state object to stderr after stdout has been flushed:
+
+```json
+{"sv":1,"rv":"0.2.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"12","args":{"distribution":"uniform","range":"1..20","count":"3","encoding":"text","delimiter":"\n"},"notices":[],"warnings":[]}
+```
+
+`next_pos` is a decimal string containing the next BLAKE3 XOF byte position,
+not an output-item counter. That distinction preserves exact continuation when
+rejection sampling or a nonlinear distribution consumes a variable number of
+bytes. Seeking to the known position is O(1); deriving the Nth distributed
+value from only a seed generally requires replaying the preceding values.
+
+The state deliberately contains no copy of stdout's `value` or `values`.
+Numbers in `args` are strings so a JSON parser cannot mutate exact decimals
+through IEEE-754 conversion. `sv` is the enforced state/stream compatibility
+version and must change when serialized semantics change; `rv` is the
+informational producer application version and is not a compatibility gate.
+Notices and warnings are arrays, and errors use an
+`error` object in the same stderr JSON envelope. Successful true-random calls
+with no notice or warning leave stderr empty. Input state must be valid UTF-8;
+stdin state is capped at 1 MiB, and structural depth/member limits reject
+pathological JSON before it can exhaust a parser stack or monopolize the CLI.
+
+For shell loops that only need to advance state, the redirection order below
+captures stderr while discarding stdout:
+
+```sh
+state=$(random -d --seed 42 d20 2>&1 >/dev/null)
+state=$(random --resume "$state" 2>&1 >/dev/null)
+```
+
+To resume a stdin population operation, pass the state inline so stdin remains
+available for the population:
+
+```sh
+printf 'red\ngreen\nblue\n' | random --choose --state "$state"
+```
 
 Fractional distributions print 18 deterministic decimal places by default.
 Use `--precision N` or its `--truncate N` alias to truncate (never round) to
@@ -214,7 +260,12 @@ a fault-injection test proves an OS policy denial cannot become a weak or
 deterministic fallback.
 
 The CLIs never persist deterministic state. Reusing a seed restarts the same
-stream; omitting it prints a replayable seed. The LuaJIT CLI uses
+stream; omitting it emits a replayable JSON state. `--state` and its `--resume`
+alias accept that object inline, from `-`, or from stdin when their value is
+omitted. Explicit CLI arguments override inherited `args`; `--state` and
+`--seed` are mutually exclusive. Because `--choose`, `--shuffle`, and
+`--weighted` use stdin for their populations, those operations require state
+inline. The LuaJIT CLI uses
 `DRANDOM_SEED`; the C/FFI CLI uses `DRANDOMZ_SEED`; the Rust CLI uses
 `DRANDOMR_SEED`. Each frontend ignores the other two namespaces.
 An inherited frontend-specific seed variable makes a plain invocation
@@ -294,19 +345,20 @@ direnv allow      # or: nix develop
 ./test            # FAST mode (quick, quiet on success)
 FAST= ./test      # full statistical run
 ./stats           # separate, deeper sanity analysis of all three implementations
-nix flake check   # hermetic CI check (runs all 18 suites, but FORCES FAST=1 --
+nix flake check   # hermetic CI check (runs all 19 suites, but FORCES FAST=1 --
                    # kernel_jit_diff's 60000-iteration deep JIT differential
                    # is deep-mode-only by design and is SKIPPED here, not run;
                    # run `FAST= ./test` locally for the full non-FAST suite)
 ```
 
 `./test` runs every suite under `tests/` (official BLAKE3 vectors, an independent
-Zig DRBG reference check, the same 79-check Bash CLI contract against all three
+Zig DRBG reference check, the same 80-check Bash CLI contract against all three
 executables, all three pairwise 141-case exact frontend matrices, Rust
 mutation/downstream-library controls, a C-compiled public-ABI conformance
 test, isolated Zig-package reconstruction, 11-target Zig cross-compilation
 (including Windows ARM64), Wine-executed Windows x86_64 parity, kernel unit
-tests, golden vectors, the `bc` sweep, and the deep-mode-only JIT differential).
+tests, golden vectors, the `bc` sweep, the all-directions continuation
+matrix, and the deep-mode-only JIT differential).
 Set `RANDOM_TEST_CLI` to
 run `tests/random_test` or `tests/drbg_test` against another compatible binary.
 The suites are hermetic and concurrency-safe.

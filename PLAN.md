@@ -10,11 +10,13 @@
       no wider than 256 bits; canonicalize both forms to the same 32-byte
       big-endian seed material and reject every other spelling.
 - [x] Derive every deterministic key through the versioned BLAKE3 KDF. For an
-      omitted seed, obtain 32 bytes from the OS, print the corresponding
-      replayable `0x` seed, and fail closed if entropy is unavailable.
+      omitted seed, obtain 32 bytes from the OS, emit the corresponding
+      replayable `0x` seed in JSON continuation metadata, and fail closed if
+      entropy is unavailable.
 - [x] Remove the legacy generator, `now_seed`, legacy state parsing, implicit state files,
       `DRANDOM_CONTEXT`, and `DRANDOM_STATE_HOME`. A CLI invocation performs no
-      persistent writes; reproducibility comes from an explicit seed.
+      persistent writes; reproducibility comes from an explicit seed or
+      explicit portable continuation state.
 - [x] Replace the true-random entropy path with OS CSPRNG APIs plus an exact-read
       `/dev/urandom` fallback; add `--random-source=PATH` for explicit/testable
       input and a no-wait option where the OS API supports it.
@@ -29,6 +31,14 @@
       every new control, run the complete suite, and commit only green units.
 
 ## Done
+- [x] Ship portable JSON continuation state across LuaJIT, Zig/C, and Rust:
+      payload remains on stdout, structured state/notices/warnings/errors use
+      stderr, `--state`/`--resume` accept inline JSON or stdin, explicit CLI
+      arguments override inherited semantic arguments, and every directed
+      producer/consumer pair resumes at the exact BLAKE3 byte cursor. The
+      shared in-memory Bash gate covers fixed- and variable-consumption modes,
+      state validation, override precedence, and post-resume state equality.
+      (2026-08-13 EDT)
 - [x] Accept `dN` as an exact `1..N` range alias across the LuaJIT, Zig/C,
       and Rust CLIs for convenient N-sided die rolls. (2026-08-12 EDT)
 - [x] Replace ambiguous one/two bare range endpoints with one atomic range:
@@ -206,16 +216,20 @@ recorded on 2026-08-04).
       deterministic path becomes a BLAKE3 keyed DRBG outright. Seed 32 bytes
       from `getrandom` when none is given (couples to the entropy fix below); a
       user `--seed` is expanded through BLAKE3's KDF rather than used raw.
-      Counter mode or seekable XOF — both give O(1) random access to draw N,
-      which is what makes replaying one fuzz-corpus entry cheap.
+      Counter mode or seekable XOF — both give O(1) random access to a known
+      byte position. Finding distribution item N from the root seed remains
+      O(N) when rejection or another variable-consumption sampler is involved;
+      serialized continuation state makes resumption at its recorded cursor
+      O(1).
       CONSEQUENCE: seeded streams change completely, so every deterministic
       golden vector must be re-blessed in the SAME commit. (This is why it was
       originally scheduled last; moving it first means the FFI/CLI port and the
       CLI-level differential are built against the FINAL generator, not a
       throwaway one — the goldens still move exactly once.)
       Implemented contract: versioned KDF, keyed empty-message XOF, big-endian
-      32/64-bit draws, strict 256-bit integer seeds, no persistent state, and
-      direct full-range binary bytes. See the implemented design spec.
+      32/64-bit draws, strict 256-bit integer seeds, no implicit state files,
+      explicit portable continuation state, and direct full-range binary
+      bytes. See the implemented design spec.
 - [x] **New functionality lands in LuaJIT first**, then ports independently to
       Zig/C and Rust using LuaJIT as the original behavioral oracle and both
       later implementations as mutual differential controls — the established

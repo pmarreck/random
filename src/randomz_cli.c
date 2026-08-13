@@ -3,6 +3,7 @@
 #include "randomz.h"
 #include "distribution_view.h"
 #include "entropy_backend.h"
+#include "state_json.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -11,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 
 #if RANDOMZ_ENTROPY_BACKEND_BCRYPT
 #include <windows.h>
@@ -69,6 +71,9 @@ typedef struct options {
 	bool chart_renderer_flag;
 	bool view;
 	bool generation_option_seen;
+	bool dist_cli;
+	bool delimiter_set;
+	bool encoding_set;
 	bool precision_set;
 	size_t precision;
 	const char *delimiter;
@@ -77,6 +82,12 @@ typedef struct options {
 	int64_t count;
 	bool seed_set;
 	uint8_t seed[32];
+	bool state_set;
+	bool state_from_stdin;
+	const char *state_text;
+	char *state_owned_text;
+	uint64_t state_position;
+	state_json_value *state_root;
 	bool start_set;
 	bool end_set;
 	int64_t start;
@@ -128,10 +139,26 @@ typedef struct item_list {
 static const char *program_name = "randomz";
 static const char *program_path = "randomz";
 static entropy_source *active_entropy;
+static bool default_range_notice;
+static const char *debug_warning;
+static const char json_type_error_marker;
 
 static void print_error(const char *message)
 {
-	fprintf(stderr, "Error: %s\n", message);
+	fputs("{\"sv\":1,\"rv\":\"" RANDOMZ_VERSION
+		"\",\"error\":{\"code\":\"usage\",\"message\":", stderr);
+	state_json_write_string(stderr, message);
+	fputs("},\"notices\":[],\"warnings\":[]}\n", stderr);
+}
+
+static void print_errorf(const char *format, ...)
+{
+	char message[4096];
+	va_list arguments;
+	va_start(arguments, format);
+	vsnprintf(message, sizeof(message), format, arguments);
+	va_end(arguments);
+	print_error(message);
 }
 
 static int parse_fixed_arg(const char *text, randomz_fixed *out)
@@ -429,6 +456,8 @@ static void print_help(distribution dist, chart_renderer renderer)
 	puts("      --hex           Output as hexadecimal");
 	puts("      --base64        Output as base64 (for binary)");
 	puts("      --seed N|0xHEX  Set unsigned 256-bit integer seed (implies -d)");
+	puts("      --state [JSON|-] Resume from JSON; omitted value or '-' reads stdin");
+	puts("      --resume [JSON|-] Alias for --state");
 	puts("      --random-source PATH  Read entropy from PATH instead of the OS");
 	puts("      --no-wait       Use nonblocking getrandom; fail if the pool is not ready");
 	puts("      --kitty         Force Kitty graphics for a distribution help chart");
@@ -451,9 +480,10 @@ static void print_help(distribution dist, chart_renderer renderer)
 	puts("  DRANDOMZ_SEED     Unsigned decimal or 0x-prefixed seed (implies -d)");
 	puts("  RANDOMZ_CHART_TYPE  utf8, kitty, or sixel; command-line flags override it");
 	puts("");
-	puts("Deterministic mode never persists state. Every invocation starts at");
-	puts("stream position zero. Without an explicit seed it obtains 32 bytes");
-	puts("from the entropy source and prints the replayable seed to stderr.");
+	puts("Deterministic mode never persists state. A seed starts at stream position");
+	puts("zero; --state/--resume continues at its exact BLAKE3 byte position.");
+	puts("Deterministic success metadata and all diagnostics are JSON on stderr.");
+	puts("Without a seed, deterministic mode obtains 32 bytes from OS entropy.");
 	puts("Seeded output, including alternate distributions, is byte-identical");
 	puts("across supported operating systems and CPU architectures.");
 	print_distribution_help(dist, renderer);
@@ -527,7 +557,7 @@ static int run_test_suite(void)
 		if (path == NULL || *path == '\0') path = "tests/random_test";
 	}
 	if (!test_file_exists(path)) {
-		fprintf(stderr, "Error: test file not found: %s\n", path);
+		print_errorf("test file not found: %s", path);
 		free(owned_path);
 		return 1;
 	}
@@ -612,9 +642,259 @@ static bool parse_seed(const char *text, uint8_t out[32])
 
 static void select_distribution(options *opts, distribution value)
 {
+	opts->dist_cli = true;
 	if (opts->dist_count > 0 && opts->dist == value) return;
 	opts->dist = value;
 	opts->dist_count++;
+}
+
+static bool json_key_allowed(const char *key, const char *const *allowed, size_t count)
+{
+	for (size_t i = 0; i < count; ++i) if (strcmp(key, allowed[i]) == 0) return true;
+	return false;
+}
+
+static const char *json_string(const state_json_value *object, const char *key,
+	bool required, char *error, size_t capacity)
+{
+	const state_json_value *value = state_json_get(object, key);
+	if (value == NULL && !required) return NULL;
+	if (value == NULL || value->kind != STATE_JSON_STRING) {
+		snprintf(error, capacity, "state %s must be a string", key);
+		return &json_type_error_marker;
+	}
+	return value->text;
+}
+
+static int inherit_fixed_state(const state_json_value *args, const char *key,
+	bool *set, randomz_fixed *value, const char **text, char *error, size_t capacity)
+{
+	const char *source = json_string(args, key, false, error, capacity);
+	if (source == &json_type_error_marker) return 1;
+	if (source != NULL && !*set) {
+		if (parse_fixed_arg(source, value) != RANDOMZ_OK) {
+			snprintf(error, capacity, "state %s is invalid", key);
+			return 1;
+		}
+		*set = true;
+		*text = source;
+	}
+	return 0;
+}
+
+static int apply_state(options *opts, const char *range_literal)
+{
+	char error[256] = {0};
+	state_json_value *root = NULL;
+	if (state_json_parse(opts->state_text, &root, error, sizeof(error)) != 0) {
+		print_errorf("invalid state JSON: %s", error[0] == '\0' ? "malformed value" : error);
+		return 1;
+	}
+	opts->state_root = root;
+	if (root->kind != STATE_JSON_OBJECT) { print_error("state JSON must be an object"); return 1; }
+	static const char *const top_allowed[] = {
+		"sv", "rv", "seed", "next_pos", "args", "notices", "warnings"
+	};
+	for (size_t i = 0; i < root->member_count; ++i) {
+		if (!json_key_allowed(root->members[i].key, top_allowed,
+			sizeof(top_allowed) / sizeof(top_allowed[0]))) {
+			print_errorf("unknown state key: %s", root->members[i].key);
+			return 1;
+		}
+	}
+	const state_json_value *sv = state_json_get(root, "sv");
+	if (sv == NULL || sv->kind != STATE_JSON_NUMBER || strcmp(sv->text, "1") != 0) {
+		print_error("unsupported state schema version"); return 1;
+	}
+	const char *rv = json_string(root, "rv", true, error, sizeof(error));
+	if (rv == &json_type_error_marker) { print_error(error); return 1; }
+	(void)rv;
+	const char *seed = json_string(root, "seed", true, error, sizeof(error));
+	if (seed == &json_type_error_marker || strlen(seed) != 66 || seed[0] != '0' || seed[1] != 'x' ||
+		!parse_seed(seed, opts->seed)) {
+		print_error("state seed must be exactly 32 bytes of 0x-prefixed hexadecimal");
+		return 1;
+	}
+	const char *position = json_string(root, "next_pos", true, error, sizeof(error));
+	int64_t parsed_position;
+	if (position == &json_type_error_marker || parse_safe_int(position, &parsed_position) != RANDOMZ_OK ||
+		parsed_position < 0) {
+		print_error("state next_pos must be a decimal string no larger than 2^53");
+		return 1;
+	}
+	const state_json_value *args = state_json_get(root, "args");
+	if (args == NULL || args->kind != STATE_JSON_OBJECT) {
+		print_error("state args must be an object"); return 1;
+	}
+	for (size_t index = 0; index < 2; ++index) {
+		const char *key = index == 0 ? "notices" : "warnings";
+		const state_json_value *array = state_json_get(root, key);
+		if (array != NULL) {
+			if (array->kind != STATE_JSON_ARRAY) {
+				print_errorf("state %s must be an array", key); return 1;
+			}
+			for (size_t item = 0; item < array->item_count; ++item) {
+				if (array->items[item]->kind != STATE_JSON_STRING) {
+					print_errorf("state %s must contain strings", key); return 1;
+				}
+			}
+		}
+	}
+	static const char *const args_allowed[] = {"operation", "distribution", "range", "count",
+		"mean", "stddev", "rate", "lambda", "alpha", "beta", "precision", "binary",
+		"encoding", "delimiter"};
+	for (size_t i = 0; i < args->member_count; ++i) {
+		if (!json_key_allowed(args->members[i].key, args_allowed,
+			sizeof(args_allowed) / sizeof(args_allowed[0]))) {
+			print_errorf("unknown state args key: %s", args->members[i].key);
+			return 1;
+		}
+	}
+	bool stdin_mode = opts->choose || opts->shuffle || opts->weighted;
+	if (!stdin_mode && !opts->dist_cli && range_literal == NULL) {
+		const char *operation = json_string(args, "operation", false, error, sizeof(error));
+		if (operation == &json_type_error_marker) { print_error(error); return 1; }
+		if (operation != NULL) {
+			if (strcmp(operation, "choose") == 0) opts->choose = true;
+			else if (strcmp(operation, "shuffle") == 0) opts->shuffle = true;
+			else if (strcmp(operation, "weighted") == 0) opts->weighted = true;
+			else { print_error("state operation is unsupported"); return 1; }
+		}
+		const char *dist = json_string(args, "distribution", false, error, sizeof(error));
+		if (dist == &json_type_error_marker) { print_error(error); return 1; }
+		if (dist != NULL) {
+			if (strcmp(dist, "uniform") == 0) opts->dist = DIST_UNIFORM;
+			else if (strcmp(dist, "normal") == 0) opts->dist = DIST_NORMAL;
+			else if (strcmp(dist, "exponential") == 0) opts->dist = DIST_EXPONENTIAL;
+			else if (strcmp(dist, "poisson") == 0) opts->dist = DIST_POISSON;
+			else if (strcmp(dist, "log-normal") == 0) opts->dist = DIST_LOG_NORMAL;
+			else if (strcmp(dist, "beta") == 0) opts->dist = DIST_BETA;
+			else { print_error("state distribution is unsupported"); return 1; }
+			opts->dist_count = opts->dist == DIST_UNIFORM ? 0 : 1;
+		}
+	}
+	const char *text;
+	if (!opts->count_set) {
+		text = json_string(args, "count", false, error, sizeof(error));
+		if (text == &json_type_error_marker) { print_error(error); return 1; }
+		if (text != NULL) {
+			if (parse_safe_int(text, &opts->count) != RANDOMZ_OK || opts->count < 0) {
+				print_error("state count is invalid"); return 1;
+			}
+			opts->count_set = true;
+		}
+	}
+	if (range_literal == NULL && !opts->start_set) {
+		text = json_string(args, "range", false, error, sizeof(error));
+		if (text == &json_type_error_marker) { print_error(error); return 1; }
+		if (text != NULL) {
+			bool exclusive;
+			const char *separator = strstr(text, "..");
+			if (separator == NULL || strstr(separator + 2, "..") != NULL ||
+				separator == text || separator[2] == '\0' || text[0] == 'd' ||
+				parse_range_literal(text, &opts->start, &opts->end, &exclusive) != RANDOMZ_OK || exclusive) {
+				print_error("state range must be canonical M..N"); return 1;
+			}
+			opts->start_set = opts->end_set = true;
+		}
+	}
+	if (!opts->delimiter_set) {
+		text = json_string(args, "delimiter", false, error, sizeof(error));
+		if (text == &json_type_error_marker) { print_error(error); return 1; }
+		if (text != NULL) {
+			if (*text == '\0') { print_error("state delimiter is invalid"); return 1; }
+			opts->delimiter = text;
+		}
+	}
+	if (!opts->encoding_set) {
+		text = json_string(args, "encoding", false, error, sizeof(error));
+		if (text == &json_type_error_marker) { print_error(error); return 1; }
+		if (text != NULL) {
+			opts->binary_output = opts->hex_output = opts->base64_output = false;
+			if (strcmp(text, "text") == 0) {}
+			else if (strcmp(text, "hex") == 0) opts->hex_output = true;
+			else if (strcmp(text, "raw") == 0) opts->binary_output = true;
+			else if (strcmp(text, "binary-hex") == 0) opts->binary_output = opts->hex_output = true;
+			else if (strcmp(text, "base64") == 0) opts->binary_output = opts->base64_output = true;
+			else { print_error("state encoding is unsupported"); return 1; }
+		}
+	}
+	const state_json_value *binary = state_json_get(args, "binary");
+	if (binary != NULL && binary->kind != STATE_JSON_BOOL) {
+		print_error("state binary must be boolean"); return 1;
+	}
+	int fixed_error = 0;
+	if (!(opts->choose || opts->shuffle || opts->weighted)) switch (opts->dist) {
+	case DIST_NORMAL:
+	case DIST_LOG_NORMAL:
+		fixed_error = inherit_fixed_state(args, "mean", &opts->mean_set, &opts->mean,
+			&opts->mean_text, error, sizeof(error)) ||
+			inherit_fixed_state(args, "stddev", &opts->stddev_set, &opts->stddev,
+				&opts->stddev_text, error, sizeof(error));
+		break;
+	case DIST_EXPONENTIAL:
+		fixed_error = inherit_fixed_state(args, "rate", &opts->rate_set, &opts->rate,
+			&opts->rate_text, error, sizeof(error));
+		break;
+	case DIST_POISSON:
+		fixed_error = inherit_fixed_state(args, "mean", &opts->mean_set, &opts->mean,
+			&opts->mean_text, error, sizeof(error)) ||
+			inherit_fixed_state(args, "lambda", &opts->lambda_set, &opts->lambda,
+				&opts->lambda_text, error, sizeof(error));
+		break;
+	case DIST_BETA:
+		fixed_error = inherit_fixed_state(args, "alpha", &opts->alpha_set, &opts->alpha,
+			&opts->alpha_text, error, sizeof(error)) ||
+			inherit_fixed_state(args, "beta", &opts->beta_set, &opts->beta,
+				&opts->beta_text, error, sizeof(error));
+		break;
+	case DIST_UNIFORM:
+		break;
+	}
+	if (fixed_error) {
+		print_error(error); return 1;
+	}
+	if ((opts->stddev_set && opts->stddev.m <= 0) ||
+		(opts->rate_set && opts->rate.m <= 0) ||
+		(opts->lambda_set && opts->lambda.m <= 0) ||
+		(opts->alpha_set && opts->alpha.m <= 0) ||
+		(opts->beta_set && opts->beta.m <= 0)) {
+		print_error("state distribution scale/shape parameters must be positive");
+		return 1;
+	}
+	if (!opts->precision_set) {
+		text = json_string(args, "precision", false, error, sizeof(error));
+		if (text == &json_type_error_marker) { print_error(error); return 1; }
+		if (text != NULL) {
+			int64_t precision;
+			if (parse_safe_int(text, &precision) != RANDOMZ_OK || precision < 0 ||
+				precision > MAX_FRACTION_DIGITS) {
+				print_error("state precision is invalid"); return 1;
+			}
+			opts->precision = (size_t)precision;
+			opts->precision_set = true;
+		}
+	}
+	opts->seed_set = true;
+	opts->state_position = (uint64_t)parsed_position;
+	opts->deterministic = true;
+	return 0;
+}
+
+static char *read_state_text(void)
+{
+	const size_t maximum = 1048576;
+	char *text = malloc(maximum + 2);
+	if (text == NULL) return NULL;
+	size_t length = fread(text, 1, maximum + 1, stdin);
+	if (ferror(stdin) || length > maximum || memchr(text, 0, length) != NULL) {
+		free(text); return NULL;
+	}
+	text[length] = '\0';
+	bool nonspace = false;
+	for (size_t i = 0; i < length; ++i) if (!isspace((unsigned char)text[i])) nonspace = true;
+	if (!nonspace) { free(text); return NULL; }
+	return text;
 }
 
 static int require_next(int argc, char **argv, int *index, const char *message,
@@ -708,12 +988,15 @@ static int parse_arguments(int argc, char **argv, options *opts)
 			}
 		} else if (strcmp(arg, "--binaryoutput") == 0 || strcmp(arg, "-b") == 0) {
 			opts->binary_output = true;
+			opts->encoding_set = true;
 			opts->generation_option_seen = true;
 		} else if (strcmp(arg, "--hex") == 0) {
 			opts->hex_output = true;
+			opts->encoding_set = true;
 			opts->generation_option_seen = true;
 		} else if (strcmp(arg, "--base64") == 0) {
 			opts->base64_output = true;
+			opts->encoding_set = true;
 			opts->generation_option_seen = true;
 		} else if (strcmp(arg, "--choose") == 0) {
 			opts->choose = true;
@@ -754,7 +1037,12 @@ static int parse_arguments(int argc, char **argv, options *opts)
 				print_error("--delimiter must not be empty");
 				return 1;
 			}
+			if (!state_json_valid_utf8(value)) {
+				print_error("--delimiter must be valid UTF-8");
+				return 1;
+			}
 			opts->delimiter = value;
+			opts->delimiter_set = true;
 		} else if (strcmp(arg, "--count") == 0 || strcmp(arg, "-c") == 0) {
 			opts->generation_option_seen = true;
 			if (require_next(argc, argv, &i, "--count requires a number", &value)) return 1;
@@ -772,19 +1060,19 @@ static int parse_arguments(int argc, char **argv, options *opts)
 			value = attached_option_value(arg, name);
 			if (value == NULL) {
 				if (++i >= argc) {
-					fprintf(stderr, "Error: %s requires a number\n", name);
+					print_errorf("%s requires a number", name);
 					return 1;
 				}
 				value = argv[i];
 			}
 			if (*value == '\0') {
-				fprintf(stderr, "Error: %s requires a number\n", name);
+				print_errorf("%s requires a number", name);
 				return 1;
 			}
 			int64_t precision;
 			if (parse_safe_int(value, &precision) != RANDOMZ_OK ||
 				precision < 0 || precision > MAX_FRACTION_DIGITS) {
-				fprintf(stderr, "Error: %s must be a whole number from 0 to 18\n", name);
+				print_errorf("%s must be a whole number from 0 to 18", name);
 				return 1;
 			}
 			opts->precision = (size_t)precision;
@@ -793,11 +1081,42 @@ static int parse_arguments(int argc, char **argv, options *opts)
 			opts->generation_option_seen = true;
 			if (require_next(argc, argv, &i, "--seed requires a value", &value)) return 1;
 			if (!parse_seed(value, opts->seed)) {
-				fprintf(stderr, "Error: --seed must be an unsigned decimal or 0x-prefixed "
-					"hexadecimal integer smaller than 2^256, got: %s\n", value);
+				print_errorf("--seed must be an unsigned decimal or 0x-prefixed "
+					"hexadecimal integer smaller than 2^256, got: %s", value);
 				return 1;
 			}
 			opts->seed_set = true;
+			opts->deterministic = true;
+		} else if (strcmp(arg, "--state") == 0 || strcmp(arg, "--resume") == 0) {
+			opts->generation_option_seen = true;
+			if (opts->state_set) {
+				print_error("only one --state/--resume may be specified"); return 1;
+			}
+			opts->state_set = true;
+			if (i + 1 < argc && strcmp(argv[i + 1], "-") == 0) {
+				opts->state_from_stdin = true;
+				i++;
+			} else if (i + 1 < argc) {
+				const char *candidate = argv[i + 1];
+				while (isspace((unsigned char)*candidate)) candidate++;
+				if (*candidate == '{') opts->state_text = argv[++i];
+				else opts->state_from_stdin = true;
+			} else opts->state_from_stdin = true;
+			opts->deterministic = true;
+		} else if (attached_option_value(arg, "--state") != NULL ||
+			attached_option_value(arg, "--resume") != NULL) {
+			opts->generation_option_seen = true;
+			if (opts->state_set) {
+				print_error("only one --state/--resume may be specified"); return 1;
+			}
+			opts->state_set = true;
+			value = attached_option_value(arg, "--state");
+			if (value == NULL) value = attached_option_value(arg, "--resume");
+			if (*value == '\0') {
+				print_error("--state/--resume= requires inline JSON or '-'"); return 1;
+			}
+			if (strcmp(value, "-") == 0) opts->state_from_stdin = true;
+			else opts->state_text = value;
 			opts->deterministic = true;
 		} else if (strcmp(arg, "--mean") == 0 ||
 			attached_option_value(arg, "--mean") != NULL) {
@@ -877,11 +1196,38 @@ static int parse_arguments(int argc, char **argv, options *opts)
 			opts->alpha_text = value;
 		} else {
 			if (strncmp(arg, "--", 2) == 0) {
-				fprintf(stderr, "Error: unknown option: %s\n", arg);
+				print_errorf("unknown option: %s", arg);
 				return 1;
 			}
 			if (positional_count == 0) range_literal = arg;
 			positional_count++;
+		}
+	}
+
+	if (opts->state_set && opts->seed_set) {
+		print_error("--state/--resume and --seed are mutually exclusive"); return 1;
+	}
+	if (opts->state_set && opts->random_source != NULL) {
+		print_error("--state/--resume cannot be combined with --random-source"); return 1;
+	}
+	if (opts->state_set && opts->no_wait) {
+		print_error("--state/--resume cannot be combined with --no-wait"); return 1;
+	}
+	if (opts->state_from_stdin && (opts->choose || opts->shuffle || opts->weighted)) {
+		print_error("--choose, --shuffle, and --weighted require inline --state JSON"); return 1;
+	}
+	if (opts->state_from_stdin) {
+		opts->state_owned_text = read_state_text();
+		if (opts->state_owned_text == NULL) {
+			print_error("--state expected one JSON object on stdin no larger than 1048576 bytes");
+			return 1;
+		}
+		opts->state_text = opts->state_owned_text;
+	}
+	if (opts->state_set) {
+		if (apply_state(opts, range_literal) != 0) return 1;
+		if (opts->state_from_stdin && (opts->choose || opts->shuffle || opts->weighted)) {
+			print_error("--choose, --shuffle, and --weighted require inline --state JSON"); return 1;
 		}
 	}
 
@@ -1134,10 +1480,10 @@ static int entropy_rng_fill(void *context, uint8_t *out, size_t count)
 static int rng_failure(int status)
 {
 	if (status == RANDOMZ_ENTROPY_ERROR && active_entropy != NULL) {
-		fprintf(stderr, "Error: entropy %s\n",
+		print_errorf("entropy %s",
 			active_entropy->error[0] == '\0' ? "source failed" : active_entropy->error);
 	} else {
-		fprintf(stderr, "Error: RNG core failed with status %d\n", status);
+		print_errorf("RNG core failed with status %d", status);
 	}
 	return 1;
 }
@@ -1326,7 +1672,7 @@ static int handle_stdin_operation(const options *opts, rng_source *source)
 		for (size_t i = 0; i < list.count && status == RANDOMZ_OK; ++i) {
 			char *colon = strrchr(list.items[i], ':');
 			if (colon == NULL || colon == list.items[i] || colon[1] == '\0') {
-				fprintf(stderr, "Error: weighted item must be in format 'value:weight', got: %s\n", list.items[i]);
+				print_errorf("weighted item must be in format 'value:weight', got: %s", list.items[i]);
 				status = RANDOMZ_INVALID_ARGUMENT;
 				break;
 			}
@@ -1335,11 +1681,11 @@ static int handle_stdin_operation(const options *opts, rng_source *source)
 				break;
 			}
 			if (status != RANDOMZ_OK) {
-				fprintf(stderr, "Error: weighted item must be in format 'value:weight', got: %s\n", list.items[i]);
+				print_errorf("weighted item must be in format 'value:weight', got: %s", list.items[i]);
 				break;
 			}
 			if (parse_safe_int(colon + 1, &weights[i]) != RANDOMZ_OK) {
-				fprintf(stderr, "Error: weighted item weight is out of range (must be a whole number no larger than 2^53): %s\n", list.items[i]);
+				print_errorf("weighted item weight is out of range (must be a whole number no larger than 2^53): %s", list.items[i]);
 				status = RANDOMZ_INVALID_ARGUMENT;
 				break;
 			}
@@ -1534,17 +1880,97 @@ static int emit_text(const options *opts, rng_source *source,
 	return 0;
 }
 
-static int print_seed(const uint8_t seed[32])
+static int write_arg_string(bool *first, const char *key, const char *value)
 {
-	static const char hex[] = "0123456789abcdef";
-	fputs("(seed: 0x", stderr);
-	for (size_t i = 0; i < 32; ++i) {
-		fputc(hex[seed[i] >> 4], stderr);
-		fputc(hex[seed[i] & 15], stderr);
+	if (!*first && fputc(',', stderr) == EOF) return 1;
+	*first = false;
+	return state_json_write_string(stderr, key) || fputc(':', stderr) == EOF ||
+		state_json_write_string(stderr, value);
+}
+
+static const char *distribution_name(distribution dist)
+{
+	switch (dist) {
+	case DIST_NORMAL: return "normal";
+	case DIST_EXPONENTIAL: return "exponential";
+	case DIST_POISSON: return "poisson";
+	case DIST_LOG_NORMAL: return "log-normal";
+	case DIST_BETA: return "beta";
+	case DIST_UNIFORM:
+	default: return "uniform";
 	}
-	fputs(")\n", stderr);
-	if (fflush(stderr) == EOF || ferror(stderr)) return 1;
-	return 0;
+}
+
+static int emit_metadata(const options *opts, const randomz_drbg *drbg,
+	int64_t start, int64_t end, uint64_t count, bool has_bounds)
+{
+	if (drbg == NULL && !default_range_notice && debug_warning == NULL) return 0;
+	static const char hex[] = "0123456789abcdef";
+	if (drbg != NULL) {
+		fputs("{\"sv\":1,\"rv\":\"" RANDOMZ_VERSION "\",\"seed\":\"0x", stderr);
+		for (size_t i = 0; i < 32; ++i) {
+			fputc(hex[opts->seed[i] >> 4], stderr);
+			fputc(hex[opts->seed[i] & 15], stderr);
+		}
+		fprintf(stderr, "\",\"next_pos\":\"%" PRIu64 "\",\"args\":{", drbg->position);
+		bool first = true;
+		if (opts->choose || opts->shuffle || opts->weighted) {
+			const char *operation = opts->choose ? "choose" : (opts->shuffle ? "shuffle" : "weighted");
+			if (write_arg_string(&first, "operation", operation) ||
+				write_arg_string(&first, "delimiter", opts->delimiter)) return 1;
+		} else if (has_bounds) {
+			char number[96];
+			if (write_arg_string(&first, "distribution", distribution_name(opts->dist))) return 1;
+			bool range_scaled = (opts->dist == DIST_UNIFORM || opts->dist == DIST_NORMAL) &&
+				!(opts->dist == DIST_NORMAL && (opts->mean_set || opts->stddev_set));
+			if (range_scaled) {
+				snprintf(number, sizeof(number), "%" PRId64 "..%" PRId64, start, end);
+				if (write_arg_string(&first, "range", number)) return 1;
+			}
+			snprintf(number, sizeof(number), "%" PRIu64, count);
+			if (write_arg_string(&first, "count", number)) return 1;
+			if (opts->dist == DIST_NORMAL && !range_scaled) {
+				if (write_arg_string(&first, "mean", opts->mean_text != NULL ? opts->mean_text : "0") ||
+					write_arg_string(&first, "stddev", opts->stddev_text != NULL ? opts->stddev_text : "1")) return 1;
+			} else if (opts->dist == DIST_EXPONENTIAL) {
+				if (write_arg_string(&first, "rate", opts->rate_text != NULL ? opts->rate_text : "1")) return 1;
+			} else if (opts->dist == DIST_POISSON) {
+				const char *lambda = opts->lambda_text != NULL ? opts->lambda_text :
+					(opts->mean_text != NULL ? opts->mean_text : "1");
+				if (write_arg_string(&first, "lambda", lambda)) return 1;
+			} else if (opts->dist == DIST_LOG_NORMAL) {
+				if (write_arg_string(&first, "mean", opts->mean_text != NULL ? opts->mean_text : "0") ||
+					write_arg_string(&first, "stddev", opts->stddev_text != NULL ? opts->stddev_text : "1")) return 1;
+			} else if (opts->dist == DIST_BETA) {
+				if (write_arg_string(&first, "alpha", opts->alpha_text != NULL ? opts->alpha_text : "2") ||
+					write_arg_string(&first, "beta", opts->beta_text != NULL ? opts->beta_text : "2")) return 1;
+			}
+			if (opts->dist == DIST_EXPONENTIAL || opts->dist == DIST_LOG_NORMAL ||
+				opts->dist == DIST_BETA) {
+				snprintf(number, sizeof(number), "%zu", opts->precision);
+				if (write_arg_string(&first, "precision", number)) return 1;
+			}
+			if (opts->binary_output) {
+				if (!first) fputc(',', stderr);
+				first = false;
+				fputs("\"binary\":true", stderr);
+			}
+			const char *encoding = opts->binary_output ?
+				(opts->base64_output ? "base64" : (opts->hex_output ? "binary-hex" : "raw")) :
+				(opts->hex_output ? "hex" : "text");
+			if (write_arg_string(&first, "encoding", encoding)) return 1;
+			if (!opts->binary_output && write_arg_string(&first, "delimiter", opts->delimiter)) return 1;
+		}
+		fputc('}', stderr);
+	} else {
+		fputs("{\"sv\":1,\"rv\":\"" RANDOMZ_VERSION "\"", stderr);
+	}
+	fputs(",\"notices\":[", stderr);
+	if (default_range_notice) state_json_write_string(stderr, "with the default range 0..99");
+	fputs("],\"warnings\":[", stderr);
+	if (debug_warning != NULL) state_json_write_string(stderr, debug_warning);
+	fputs("]}\n", stderr);
+	return fflush(stderr) == EOF || ferror(stderr);
 }
 
 static randomz_distribution public_distribution(distribution dist)
@@ -1631,8 +2057,7 @@ static int print_distribution_view(int argc, char **argv, const options *opts)
 		first, second, output);
 	if (status != RANDOMZ_OK) {
 		if (status < 0) print_error("could not render distribution chart");
-		else fprintf(stderr, "Error: supplied distribution parameters cannot be charted (status %d)\n",
-			status);
+		else print_errorf("supplied distribution parameters cannot be charted (status %d)", status);
 		return 1;
 	}
 	puts(axis);
@@ -1656,7 +2081,7 @@ int main(int argc, char **argv)
 #endif
 #if defined(RANDOMZ_DEBUG_BUILD)
 	if (getenv("MUTE_DEBUG_STATUS") == NULL) {
-		fputs("\033[33mrandomz: DEBUG build (use -Doptimize=ReleaseFast for shipped output)\033[0m\n", stderr);
+		debug_warning = "randomz: DEBUG build (use -Doptimize=ReleaseFast for shipped output)";
 	}
 #endif
 	program_path = argc > 0 ? argv[0] : "randomz";
@@ -1678,35 +2103,37 @@ int main(int argc, char **argv)
 			const char *env_seed = getenv("DRANDOMZ_SEED");
 			if (env_seed != NULL && *env_seed != '\0') {
 				if (!parse_seed(env_seed, seed)) {
-					fprintf(stderr, "Error: DRANDOMZ_SEED must be an unsigned decimal or "
-						"0x-prefixed hexadecimal integer smaller than 2^256, got: %s\n", env_seed);
+					print_errorf("DRANDOMZ_SEED must be an unsigned decimal or "
+						"0x-prefixed hexadecimal integer smaller than 2^256, got: %s", env_seed);
 					return 1;
 				}
 			} else {
 				if (entropy_open(&entropy, opts.random_source, opts.no_wait) != 0) {
-					fprintf(stderr, "Error: entropy %s\n", entropy.error);
+					print_errorf("entropy %s", entropy.error);
 					return 1;
 				}
 				active_entropy = &entropy;
 				if (entropy_fill(&entropy, seed, 32) != 0) {
-					fprintf(stderr, "Error: entropy %s\n", entropy.error);
-					return 1;
-				}
-				if (print_seed(seed) != 0) {
-					print_error("could not write the replay seed to stderr");
+					print_errorf("entropy %s", entropy.error);
 					return 1;
 				}
 			}
 		}
+		memcpy(opts.seed, seed, 32);
+		opts.seed_set = true;
 		if (randomz_drbg_init(&drbg, seed) != RANDOMZ_OK) {
 			print_error("could not initialize BLAKE3 DRBG");
+			return 1;
+		}
+		if (opts.state_set && randomz_drbg_seek(&drbg, opts.state_position) != RANDOMZ_OK) {
+			print_error("state next_pos exceeds the supported position");
 			return 1;
 		}
 		source.fill = drbg_fill_callback;
 		source.context = &drbg;
 	} else {
 		if (entropy_open(&entropy, opts.random_source, opts.no_wait) != 0) {
-			fprintf(stderr, "Error: entropy %s\n", entropy.error);
+			print_errorf("entropy %s", entropy.error);
 			return 1;
 		}
 		active_entropy = &entropy;
@@ -1715,7 +2142,10 @@ int main(int argc, char **argv)
 	}
 
 	if (opts.choose || opts.shuffle || opts.weighted) {
-		return handle_stdin_operation(&opts, &source);
+		int result = handle_stdin_operation(&opts, &source);
+		if (result == 0) result = emit_metadata(&opts,
+			opts.deterministic ? &drbg : NULL, 0, 0, 0, false);
+		return result;
 	}
 
 	int64_t start;
@@ -1748,7 +2178,7 @@ int main(int argc, char **argv)
 		}
 	}
 	if (show_defaults && !opts.binary_output) {
-		fputs("(with the default range 0..99)\n", stderr);
+		default_range_notice = true;
 	}
 
 	int result;
@@ -1765,6 +2195,10 @@ int main(int argc, char **argv)
 	} else {
 		result = emit_text(&opts, &source, start, end, count);
 	}
+	if (result == 0) result = emit_metadata(&opts,
+		opts.deterministic ? &drbg : NULL, start, end, count, true);
 	if (entropy.file != NULL) fclose(entropy.file);
+	state_json_free(opts.state_root);
+	free(opts.state_owned_text);
 	return result;
 }

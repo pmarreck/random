@@ -1,6 +1,7 @@
 mod chart;
 mod decimal;
 mod options;
+mod state;
 
 use std::env;
 use std::ffi::{OsStr, OsString};
@@ -48,7 +49,12 @@ enum Value {
 
 fn main() {
 	if let Err(message) = run() {
-		let _ = writeln!(io::stderr().lock(), "Error: {message}");
+		let encoded = format!(
+			"{{\"sv\":1,\"rv\":{},\"error\":{{\"code\":\"usage\",\"message\":{}}},\"notices\":[],\"warnings\":[]}}\n",
+			state::quote(VERSION),
+			state::quote(&message)
+		);
+		let _ = io::stderr().lock().write_all(encoded.as_bytes());
 		process::exit(1);
 	}
 }
@@ -85,21 +91,23 @@ fn run() -> Result<(), String> {
 	if options.view {
 		return print_view(&args, &options);
 	}
-	let mut source = make_source(&options)?;
+	let mut notices = Vec::new();
+	let mut source = make_source(&mut options)?;
 	if options.choose || options.shuffle || options.weighted {
-		return stdin_operation(&options, &mut source);
+		stdin_operation(&options, &mut source)?;
+		return emit_metadata(&options, &source, None, &notices);
 	}
 
 	let (start, end, count, show_defaults) = generation_bounds(&options)?;
 	if show_defaults {
-		writeln!(io::stderr().lock(), "(with the default range 0..99)")
-			.map_err(|_| "stderr write failed".to_owned())?;
+		notices.push("with the default range 0..99".to_owned());
 	}
 	if options.binary {
-		emit_binary(&options, &mut source, start, end, count)
+		emit_binary(&options, &mut source, start, end, count)?;
 	} else {
-		emit_text(&options, &mut source, start, end, count)
+		emit_text(&options, &mut source, start, end, count)?;
 	}
+	emit_metadata(&options, &source, Some((start, end, count)), &notices)
 }
 
 fn normalize_args(os_args: &[OsString]) -> Result<(Vec<String>, Vec<PathBuf>), String> {
@@ -179,7 +187,7 @@ fn attached_random_source(_argument: &OsStr) -> Option<PathBuf> {
 	None
 }
 
-fn make_source(options: &Options) -> Result<Source, String> {
+fn make_source(options: &mut Options) -> Result<Source, String> {
 	if options.deterministic {
 		let mut seed = Zeroizing::new([0_u8; 32]);
 		if let Some(provided) = options.seed.as_ref() {
@@ -196,21 +204,185 @@ fn make_source(options: &Options) -> Result<Source, String> {
 		} else {
 			let mut entropy = entropy_source(options)?;
 			entropy.fill_exact(&mut *seed).map_err(entropy_error)?;
-			let mut replay = String::from("(seed: 0x");
-			for byte in seed.iter() {
-				use std::fmt::Write as _;
-				write!(replay, "{byte:02x}").map_err(|_| "seed formatting failed".to_owned())?;
-			}
-			replay.push_str(")\n");
-			io::stderr()
-				.lock()
-				.write_all(replay.as_bytes())
-				.map_err(|_| "stderr write failed".to_owned())?;
 		}
-		Ok(Source::Drbg(Drbg::new(&seed)))
+		let mut drbg = Drbg::new(&seed);
+		if let Some(position) = options.state_position {
+			drbg.seek(position).map_err(core_error)?;
+		}
+		options.seed = Some(*seed);
+		Ok(Source::Drbg(drbg))
 	} else {
 		entropy_source(options)
 	}
+}
+
+fn emit_metadata(
+	options: &Options,
+	source: &Source,
+	bounds: Option<(i64, i64, u64)>,
+	notices: &[String],
+) -> Result<(), String> {
+	let mut output = String::new();
+	if let (Some(seed), Source::Drbg(drbg)) = (options.seed.as_ref(), source) {
+		use std::fmt::Write as _;
+		write!(
+			output,
+			"{{\"sv\":1,\"rv\":{},\"seed\":\"0x",
+			state::quote(VERSION)
+		)
+		.map_err(|_| "state formatting failed".to_owned())?;
+		for byte in seed {
+			write!(output, "{byte:02x}").map_err(|_| "state formatting failed".to_owned())?;
+		}
+		write!(
+			output,
+			"\",\"next_pos\":{},\"args\":{}",
+			state::quote(&drbg.position().to_string()),
+			canonical_args(options, bounds)
+		)
+		.map_err(|_| "state formatting failed".to_owned())?;
+	} else if notices.is_empty() {
+		return Ok(());
+	} else {
+		output.push_str(&format!("{{\"sv\":1,\"rv\":{}", state::quote(VERSION)));
+	}
+	output.push_str(",\"notices\":[");
+	for (index, notice) in notices.iter().enumerate() {
+		if index > 0 {
+			output.push(',');
+		}
+		output.push_str(&state::quote(notice));
+	}
+	output.push_str("],\"warnings\":[]}\n");
+	io::stderr()
+		.lock()
+		.write_all(output.as_bytes())
+		.map_err(|_| "stderr write failed".to_owned())
+}
+
+fn canonical_args(options: &Options, bounds: Option<(i64, i64, u64)>) -> String {
+	let mut fields = Vec::new();
+	if options.choose || options.shuffle || options.weighted {
+		push_string(
+			&mut fields,
+			"operation",
+			if options.choose {
+				"choose"
+			} else if options.shuffle {
+				"shuffle"
+			} else {
+				"weighted"
+			},
+		);
+		push_string(&mut fields, "delimiter", &options.delimiter);
+		return format!("{{{}}}", fields.join(","));
+	}
+	let (start, end, count) = bounds.expect("generation bounds are present");
+	push_string(
+		&mut fields,
+		"distribution",
+		match options.mode {
+			Mode::Uniform => "uniform",
+			Mode::Normal => "normal",
+			Mode::Exponential => "exponential",
+			Mode::Poisson => "poisson",
+			Mode::LogNormal => "log-normal",
+			Mode::Beta => "beta",
+		},
+	);
+	let range_scaled = matches!(options.mode, Mode::Uniform | Mode::Normal)
+		&& !(options.mode == Mode::Normal && (options.mean.is_some() || options.stddev.is_some()));
+	if range_scaled {
+		push_string(&mut fields, "range", &format!("{start}..{end}"));
+	}
+	push_string(&mut fields, "count", &count.to_string());
+	match options.mode {
+		Mode::Normal if !range_scaled => {
+			push_string(
+				&mut fields,
+				"mean",
+				options.mean.as_ref().map_or("0", |value| &value.1),
+			);
+			push_string(
+				&mut fields,
+				"stddev",
+				options.stddev.as_ref().map_or("1", |value| &value.1),
+			);
+		}
+		Mode::Exponential => push_string(
+			&mut fields,
+			"rate",
+			options.rate.as_ref().map_or("1", |value| &value.1),
+		),
+		Mode::Poisson => push_string(
+			&mut fields,
+			"lambda",
+			options
+				.lambda
+				.as_ref()
+				.or(options.mean.as_ref())
+				.map_or("1", |value| &value.1),
+		),
+		Mode::LogNormal => {
+			push_string(
+				&mut fields,
+				"mean",
+				options.mean.as_ref().map_or("0", |value| &value.1),
+			);
+			push_string(
+				&mut fields,
+				"stddev",
+				options.stddev.as_ref().map_or("1", |value| &value.1),
+			);
+		}
+		Mode::Beta => {
+			push_string(
+				&mut fields,
+				"alpha",
+				options.alpha.as_ref().map_or("2", |value| &value.1),
+			);
+			push_string(
+				&mut fields,
+				"beta",
+				options.beta.as_ref().map_or("2", |value| &value.1),
+			);
+		}
+		Mode::Uniform | Mode::Normal => {}
+	}
+	if matches!(
+		options.mode,
+		Mode::Exponential | Mode::LogNormal | Mode::Beta
+	) {
+		push_string(&mut fields, "precision", &options.precision.to_string());
+	}
+	if options.binary {
+		fields.push("\"binary\":true".to_owned());
+	}
+	push_string(
+		&mut fields,
+		"encoding",
+		if options.binary {
+			if options.base64 {
+				"base64"
+			} else if options.hex {
+				"binary-hex"
+			} else {
+				"raw"
+			}
+		} else if options.hex {
+			"hex"
+		} else {
+			"text"
+		},
+	);
+	if !options.binary {
+		push_string(&mut fields, "delimiter", &options.delimiter);
+	}
+	format!("{{{}}}", fields.join(","))
+}
+
+fn push_string(fields: &mut Vec<String>, key: &str, value: &str) {
+	fields.push(format!("{}:{}", state::quote(key), state::quote(value)));
 }
 
 fn entropy_source(options: &Options) -> Result<Source, String> {
@@ -730,6 +902,8 @@ fn print_help(program: &str, args: &[String]) -> Result<(), String> {
                --hex           Output as hexadecimal\n\
                --base64        Output as base64 (for binary)\n\
                --seed N|0xHEX  Set unsigned 256-bit integer seed (implies -d)\n\
+               --state [JSON|-] Resume from JSON; omitted value or '-' reads stdin\n\
+               --resume [JSON|-] Alias for --state\n\
                --random-source PATH  Read entropy from PATH instead of the OS\n\
                --no-wait       Use nonblocking getrandom; fail if the pool is not ready\n\
                --kitty         Force Kitty graphics for a distribution help chart\n\
@@ -749,9 +923,10 @@ fn print_help(program: &str, args: &[String]) -> Result<(), String> {
          Environment variables:\n\
            DRANDOMR_SEED     Unsigned decimal or 0x-prefixed seed (implies -d)\n\
            RANDOMZ_CHART_TYPE  utf8, kitty, or sixel; command-line flags override it\n\n\
-         Deterministic mode never persists state. Every invocation starts at\n\
-         stream position zero. Without an explicit seed it obtains 32 bytes\n\
-         from the entropy source and prints the replayable seed to stderr.\n\
+         Deterministic mode never persists state. A seed starts at stream position\n\
+         zero; --state/--resume continues at its exact BLAKE3 byte position.\n\
+         Deterministic success metadata and all diagnostics are JSON on stderr.\n\
+         Without a seed, deterministic mode obtains 32 bytes from OS entropy.\n\
          Seeded output, including alternate distributions, is byte-identical\n\
          across supported operating systems and CPU architectures.\n"
 	);

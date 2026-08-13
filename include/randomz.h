@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-#define RANDOMZ_VERSION "0.1.0"
+#define RANDOMZ_VERSION "0.2.0"
 #define RANDOMZ_DRBG_KEY_BYTES 32
 #define RANDOMZ_MAX_EXACT_POSITION UINT64_C(9007199254740992)
 #define RANDOMZ_FIXED_STRING_BYTES 4096
@@ -57,6 +57,8 @@ int randomz_drbg_set_state(randomz_drbg *state,
 	const uint8_t key[RANDOMZ_DRBG_KEY_BYTES], uint64_t position);
 int randomz_drbg_get_state(const randomz_drbg *state,
 	uint8_t key[RANDOMZ_DRBG_KEY_BYTES], uint64_t *position);
+/* Reposition an initialized DRBG without exposing or replacing its derived key. */
+int randomz_drbg_seek(randomz_drbg *state, uint64_t position);
 int randomz_drbg_fill(randomz_drbg *state, uint8_t *out, size_t count);
 int randomz_drbg_u32(randomz_drbg *state, uint32_t *out);
 int randomz_drbg_u64(randomz_drbg *state, uint64_t *out);

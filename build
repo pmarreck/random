@@ -42,6 +42,7 @@ install -m644 result/lib/blake3.lua             zig-out/lib/blake3.lua
 install -m644 result/lib/fixed.lua              zig-out/lib/fixed.lua
 install -m644 result/lib/distribution_charts.lua zig-out/lib/distribution_charts.lua
 install -m644 result/lib/distribution_view.lua   zig-out/lib/distribution_view.lua
+install -m644 result/lib/state_json.lua          zig-out/lib/state_json.lua
 
 echo "Built:"
 echo "  $here/zig-out/bin/randomz   ($("$here/zig-out/bin/randomz" --about 2>/dev/null))"

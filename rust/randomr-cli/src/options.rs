@@ -1,4 +1,5 @@
 use std::env;
+use std::io::{self, Read};
 use std::path::PathBuf;
 
 use randomr::Fixed;
@@ -35,12 +36,16 @@ pub struct Options {
 	pub view: bool,
 	pub chart_flag: bool,
 	pub generation_seen: bool,
+	pub mode_cli: bool,
 	pub precision: usize,
 	pub precision_set: bool,
+	pub delimiter_set: bool,
+	pub encoding_set: bool,
 	pub delimiter: String,
 	pub random_source: Option<PathBuf>,
 	pub count: Option<i64>,
 	pub seed: Option<[u8; 32]>,
+	pub state_position: Option<u64>,
 	pub range: Option<(i64, i64)>,
 	pub mean: Option<(Fixed, String)>,
 	pub stddev: Option<(Fixed, String)>,
@@ -68,12 +73,16 @@ impl Options {
 			view: false,
 			chart_flag: false,
 			generation_seen: false,
+			mode_cli: normal,
 			precision: DEFAULT_FRACTION_DIGITS,
 			precision_set: false,
+			delimiter_set: false,
+			encoding_set: false,
 			delimiter: "\n".to_owned(),
 			random_source: None,
 			count: None,
 			seed: None,
+			state_position: None,
 			range: None,
 			mean: None,
 			stddev: None,
@@ -85,6 +94,7 @@ impl Options {
 	}
 
 	fn select(&mut self, mode: Mode) {
+		self.mode_cli = true;
 		if self.mode_count > 0 && self.mode == mode {
 			return;
 		}
@@ -104,6 +114,8 @@ impl Drop for Options {
 pub fn parse(args: &[String], program: &str) -> Result<Options, String> {
 	let mut options = Options::new(program);
 	let mut positional = Vec::new();
+	let mut state_text: Option<String> = None;
+	let mut state_stdin = false;
 	let mut index = 1_usize;
 	while index < args.len() {
 		let argument = &args[index];
@@ -122,14 +134,17 @@ pub fn parse(args: &[String], program: &str) -> Result<Options, String> {
 			"--log-normal" => options.select(Mode::LogNormal),
 			"--binaryoutput" | "-b" => {
 				options.binary = true;
+				options.encoding_set = true;
 				options.generation_seen = true;
 			}
 			"--hex" => {
 				options.hex = true;
+				options.encoding_set = true;
 				options.generation_seen = true;
 			}
 			"--base64" => {
 				options.base64 = true;
+				options.encoding_set = true;
 				options.generation_seen = true;
 			}
 			"--choose" => {
@@ -165,6 +180,7 @@ pub fn parse(args: &[String], program: &str) -> Result<Options, String> {
 					return Err("--delimiter must not be empty".to_owned());
 				}
 				options.delimiter = value.to_owned();
+				options.delimiter_set = true;
 			}
 			"--count" | "-c" => {
 				options.generation_seen = true;
@@ -194,6 +210,24 @@ pub fn parse(args: &[String], program: &str) -> Result<Options, String> {
                 })?);
 				options.deterministic = true;
 			}
+			"--state" | "--resume" => {
+				options.generation_seen = true;
+				if state_text.is_some() || state_stdin {
+					return Err("only one --state/--resume may be specified".to_owned());
+				}
+				match args.get(index + 1).map(String::as_str) {
+					Some("-") => {
+						index += 1;
+						state_stdin = true;
+					}
+					Some(candidate) if candidate.trim_start().starts_with('{') => {
+						index += 1;
+						state_text = Some(candidate.to_owned());
+					}
+					_ => state_stdin = true,
+				}
+				options.deterministic = true;
+			}
 			"--mean" | "--stddev" | "--rate" | "--lambda" | "--alpha" => {
 				let value = next(args, &mut index, &format!("{argument} requires a number"))?;
 				set_fixed(&mut options, argument, value)?;
@@ -221,6 +255,22 @@ pub fn parse(args: &[String], program: &str) -> Result<Options, String> {
 				}
 				options.random_source = Some(PathBuf::from(value));
 			}
+			_ if argument.starts_with("--state=") || argument.starts_with("--resume=") => {
+				options.generation_seen = true;
+				if state_text.is_some() || state_stdin {
+					return Err("only one --state/--resume may be specified".to_owned());
+				}
+				let value = argument.split_once('=').unwrap().1;
+				if value.is_empty() {
+					return Err("--state/--resume= requires inline JSON or '-'".to_owned());
+				}
+				if value == "-" {
+					state_stdin = true;
+				} else {
+					state_text = Some(value.to_owned());
+				}
+				options.deterministic = true;
+			}
 			_ if argument.starts_with("--precision=") || argument.starts_with("--truncate=") => {
 				options.generation_seen = true;
 				let (name, value) = argument.split_once('=').unwrap();
@@ -236,6 +286,45 @@ pub fn parse(args: &[String], program: &str) -> Result<Options, String> {
 			_ => positional.push(argument.clone()),
 		}
 		index += 1;
+	}
+
+	let state_requested = state_text.is_some() || state_stdin;
+	if state_requested && options.seed.is_some() {
+		return Err("--state/--resume and --seed are mutually exclusive".to_owned());
+	}
+	if state_requested && options.random_source.is_some() {
+		return Err("--state/--resume cannot be combined with --random-source".to_owned());
+	}
+	if state_requested && options.no_wait {
+		return Err("--state/--resume cannot be combined with --no-wait".to_owned());
+	}
+	if state_stdin && (options.choose || options.shuffle || options.weighted) {
+		return Err("--choose, --shuffle, and --weighted require inline --state JSON".to_owned());
+	}
+	if state_stdin {
+		let mut bytes = Vec::new();
+		io::stdin()
+			.take((crate::state::MAX_STATE_BYTES + 1) as u64)
+			.read_to_end(&mut bytes)
+			.map_err(|_| "could not read state JSON from stdin".to_owned())?;
+		if bytes.len() > crate::state::MAX_STATE_BYTES {
+			return Err("state JSON exceeds 1048576 bytes".to_owned());
+		}
+		let text =
+			String::from_utf8(bytes).map_err(|_| "state JSON on stdin must be UTF-8".to_owned())?;
+		let text = text.trim();
+		if text.is_empty() {
+			return Err("--state expected one JSON object on stdin".to_owned());
+		}
+		state_text = Some(text.to_owned());
+	}
+	if let Some(text) = state_text.as_deref() {
+		crate::state::apply(&mut options, text, &positional)?;
+		if state_stdin && (options.choose || options.shuffle || options.weighted) {
+			return Err(
+				"--choose, --shuffle, and --weighted require inline --state JSON".to_owned(),
+			);
+		}
 	}
 
 	if options.view && !positional.is_empty() {

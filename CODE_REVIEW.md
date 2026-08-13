@@ -457,3 +457,59 @@ remain a measured post-port decision.
 
 Not applicable. The project and all three deterministic cores have no database
 or persistent RNG state.
+
+---
+
+# Portable continuation-state milestone addendum
+
+**Date:** 2026-08-13
+**Scope:** uncommitted LuaJIT, Zig/C, and Rust continuation-state implementation,
+with special attention to the new Rust CLI/core boundary, hostile JSON input,
+and the shared Bash interoperability oracle.
+**Method:** independent fresh-context read-only review after the implementation
+and full green gate, followed by producer-side fixes and reviewer revalidation.
+**Result:** no critical, warning, or advisory findings remain in the reviewed
+feature. Every reproduced finding below was fixed before shipment.
+
+## Fixed findings
+
+- **Fixed — WARNING:** recursive C and Rust JSON parsers could overflow their
+  stacks on deeply nested input within the 1 MiB stdin allowance. All three
+  codecs now enforce 64 nesting levels, 32 object members, and 1024 array
+  items; the C limits also prevent quadratic unknown-key parsing from becoming
+  an input-amplification path.
+- **Fixed — WARNING:** LuaJIT and C accepted raw invalid UTF-8 state strings
+  that Rust rejected, and could produce invalid JSON from a non-UTF-8 delimiter.
+  State input and state-bearing delimiter output now share strict UTF-8 policy;
+  diagnostics remain valid JSON even when hostile argv bytes are escaped.
+- **Fixed — WARNING:** Lua's JSON decoder accepted leading-zero numbers,
+  non-JSON whitespace, and one missing-object-value shape. The shared negative
+  matrix now pins the same strict grammar in every frontend.
+- **Fixed — WARNING:** state ranges accepted CLI shorthand despite claiming a
+  canonical wire form. Consumers now require signed-integer `M..N`; `dN`,
+  hyphen, and exclusive spellings are rejected in serialized state.
+- **Fixed — WARNING:** stdin-operation continuation originally covered only
+  same-implementation `--choose`. It now covers all 3×3 producer/consumer
+  directions for choose, shuffle, and weighted selection, requires successful
+  nonempty output, validates the resumed state shape, and proves that its byte
+  cursor advances rather than restarting from the seed.
+- **Resolved contract ambiguity:** `rv` is the informational producer
+  application version requested by the state design, while `sv` is the
+  enforced state/stream compatibility version. The documentation and oracle
+  now pin that distinction so compatible application releases do not
+  gratuitously invalidate state, and semantic changes must increment `sv`.
+- **Fixed — WARNING:** the Nix package installed the new Lua state module, but
+  the top-level `./build` copier omitted it from the stable `zig-out` tree.
+  The in-memory `./bm --check` package preflight exposed the missing module;
+  the copier now installs it and all ten benchmark workloads again agree.
+
+## Independent oracle assessment
+
+The generation matrix genuinely executes every directed 3×3 pair and compares
+each prefix-plus-resumed-suffix with its producer's uninterrupted baseline for
+ten fixed- and variable-consumption output families. The stdin matrix proves
+all directed pairs, successful cursor advancement, and three-consumer
+agreement; its semantic authority is differential rather than a separate
+external oracle. Together with the independent BLAKE3 implementations and
+existing sampler vectors, this is an appropriate control for a state transport
+feature rather than a new random algorithm.

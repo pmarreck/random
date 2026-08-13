@@ -546,6 +546,13 @@ export fn randomz_drbg_get_state(
     return @intFromEnum(Status.ok);
 }
 
+export fn randomz_drbg_seek(state: ?*Drbg, position: u64) callconv(.c) c_int {
+    const target = state orelse return @intFromEnum(Status.invalid_argument);
+    if (position > max_exact_position) return @intFromEnum(Status.position_overflow);
+    target.position = position;
+    return @intFromEnum(Status.ok);
+}
+
 export fn randomz_drbg_fill(
     state: ?*Drbg,
     out: ?[*]u8,

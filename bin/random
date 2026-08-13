@@ -18,10 +18,28 @@ local fx = require("fixed")
 local b3 = require("blake3")
 local distribution_charts = require("distribution_charts")
 local distribution_view = require("distribution_view")
+local state_json = require("state_json")
 
 local argv = arg or {}
+-- Keep in sync with the package manifests; Lua has no build-time injection.
+local VERSION = "0.2.0"
 local DEFAULT_FRACTION_DIGITS = 18
 local MAX_FRACTION_DIGITS = 18
+local notices = {}
+local warnings = {}
+
+local function json_string_array(values)
+	local encoded = {}
+	for index, value in ipairs(values) do encoded[index] = state_json.quote(value) end
+	return "[" .. table.concat(encoded, ",") .. "]"
+end
+
+local function emit_error_json(message, code)
+	io.stderr:write('{"sv":1,"rv":', state_json.quote(VERSION),
+		',"error":{"code":', state_json.quote(code or "runtime"),
+		',"message":', state_json.quote(message), '},"notices":',
+		json_string_array(notices), ',"warnings":', json_string_array(warnings), '}\n')
+end
 
 -- ===== FFI declarations =====
 -- Solaris declares getrandom() with an int result; Linux uses ssize_t. Giving
@@ -47,7 +65,7 @@ if jit.os == "Windows" then
 	-- treats stdin as text, corrupting deterministic and true-random streams.
 	local O_BINARY = 0x8000
 	if ffi.C._setmode(1, O_BINARY) == -1 or ffi.C._setmode(0, O_BINARY) == -1 then
-		io.stderr:write("Error: could not put standard streams in binary mode\n")
+		emit_error_json("could not put standard streams in binary mode", "io")
 		os.exit(1)
 	end
 end
@@ -56,7 +74,9 @@ local u64 = ffi.typeof("uint64_t")
 
 -- ===== Utility functions =====
 local function stderr_write(msg)
-	io.stderr:write(msg)
+	msg = msg:gsub("[\r\n]+$", "")
+	if msg:sub(1, 7) == "Error: " then msg = msg:sub(8) end
+	emit_error_json(msg, "usage")
 end
 
 local function shell_quote(s)
@@ -167,10 +187,11 @@ end
 local drbg_stream
 local drbg_pos = 0
 
-local function drbg_seed(seed_material)
+local function drbg_seed(seed_material, position)
 	local key = b3.hex_to_bin(b3.blake3_derive_key(seed_material, KDF_CONTEXT, 32))
 	drbg_stream = b3.blake3("", key, -1)
-	drbg_pos = 0
+	drbg_pos = position or 0
+	if drbg_pos ~= 0 then drbg_stream("seek", drbg_pos) end
 end
 
 local function drbg_draw_bytes(count)
@@ -638,13 +659,6 @@ local function get_invocation_name()
 end
 
 -- ===== Help and about =====
--- Keep in sync with flake.nix's `version = "0.1.0"` -- there is no single
--- source of truth shared between the two today (a Lua script has no build
--- step to inject a version at); this is the same manual-sync tradeoff
--- LUAJIT_1499_FIXED_IN already carries elsewhere in this project, recorded
--- rather than silently risked.
-local VERSION = "0.1.0"
-
 -- Per this fleet's mandatory CLI convention: --about must show a one-line
 -- description, the app's version, and the platform/chip architecture --
 -- not bare prose (that was this exact finding: an audit caught --about
@@ -929,6 +943,8 @@ local function print_help(invocation, distribution)
 	print("      --hex           Output as hexadecimal")
 	print("      --base64        Output as base64 (for binary)")
 	print("      --seed N|0xHEX  Set unsigned 256-bit integer seed (implies -d)")
+	print("      --state [JSON|-] Resume from JSON; omitted value or '-' reads stdin")
+	print("      --resume [JSON|-] Alias for --state")
 	print("      --random-source PATH  Read entropy from PATH instead of the OS")
 	print("      --no-wait       Use nonblocking getrandom; fail if the pool is not ready")
 	print("      --kitty         Force Kitty graphics for a distribution help chart")
@@ -951,9 +967,10 @@ local function print_help(invocation, distribution)
 	print("  DRANDOM_SEED      Unsigned decimal or 0x-prefixed seed (implies -d)")
 	print("  RANDOMZ_CHART_TYPE  utf8, kitty, or sixel; command-line flags override it")
 	print("")
-	print("Deterministic mode never persists state. Every invocation starts at")
-	print("stream position zero. Without an explicit seed it obtains 32 bytes")
-	print("from the entropy source and prints the replayable seed to stderr.")
+	print("Deterministic mode never persists state. A seed starts at stream position")
+	print("zero; --state/--resume continues at its exact BLAKE3 byte position.")
+	print("Deterministic success metadata and all diagnostics are JSON on stderr.")
+	print("Without a seed, deterministic mode obtains 32 bytes from OS entropy.")
 	print("Seeded output, including alternate distributions, is byte-identical")
 	print("across supported operating systems and CPU architectures.")
 	print("")
@@ -962,6 +979,8 @@ local function print_help(invocation, distribution)
 	print("  random d20                # Roll a 20-sided die")
 	print("  random -n --mean 50 --stddev 10  # Normal, custom params")
 	print("  random -d --seed 42       # Deterministic")
+	print("  state=$(random -d --seed 42 d20 2>&1 >/dev/null)")
+	print("  random --resume \"$state\" # Continue that exact sequence")
 	print("  random --hex -c 5         # 5 hex numbers")
 	print("  echo -e 'a\\nb\\nc' | random --choose")
 	print("  echo 'rare:1,common:10' | random --weighted --delimiter ','")
@@ -999,6 +1018,160 @@ local function shuffle_array(arr, rand_func)
 	return arr
 end
 
+local STATE_MAX_BYTES = 1048576
+
+local function read_state_stdin()
+	local text = io.stdin:read(STATE_MAX_BYTES)
+	local extra = io.stdin:read(1)
+	if extra ~= nil then return nil, "state JSON exceeds 1048576 bytes" end
+	text = trim(text or "")
+	if text == "" then return nil, "--state expected one JSON object on stdin" end
+	return text
+end
+
+local function parse_state_position(text)
+	if type(text) ~= "string" or not text:match("^[0-9]+$") then return nil end
+	local value = fx.parse_int_safe(text)
+	if value == nil or value < 0 or value > MAX_EXACT_INTEGER then return nil end
+	return value
+end
+
+local function apply_state(options, positionals)
+	local decoded, decode_error = state_json.decode(options.state_text)
+	if not decoded then return nil, "invalid state JSON: " .. decode_error end
+	if not state_json.is_object(decoded) then return nil, "state JSON must be an object" end
+	local top_allowed = {sv=true, rv=true, seed=true, next_pos=true, args=true,
+		notices=true, warnings=true}
+	for key in pairs(decoded) do
+		if not top_allowed[key] then return nil, "unknown state key: " .. tostring(key) end
+	end
+	if decoded.sv ~= 1 then return nil, "unsupported state schema version" end
+	if type(decoded.rv) ~= "string" then return nil, "state rv must be a string" end
+	if type(decoded.seed) ~= "string" or
+		not decoded.seed:match("^0x[0-9a-fA-F]+$") or #decoded.seed ~= 66 then
+		return nil, "state seed must be exactly 32 bytes of 0x-prefixed hexadecimal"
+	end
+	local seed = parse_seed(decoded.seed)
+	local position = parse_state_position(decoded.next_pos)
+	if seed == nil or position == nil then
+		return nil, "state next_pos must be a decimal string no larger than 2^53"
+	end
+	if not state_json.is_object(decoded.args) then return nil, "state args must be an object" end
+	for _, key in ipairs({"notices", "warnings"}) do
+		if decoded[key] ~= nil then
+			if not state_json.is_array(decoded[key]) then
+				return nil, "state " .. key .. " must be an array"
+			end
+			for _, value in ipairs(decoded[key]) do
+				if type(value) ~= "string" then
+					return nil, "state " .. key .. " must contain strings"
+				end
+			end
+		end
+	end
+
+	local args = decoded.args
+	local args_allowed = {operation=true, distribution=true, range=true, count=true,
+		mean=true, stddev=true, rate=true, lambda=true, alpha=true, beta=true,
+		precision=true, binary=true, encoding=true, delimiter=true}
+	for key in pairs(args) do
+		if not args_allowed[key] then return nil, "unknown state args key: " .. tostring(key) end
+	end
+
+	local cli_stdin_mode = options.choose or options.shuffle or options.weighted
+	local cli_distribution = options.distribution_cli or #positionals > 0
+	if not cli_stdin_mode and not cli_distribution and args.operation ~= nil then
+		if args.operation == "choose" then options.choose = true
+		elseif args.operation == "shuffle" then options.shuffle = true
+		elseif args.operation == "weighted" then options.weighted = true
+		else return nil, "state operation is unsupported" end
+	end
+	if not cli_distribution and not cli_stdin_mode and args.distribution ~= nil then
+		options.normalized, options.exponential, options.poisson = false, false, false
+		options.log_normal, options.beta = false, false
+		if args.distribution == "uniform" then
+		elseif args.distribution == "normal" then options.normalized = true
+		elseif args.distribution == "exponential" then options.exponential = true
+		elseif args.distribution == "poisson" then options.poisson = true
+		elseif args.distribution == "log-normal" then options.log_normal = true
+		elseif args.distribution == "beta" then options.beta = true
+		else return nil, "state distribution is unsupported" end
+	end
+
+	if options.count == nil and args.count ~= nil then
+		options.count = fx.parse_int_safe(args.count)
+		if options.count == nil or options.count < 0 then return nil, "state count is invalid" end
+	end
+	if options.start_val == nil and options.end_val == nil and #positionals == 0 and args.range ~= nil then
+		if type(args.range) ~= "string" or not args.range:match("^[+-]?%d+%.%.[+-]?%d+$") then
+			return nil, "state range must be canonical M..N"
+		end
+		local first, last, exclusive = parse_range_literal(args.range)
+		if first == nil or exclusive then return nil, "state range must be canonical M..N" end
+		options.start_val, options.end_val = first, last
+	end
+	if not options.delimiter_set and args.delimiter ~= nil then
+		if type(args.delimiter) ~= "string" or args.delimiter == "" then return nil, "state delimiter is invalid" end
+		options.delimiter = args.delimiter
+	end
+	if not options.encoding_set and args.encoding ~= nil then
+		if args.encoding == "text" then
+		elseif args.encoding == "hex" then options.hex_output = true
+		elseif args.encoding == "raw" then options.binary_output = true
+		elseif args.encoding == "binary-hex" then options.binary_output, options.hex_output = true, true
+		elseif args.encoding == "base64" then options.binary_output, options.base64_output = true, true
+		else return nil, "state encoding is unsupported" end
+	end
+	if args.binary ~= nil and type(args.binary) ~= "boolean" then return nil, "state binary must be boolean" end
+
+	local function inherit_fixed(key, field, text_field)
+		if options[field] ~= nil or args[key] == nil then return true end
+		if type(args[key]) ~= "string" then return nil end
+		local m, e = fx.parse(args[key])
+		if not m then return nil end
+		options[field], options[text_field] = {m, e}, args[key]
+		return true
+	end
+	local fixed_relevant = {}
+	if not (options.choose or options.shuffle or options.weighted) then
+		if options.normalized or options.log_normal then
+			fixed_relevant.mean, fixed_relevant.stddev = true, true
+		elseif options.exponential then fixed_relevant.rate = true
+		elseif options.poisson then fixed_relevant.mean, fixed_relevant.lambda = true, true
+		elseif options.beta then fixed_relevant.alpha, fixed_relevant.beta = true, true
+		end
+	end
+	for _, fields in ipairs({
+		{"mean", "mean", "mean_text"}, {"stddev", "stddev", "stddev_text"},
+		{"rate", "rate", "rate_text"}, {"lambda", "lambda", "lambda_text"},
+		{"alpha", "alpha", "alpha_text"}, {"beta", "beta_param", "beta_param_text"},
+	}) do
+		if fixed_relevant[fields[1]] and not inherit_fixed(fields[1], fields[2], fields[3]) then
+			return nil, "state " .. fields[1] .. " is invalid"
+		end
+	end
+	for _, fields in ipairs({
+		{"stddev", "stddev"}, {"rate", "rate"}, {"lambda", "lambda"},
+		{"alpha", "alpha"}, {"beta", "beta_param"},
+	}) do
+		if options[fields[2]] ~= nil and options[fields[2]][1] <= 0 then
+			return nil, "state " .. fields[1] .. " must be positive"
+		end
+	end
+	if not options.precision_set and args.precision ~= nil then
+		local precision = fx.parse_int_safe(args.precision)
+		if precision == nil or precision < 0 or precision > MAX_FRACTION_DIGITS then
+			return nil, "state precision is invalid"
+		end
+		options.precision, options.precision_set = precision, true
+	end
+
+	options.state_seed = seed
+	options.state_position = position
+	options.deterministic = true
+	return true
+end
+
 -- ===== Argument parsing =====
 local function parse_args()
 	local invocation = get_invocation_name()
@@ -1021,13 +1194,20 @@ local function parse_args()
 		count = nil,
 		seed = nil,
 		seed_provided = false,
+		state_text = nil,
+		state_from_stdin = false,
+		state_seed = nil,
+		state_position = nil,
 		random_source = nil,
 		no_wait = false,
 		chart_renderer_flag = false,
 		view = false,
-			generation_option_seen = false,
-			precision = DEFAULT_FRACTION_DIGITS,
-			precision_set = false,
+		generation_option_seen = false,
+		precision = DEFAULT_FRACTION_DIGITS,
+		precision_set = false,
+		delimiter_set = false,
+		encoding_set = false,
+		distribution_cli = (invocation == "nrandom"),
 		start_val = nil,
 		end_val = nil,
 		mean = nil,
@@ -1081,14 +1261,19 @@ local function parse_args()
 			options.generation_option_seen = true
 		elseif arg_val == "--normalized" or arg_val == "-n" then
 			options.normalized = true
+			options.distribution_cli = true
 		elseif arg_val == "--exponential" then
 			options.exponential = true
+			options.distribution_cli = true
 		elseif arg_val == "--poisson" then
 			options.poisson = true
+			options.distribution_cli = true
 		elseif arg_val == "--log-normal" then
 			options.log_normal = true
+			options.distribution_cli = true
 		elseif arg_val == "--beta" or attached_option == "--beta" then
 			options.beta = true
+			options.distribution_cli = true
 			local value = attached_value
 			local bm, be
 			if attached_option == "--beta" and value == "" then
@@ -1119,12 +1304,15 @@ local function parse_args()
 			end
 		elseif arg_val == "--binaryoutput" or arg_val == "-b" then
 			options.binary_output = true
+			options.encoding_set = true
 			options.generation_option_seen = true
 		elseif arg_val == "--hex" then
 			options.hex_output = true
+			options.encoding_set = true
 			options.generation_option_seen = true
 		elseif arg_val == "--base64" then
 			options.base64_output = true
+			options.encoding_set = true
 			options.generation_option_seen = true
 		elseif arg_val == "--choose" then
 			options.choose = true
@@ -1169,7 +1357,12 @@ local function parse_args()
 				stderr_write("Error: --delimiter must not be empty\n")
 				os.exit(1)
 			end
+			if not state_json.valid_utf8(argv[i]) then
+				stderr_write("Error: --delimiter must be valid UTF-8\n")
+				os.exit(1)
+			end
 			options.delimiter = argv[i]
+			options.delimiter_set = true
 		elseif arg_val == "--count" or arg_val == "-c" then
 			options.generation_option_seen = true
 			i = i + 1
@@ -1214,6 +1407,38 @@ local function parse_args()
 				os.exit(1)
 			end
 			options.seed_provided = true
+			options.deterministic = true
+		elseif arg_val == "--state" or arg_val == "--resume" then
+			options.generation_option_seen = true
+			if options.state_text ~= nil or options.state_from_stdin then
+				stderr_write("Error: only one --state/--resume may be specified\n")
+				os.exit(1)
+			end
+			local candidate = argv[i + 1]
+			if candidate == "-" then
+				i = i + 1
+				options.state_from_stdin = true
+			elseif candidate and trim(candidate):sub(1, 1) == "{" then
+				i = i + 1
+				options.state_text = candidate
+			else
+				options.state_from_stdin = true
+			end
+			options.deterministic = true
+		elseif attached_option == "--state" or attached_option == "--resume" then
+			options.generation_option_seen = true
+			if options.state_text ~= nil or options.state_from_stdin then
+				stderr_write("Error: only one --state/--resume may be specified\n")
+				os.exit(1)
+			end
+			if attached_value == "" then
+				stderr_write("Error: --state/--resume= requires inline JSON or '-'\n")
+				os.exit(1)
+			elseif attached_value == "-" then
+				options.state_from_stdin = true
+			else
+				options.state_text = attached_value
+			end
 			options.deterministic = true
 		elseif arg_val == "--mean" or attached_option == "--mean" then
 			local value = attached_value
@@ -1309,6 +1534,43 @@ local function parse_args()
 			table.insert(positionals, arg_val)
 		end
 		i = i + 1
+	end
+
+	local state_requested = options.state_text ~= nil or options.state_from_stdin
+	if state_requested and options.seed_provided then
+		stderr_write("Error: --state/--resume and --seed are mutually exclusive\n")
+		os.exit(1)
+	end
+	if state_requested and options.random_source ~= nil then
+		stderr_write("Error: --state/--resume cannot be combined with --random-source\n")
+		os.exit(1)
+	end
+	if state_requested and options.no_wait then
+		stderr_write("Error: --state/--resume cannot be combined with --no-wait\n")
+		os.exit(1)
+	end
+	if options.state_from_stdin and (options.choose or options.shuffle or options.weighted) then
+		stderr_write("Error: --choose, --shuffle, and --weighted require inline --state JSON\n")
+		os.exit(1)
+	end
+	if options.state_from_stdin then
+		local read_error
+		options.state_text, read_error = read_state_stdin()
+		if not options.state_text then
+			stderr_write("Error: " .. read_error .. "\n")
+			os.exit(1)
+		end
+	end
+	if state_requested then
+		local ok, state_error = apply_state(options, positionals)
+		if not ok then
+			stderr_write("Error: " .. state_error .. "\n")
+			os.exit(1)
+		end
+		if options.state_from_stdin and (options.choose or options.shuffle or options.weighted) then
+			stderr_write("Error: --choose, --shuffle, and --weighted require inline --state JSON\n")
+			os.exit(1)
+		end
 	end
 
 	if options.view and #positionals > 0 then
@@ -1469,24 +1731,114 @@ local function parse_args()
 	return options, positionals, invocation
 end
 
+local function exact_integer_text(value)
+	local m, e = fx.from_int(value)
+	return fx.tostring(m, e, 0)
+end
+
+local function canonical_args_json(options, start_val, end_val, count)
+	local fields = {}
+	local function add_string(key, value)
+		fields[#fields + 1] = state_json.quote(key) .. ":" .. state_json.quote(value)
+	end
+	local function add_boolean(key, value)
+		fields[#fields + 1] = state_json.quote(key) .. ":" .. (value and "true" or "false")
+	end
+
+	if options.choose or options.shuffle or options.weighted then
+		add_string("operation", options.choose and "choose" or
+			(options.shuffle and "shuffle" or "weighted"))
+		add_string("delimiter", options.delimiter)
+		return "{" .. table.concat(fields, ",") .. "}"
+	end
+
+	local distribution = options.normalized and "normal" or
+		(options.exponential and "exponential" or
+		(options.poisson and "poisson" or
+		(options.log_normal and "log-normal" or
+		(options.beta and "beta" or "uniform"))))
+	add_string("distribution", distribution)
+	local range_scaled = not (options.exponential or options.poisson or
+		options.log_normal or options.beta) and not
+		(options.normalized and (options.mean or options.stddev))
+	if range_scaled then
+		add_string("range", exact_integer_text(start_val) .. ".." .. exact_integer_text(end_val))
+	end
+	add_string("count", exact_integer_text(count))
+	if options.normalized and not range_scaled then
+		add_string("mean", options.mean_text or "0")
+		add_string("stddev", options.stddev_text or "1")
+	elseif options.exponential then
+		add_string("rate", options.rate_text or "1")
+	elseif options.poisson then
+		add_string("lambda", options.lambda_text or options.mean_text or "1")
+	elseif options.log_normal then
+		add_string("mean", options.mean_text or "0")
+		add_string("stddev", options.stddev_text or "1")
+	elseif options.beta then
+		add_string("alpha", options.alpha_text or "2")
+		add_string("beta", options.beta_param_text or "2")
+	end
+	if options.exponential or options.log_normal or options.beta then
+		add_string("precision", exact_integer_text(options.precision))
+	end
+	local encoding
+	if options.binary_output then
+		add_boolean("binary", true)
+		encoding = options.base64_output and "base64" or
+			(options.hex_output and "binary-hex" or "raw")
+	else
+		encoding = options.hex_output and "hex" or "text"
+	end
+	add_string("encoding", encoding)
+	if not options.binary_output then add_string("delimiter", options.delimiter) end
+	return "{" .. table.concat(fields, ",") .. "}"
+end
+
+local function emit_success_metadata(options, seed_material, start_val, end_val, count)
+	if not io.stdout:flush() then
+		emit_error_json("stdout write failed", "io")
+		return false
+	end
+	local output
+	if seed_material ~= nil then
+		output = '{"sv":1,"rv":' .. state_json.quote(VERSION) ..
+			',"seed":"0x' .. bytes_to_hex(seed_material) .. '","next_pos":' ..
+			state_json.quote(exact_integer_text(drbg_pos)) .. ',"args":' ..
+			canonical_args_json(options, start_val, end_val, count) .. ',"notices":' ..
+			json_string_array(notices) .. ',"warnings":' .. json_string_array(warnings) .. '}\n'
+	elseif #notices > 0 or #warnings > 0 then
+		output = '{"sv":1,"rv":' .. state_json.quote(VERSION) .. ',"notices":' ..
+			json_string_array(notices) .. ',"warnings":' .. json_string_array(warnings) .. '}\n'
+	end
+	if output ~= nil then
+		if not io.stderr:write(output) or not io.stderr:flush() then return false end
+	end
+	return true
+end
+
 -- ===== Main =====
 local function main()
 	local options, positionals, invocation = parse_args()
 	if options.view then
 		print_distribution_view(options)
+		if not io.stdout:flush() then
+			emit_error_json("stdout write failed", "io")
+			os.exit(1)
+		end
 		return
 	end
 
 	-- Setup RNG first (needed for all operations). Entropy readers are kept
 	-- open for the invocation and always fail closed on short reads/errors.
-	local rand_func, uniform_func, entropy_reader
+	local rand_func, uniform_func, entropy_reader, seed_material
 
 	if options.deterministic then
 		local env_seed_raw = os.getenv("DRANDOM_SEED")
 		local env_seed_set = env_seed_raw ~= nil and env_seed_raw ~= ""
-		local seed_material
-
-		if options.seed_provided then
+		if options.state_seed ~= nil then
+			seed_material = options.state_seed
+		elseif options.seed_provided then
 			seed_material = options.seed
 		elseif env_seed_set then
 			seed_material = parse_seed(env_seed_raw)
@@ -1499,10 +1851,9 @@ local function main()
 		else
 			entropy_reader = make_entropy_reader(options.random_source, options.no_wait)
 			seed_material = entropy_reader(32)
-			stderr_write("(seed: 0x" .. bytes_to_hex(seed_material) .. ")\n")
 		end
 
-		drbg_seed(seed_material)
+		drbg_seed(seed_material, options.state_position)
 		rand_func = drbg_range
 		uniform_func = drbg_uniform
 	else
@@ -1522,6 +1873,7 @@ local function main()
 		end
 		local idx = rand_func(1, #items)
 		print(items[idx])
+		if not emit_success_metadata(options, seed_material) then os.exit(1) end
 		return
 	end
 
@@ -1535,6 +1887,7 @@ local function main()
 		for _, item in ipairs(items) do
 			print(item)
 		end
+		if not emit_success_metadata(options, seed_material) then os.exit(1) end
 		return
 	end
 
@@ -1593,6 +1946,7 @@ local function main()
 			end
 		end
 
+		if not emit_success_metadata(options, seed_material) then os.exit(1) end
 		return
 	end
 
@@ -1641,7 +1995,7 @@ local function main()
 	end
 
 	if show_defaults_msg and not options.binary_output then
-		stderr_write("(with the default range 0..99)\n")
+		notices[#notices + 1] = "with the default range 0..99"
 	end
 
 	-- Generate values. Each value is either a plain Lua integer (uniform,
@@ -1791,8 +2145,15 @@ local function main()
 			end
 		end
 	end
+	if not emit_success_metadata(options, seed_material, start_val, end_val, count) then
+		os.exit(1)
+	end
 
 end
 
-main()
-if not io.stdout:flush() then os.exit(1) end
+local ok, runtime_error = pcall(main)
+if not ok then
+	local message = tostring(runtime_error):gsub("^.-:%d+: ", "")
+	emit_error_json(message, "runtime")
+	os.exit(1)
+end
