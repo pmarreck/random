@@ -41,6 +41,7 @@ pub struct Options {
 	pub precision_set: bool,
 	pub delimiter_set: bool,
 	pub encoding_set: bool,
+	pub state_stdout: bool,
 	pub delimiter: String,
 	pub random_source: Option<PathBuf>,
 	pub count: Option<i64>,
@@ -78,6 +79,7 @@ impl Options {
 			precision_set: false,
 			delimiter_set: false,
 			encoding_set: false,
+			state_stdout: false,
 			delimiter: "\n".to_owned(),
 			random_source: None,
 			count: None,
@@ -147,6 +149,11 @@ pub fn parse(args: &[String], program: &str) -> Result<Options, String> {
 				options.encoding_set = true;
 				options.generation_seen = true;
 			}
+			"--state-stdout" => {
+				options.state_stdout = true;
+				options.deterministic = true;
+				options.generation_seen = true;
+			}
 			"--choose" => {
 				options.choose = true;
 				options.generation_seen = true;
@@ -176,9 +183,6 @@ pub fn parse(args: &[String], program: &str) -> Result<Options, String> {
 			"--delimiter" | "--delim" => {
 				options.generation_seen = true;
 				let value = next(args, &mut index, "--delimiter requires a value")?;
-				if value.is_empty() {
-					return Err("--delimiter must not be empty".to_owned());
-				}
 				options.delimiter = value.to_owned();
 				options.delimiter_set = true;
 			}
@@ -378,6 +382,12 @@ pub fn parse(args: &[String], program: &str) -> Result<Options, String> {
 	}
 	if options.base64 && !options.binary {
 		return Err("--base64 requires --binaryoutput".to_owned());
+	}
+	if options.state_stdout && options.binary && !options.hex && !options.base64 {
+		return Err("--state-stdout requires --hex or --base64 with binary output".to_owned());
+	}
+	if options.state_stdout && options.force_true_random {
+		return Err("--state-stdout cannot be combined with --true-random".to_owned());
 	}
 	if options.hex && options.base64 {
 		return Err("--hex and --base64 are mutually exclusive".to_owned());

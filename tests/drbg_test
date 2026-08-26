@@ -208,9 +208,9 @@ out='' err='' rc=0
 capture random -d --seed 42 --count 1 -9007199254740992..-1
 max_span_rc=$rc
 max_span_out="$out"
-if [ "$range_rc" -eq 0 ] || [[ "$range_err" != '{"sv":1,"rv":"0.2.0","error":'* ]]; then
+if [ "$range_rc" -eq 0 ] || [[ "$range_err" != '{"sv":2,"rv":"0.3.0","error":'* ]]; then
 	fail "inexact inclusive range span above 2^53 was not rejected cleanly"
-elif [ "$count_rc" -eq 0 ] || [[ "$count_err" != '{"sv":1,"rv":"0.2.0","error":'* ]]; then
+elif [ "$count_rc" -eq 0 ] || [[ "$count_err" != '{"sv":2,"rv":"0.3.0","error":'* ]]; then
 	fail "negative --count was not rejected cleanly"
 elif [ "$max_span_rc" -ne 0 ] || [ "$max_span_out" -lt -9007199254740992 ] ||
 	[ "$max_span_out" -gt -1 ]; then

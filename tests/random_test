@@ -43,7 +43,7 @@ NORMAL_TEST_SEEDS=(90001 90006 90003 90004 90005)
 is_json_error() {
 	local output="$1"
 	[[ "$output" != *$'\n'* ]] &&
-		[[ "$output" == '{"sv":1,"rv":"0.2.0","error":{"code":"'* ]] &&
+		[[ "$output" == '{"sv":2,"rv":"0.3.0","error":{"code":"'* ]] &&
 		[[ "$output" == *'","message":"'* ]] &&
 		[[ "$output" == *'},"notices":[],"warnings":[]}' ]]
 }
@@ -1176,18 +1176,26 @@ test_random() {
 		(( fails++ ))
 	fi
 
-	# Empty used to form Lua's malformed `[^]+` pattern and expose a raw
-	# traceback on stdin operations. Both CLIs reject it during parsing.
+	# Empty is an explicit byte-wise tokenization mode. It must not trim the
+	# input, decode UTF-8, or lose NUL; shuffle concatenates the permuted bytes.
 	(( tests++ ))
-	echo "Testing empty --delimiter is rejected cleanly..."
-	local empty_delim_output empty_delim_status
-	empty_delim_output=$(printf 'a,b\n' | random --choose --delimiter "" -d --seed 42 2>&1)
-	empty_delim_status=$?
-	if [ "$empty_delim_status" -ne 0 ] && is_json_error "$empty_delim_output" && \
-	   [[ "$empty_delim_output" != *"traceback"* ]]; then
-		echo "✓ Empty --delimiter rejection test passed"
+	echo "Testing empty --delimiter byte-wise choose/shuffle..."
+	local empty_shuffle_a empty_shuffle_b empty_sorted empty_choose nul_sorted weighted_empty_error weighted_empty_status
+	empty_shuffle_a=$(printf '%s' Peter | random --shuffle --delimiter '' -d --seed 42 2>/dev/null)
+	empty_shuffle_b=$(printf '%s' Peter | random --shuffle --delimiter '' -d --seed 42 2>/dev/null)
+	empty_sorted=$(printf '%s' "$empty_shuffle_a" | fold -w1 | LC_ALL=C sort | tr -d '\n')
+	empty_choose=$(printf '%s' Peter | random --choose --delimiter '' -d --seed 42 2>/dev/null)
+	nul_sorted=$(printf 'A\000B' | random --shuffle --delimiter '' -d --seed 42 2>/dev/null |
+		head -c 3 | xxd -p -c1 | LC_ALL=C sort | tr -d '\n')
+	weighted_empty_error=$(printf '%s' 'a:1' | random --weighted --delimiter '' -d --seed 42 2>&1)
+	weighted_empty_status=$?
+	if [ "$empty_shuffle_a" = "$empty_shuffle_b" ] && [ "$empty_sorted" = Peert ] &&
+	   [ "${#empty_choose}" -eq 1 ] && [[ Peter == *"$empty_choose"* ]] &&
+	   [ "$nul_sorted" = 004142 ] && [ "$weighted_empty_status" -ne 0 ] &&
+	   is_json_error "$weighted_empty_error"; then
+		echo "✓ Empty --delimiter byte mode passed"
 	else
-		echo "✗ Empty --delimiter rejection was not clean: status=$empty_delim_status output='$empty_delim_output'" >&2
+		echo "✗ Empty --delimiter byte mode failed: shuffle='$empty_shuffle_a' sorted='$empty_sorted' choose='$empty_choose' nul='$nul_sorted' weighted_status=$weighted_empty_status" >&2
 		(( fails++ ))
 	fi
 
@@ -1824,14 +1832,19 @@ verycommon:100"
 	else
 		libm_hits=""
 		local libm_inspected=false
-		if command -v ldd >/dev/null 2>&1; then
+		if [ "${RANDOM_TEST_CLI_KIND:-}" = lean ]; then
+			libm_inspected=true
+			libm_hits=$(grep -R -nE '\b(Float|Float32|Float64|float|double)\b' \
+				"$here/../lean/Randoml" 2>/dev/null || true)
+		fi
+		if ! $libm_inspected && command -v ldd >/dev/null 2>&1; then
 			libm_inspected=true
 			libm_hits+=$(ldd "$CLI_TEST_TARGET" 2>/dev/null | grep -E '(^|[[:space:]/])libm([.]|[[:space:]])' || true)
 		elif command -v otool >/dev/null 2>&1; then
 			libm_inspected=true
 			libm_hits+=$(otool -L "$CLI_TEST_TARGET" 2>/dev/null | grep -E '/libm([.]|[[:space:]])' || true)
 		fi
-		if command -v nm >/dev/null 2>&1; then
+		if [ "${RANDOM_TEST_CLI_KIND:-}" != lean ] && command -v nm >/dev/null 2>&1; then
 			libm_inspected=true
 			libm_hits+=$(nm -u "$CLI_TEST_TARGET" 2>/dev/null | \
 				grep -E '(^|[[:space:]_])(log|cos|sin|exp|pow|sqrt)([[:space:]@]|$)' || true)

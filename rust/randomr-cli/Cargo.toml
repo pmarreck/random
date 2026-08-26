@@ -12,5 +12,5 @@ name = "randomr"
 path = "src/main.rs"
 
 [dependencies]
-randomr = { path = "../randomr", version = "=0.2.0" }
+randomr = { path = "../randomr", version = "=0.3.0" }
 zeroize.workspace = true

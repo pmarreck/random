@@ -4,7 +4,7 @@
 #
 # `result/` is a symlink into the read-only nix store whose target changes on
 # every rebuild, so we also copy the CLIs into `zig-out/bin/` (gitignored) for
-# stable, writable `random`, `randomz`, and `randomr` paths.
+# stable, writable `random`, `randomz`, `randomr`, and `randoml` paths.
 #
 # Usage: ./build                 # ReleaseFast, all optimizations (default)
 #        ./build --print-build-logs   # any extra args pass through to `nix build`
@@ -17,7 +17,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$here" || exit 1
 
 # The flake's package runs `zig build -Doptimize=ReleaseFast` and installs both
-# the LuaJIT `random`, Zig/C `randomz`, and Rust `randomr` CLIs.
+# the LuaJIT `random`, Zig/C `randomz`, Rust `randomr`, and Lean `randoml` CLIs.
 # Use a path flake so a pre-commit worktree includes newly created source files.
 # Git-flake semantics hide untracked files, making the build unable to validate
 # a new crate (or any other new file) until it has already been staged.
@@ -33,6 +33,7 @@ mkdir -p zig-out/bin zig-out/lib
 install -m755 result/bin/randomz zig-out/bin/randomz
 install -m755 result/bin/random  zig-out/bin/random
 install -m755 result/bin/randomr zig-out/bin/randomr
+install -m755 result/bin/randoml zig-out/bin/randoml
 # `randomr` is wrapped only to make its installed `--test` self-contained.
 # Benchmarks use the identical unwrapped ELF so Nix's Bash/PATH setup is not
 # charged to Rust's deterministic core on every measured invocation.
@@ -48,3 +49,4 @@ echo "Built:"
 echo "  $here/zig-out/bin/randomz   ($("$here/zig-out/bin/randomz" --about 2>/dev/null))"
 echo "  $here/zig-out/bin/random    (LuaJIT frontend)"
 echo "  $here/zig-out/bin/randomr   ($("$here/zig-out/bin/randomr" --about 2>/dev/null))"
+echo "  $here/zig-out/bin/randoml   ($("$here/zig-out/bin/randoml" --about 2>/dev/null))"

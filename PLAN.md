@@ -31,6 +31,20 @@
       every new control, run the complete suite, and commit only green units.
 
 ## Done
+- [x] Reduce the installed Nix closure from 2.4 GiB to 127.8 MiB without
+      weakening `--test`: separate the small runtime self-test PATH from the
+      full CI toolchain, neutralize inert Zig store references embedded in the
+      shipped WASM, use private package-smoke HOME/XDG directories, and expose
+      only the supported x86_64-Linux, aarch64-Linux, and aarch64-macOS native
+      flake systems. (2026-08-26 EDT)
+- [x] Ship state schema 2 across LuaJIT, Zig/C, Rust, and the Lean frontend:
+      shorten semantic state keys to `op`/`delim`, add `--state-stdout` as a
+      final-line transport without duplicating values, and reject schema 1.
+      The shared four-way continuation matrix covers every producer/consumer
+      direction. (2026-08-26 EDT)
+- [x] Permit `--delimiter ''` for byte-wise `--choose` and `--shuffle`,
+      preserving whitespace, NUL, and invalid UTF-8 while rejecting the
+      unrepresentable weighted form. (2026-08-26 EDT)
 - [x] Ship portable JSON continuation state across LuaJIT, Zig/C, and Rust:
       payload remains on stdout, structured state/notices/warnings/errors use
       stderr, `--state`/`--resume` accept inline JSON or stdin, explicit CLI
@@ -144,8 +158,8 @@
       kernel payload before CLI quantization. Note the mutation finding:
       a CLI-level differential alone is too coarse to catch a 1-ulp kernel
       perturbation, so the Zig port needs a kernel-level digest payload too.
-- [x] `./bm` benchmark suite covering **all three** implementations — LuaJIT,
-      Zig/C, and Rust — over raw/encoded output, narrow/wide uniform ranges,
+- [x] `./bm` benchmark suite covering all four command families — LuaJIT,
+      Zig/C, Rust, and Lean — over raw/encoded output, narrow/wide uniform ranges,
       and every current nonlinear distribution. It proves seeded output parity
       before timing release builds, appends CPU/wall results to a
       per-machine NDJSON history, records toolchain and exact-binary identities,
@@ -197,6 +211,25 @@
       and benchmark raw/compressed size, instantiation, DRBG throughput, and
       nonlinear-distribution throughput under one runtime. Use the measurements
       to decide whether one or both WASM implementations ship.
+
+## Completed: Lean 4 formalization and frontend
+
+- [x] Create the reusable `lean4-development` skill, pin the project to Lean
+      4.30.0, and require trust-zero elaboration, explicit axiom audits, frozen
+      external vectors, and an honest proved/tested/assumed claim matrix.
+- [x] Implement an independent pure Lean BLAKE3 derive-key/keyed-XOF DRBG and
+      uniform range model. Match the frozen seed-42 64-byte stream exactly.
+- [x] Prove cursor advancement, key preservation, bounded seek/fill,
+      compositional stream chunking, range mapping bounds, and population
+      preservation for arbitrary swap schedules without `sorry`, `admit`,
+      project axioms, or `unsafe` declarations in the trusted source.
+- [x] Ship `randoml`/`nrandoml`/`drandoml`, `DRANDOML_SEED`, Nix packaging,
+      shared CLI/statistics/benchmark integration, and a four-way 700-check
+      continuation matrix. The compatibility CLI deliberately delegates its
+      unformalized parser/I/O/fixed-distribution surface to sibling `randomz`;
+      it is not counted as a fourth independent oracle. Full conclusions and
+      hard decisions are in
+      `docs/reports/2026-08-26-lean4-evaluation.md`.
 
 ## Approved directives (Peter, 2026-08-04)
 

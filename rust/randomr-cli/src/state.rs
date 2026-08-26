@@ -31,7 +31,7 @@ pub fn apply(options: &mut Options, text: &str, positional: &[String]) -> Result
 			return Err(format!("unknown state key: {key}"));
 		}
 	}
-	if take_number(&mut root, "sv")?.as_deref() != Some("1") {
+	if take_number(&mut root, "sv")?.as_deref() != Some("2") {
 		return Err("unsupported state schema version".to_owned());
 	}
 	let _ = take_string(&mut root, "rv")?;
@@ -66,15 +66,14 @@ pub fn apply(options: &mut Options, text: &str, positional: &[String]) -> Result
 	for key in args.keys() {
 		if !matches!(
 			key.as_str(),
-			"operation"
-				| "distribution"
+			"op" | "distribution"
 				| "range" | "count"
 				| "mean" | "stddev"
 				| "rate" | "lambda"
 				| "alpha" | "beta"
 				| "precision"
 				| "binary" | "encoding"
-				| "delimiter"
+				| "delim"
 		) {
 			return Err(format!("unknown state args key: {key}"));
 		}
@@ -83,7 +82,7 @@ pub fn apply(options: &mut Options, text: &str, positional: &[String]) -> Result
 	let cli_stdin = options.choose || options.shuffle || options.weighted;
 	let cli_distribution = options.mode_cli || !positional.is_empty();
 	if !cli_stdin && !cli_distribution {
-		if let Some(operation) = take_optional_string(&mut args, "operation")? {
+		if let Some(operation) = take_optional_string(&mut args, "op")? {
 			match operation.as_str() {
 				"choose" => options.choose = true,
 				"shuffle" => options.shuffle = true,
@@ -133,10 +132,7 @@ pub fn apply(options: &mut Options, text: &str, positional: &[String]) -> Result
 		}
 	}
 	if !options.delimiter_set {
-		if let Some(value) = take_optional_string(&mut args, "delimiter")? {
-			if value.is_empty() {
-				return Err("state delimiter is invalid".to_owned());
-			}
+		if let Some(value) = take_optional_string(&mut args, "delim")? {
 			options.delimiter = value;
 		}
 	}

@@ -9,17 +9,22 @@ normal, exponential, Poisson, log-normal, and beta distributions. True-random
 mode instead draws fresh entropy from the operating system CSPRNG and is
 intentionally not reproducible.
 
-The project ships three matching implementations: the original
+The project ships three independent matching implementations: the original
 [LuaJIT](https://luajit.org/) oracle, a Zig core exposed through a public C ABI
 and dogfooded by a C CLI, and a pure-core Rust library with a separate Rust CLI.
+A fourth command family, `randoml`, accompanies an independent pure Lean 4
+BLAKE3/DRBG model and machine-checked state/sampling invariants. Its production
+CLI compatibility surface currently delegates to `randomz`; it is therefore a
+formalization and frontend, not a fourth independent differential oracle.
 A seeded BLAKE3 keyed XOF powers cross-platform-identical deterministic streams;
 stdin operations and multiple output encodings make the same small tool useful
 beyond number generation.
 
-It ships three equivalent command families: `random`/`nrandom`/`drandom` use
+It ships four equivalent command families: `random`/`nrandom`/`drandom` use
 LuaJIT, `randomz`/`nrandomz`/`drandomz` use the C frontend over Zig, and
-`randomr`/`nrandomr`/`drandomr` use Rust. The invocation name selects normalized
-or deterministic mode in every family.
+`randomr`/`nrandomr`/`drandomr` use Rust. `randoml`/`nrandoml`/`drandoml` use
+the Lean frontend described above. The invocation name selects normalized or
+deterministic mode in every family.
 
 ## Features
 
@@ -34,20 +39,27 @@ or deterministic mode in every family.
   the shape from parameters supplied on that invocation
 - **Portable continuation:** deterministic invocations emit resumable JSON
   state on stderr; any implementation can continue state from either of the
-  others, without writing state to disk
+  others, without writing state to disk. `--state-stdout` instead appends the
+  same state as the final stdout line for simple `tail -n1` shell pipelines
 - **Reproducible across platforms:** seeded streams are bit-identical across machines, operating systems and CPU architectures — verified on x86_64-glibc, x86_64-musl, aarch64-Linux and native aarch64-macOS — because all math runs on an integer-only kernel instead of the platform's libm — see [Determinism](#determinism) below
 - **Embeddable core:** `librandomz.a` plus `randomz.h`; callers own DRBG state
   and provide entropy through a callback, so the Zig core performs no I/O
 - **Native Rust library:** the `randomr` crate exposes the caller-owned DRBG,
   integer-only fixed arithmetic, samplers, and curve generation; only its
   explicitly selected `entropy` module performs I/O
+- **Lean 4 formal model:** `lean/Randoml` independently implements the BLAKE3
+  KDF/keyed-XOF DRBG and uniform sampler and proves cursor advancement, key
+  preservation, seek, stream chunking, bounded mapping, and shuffle-population
+  invariants under Lean's kernel; see the honest proof boundary in the
+  [Lean evaluation report](docs/reports/2026-08-26-lean4-evaluation.md)
 - **WASM build:** `randomz-wasi.wasm` exports the same deterministic core plus
   a fail-closed adapter to the host's WASI `random_get`; the pure Rust core is
   compile-gated for `wasm32-wasip1`, while an equivalent Rust artifact is
   deferred until a measured size/performance comparison decides whether
   shipping one or both is useful
 - **Small runtime surface:** LuaJIT for the oracle CLI; libc for `randomz`;
-  `randomr` is a native Rust executable
+  `randomr` is a native Rust executable; `randoml` uses the Lean runtime and
+  launches the installed `randomz` compatibility backend
 
 ### Determinism
 
@@ -141,7 +153,10 @@ printf '%s\n' "$state" | random --state - --count 10
 random --true-random -b -c 32       # force entropy even if DRANDOM_SEED is set
 random --hex -c 5                   # 5 hex values
 printf 'a\nb\nc\n' | random --choose
+printf %s Peter | random --shuffle --delimiter '' # byte-wise: e.g. ePert
 printf 'rare:1,common:10' | random --weighted --delimiter ','
+packet=$(random --seed 42 --count 3 d20 --state-stdout)
+state=$(printf '%s\n' "$packet" | tail -n1)
 ```
 
 Run `random -h` for the full option list.
@@ -152,7 +167,7 @@ Generated values stay on stdout. A deterministic invocation writes one JSON
 state object to stderr after stdout has been flushed:
 
 ```json
-{"sv":1,"rv":"0.2.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"12","args":{"distribution":"uniform","range":"1..20","count":"3","encoding":"text","delimiter":"\n"},"notices":[],"warnings":[]}
+{"sv":2,"rv":"0.3.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"12","args":{"distribution":"uniform","range":"1..20","count":"3","encoding":"text","delim":"\n"},"notices":[],"warnings":[]}
 ```
 
 `next_pos` is a decimal string containing the next BLAKE3 XOF byte position,
@@ -171,6 +186,8 @@ Notices and warnings are arrays, and errors use an
 with no notice or warning leave stderr empty. Input state must be valid UTF-8;
 stdin state is capped at 1 MiB, and structural depth/member limits reject
 pathological JSON before it can exhaust a parser stack or monopolize the CLI.
+Schema 2 uses the short semantic keys `op` and `delim`; schema 1 is rejected
+rather than silently translated.
 
 For shell loops that only need to advance state, the redirection order below
 captures stderr while discarding stdout:
@@ -179,6 +196,12 @@ captures stderr while discarding stdout:
 state=$(random -d --seed 42 d20 2>&1 >/dev/null)
 state=$(random --resume "$state" 2>&1 >/dev/null)
 ```
+
+When redirecting file descriptors is awkward, `--state-stdout` keeps the
+ordinary payload first and writes the same compact state as the final stdout
+line. It implies deterministic mode, obtains and reports an OS seed if none is
+supplied, conflicts with `--true-random`, and requires `--hex` or `--base64`
+with binary output because raw bytes cannot safely share a line protocol.
 
 To resume a stdin population operation, pass the state inline so stdin remains
 available for the population:
@@ -224,6 +247,12 @@ remains `0..99`. The former one/two bare endpoint grammar is not accepted.
 Ranges are rejected where a distribution's own parameters determine its
 output, including custom-parameter normal mode.
 
+For stdin operations, an empty `--delimiter ''` means individual input bytes,
+not Unicode code points: choose returns one byte and shuffle permutes all bytes
+before writing one final newline. It deliberately preserves whitespace, NUL,
+and invalid UTF-8. Weighted input rejects an empty delimiter because its
+`value:weight` records cannot be represented byte-by-byte.
+
 `--test` runs the shared Bash contract suite. Nix installations close over its
 tool dependencies; manual Zig and Windows installations require Bash plus the
 common Unix command-line tools used by the suite.
@@ -267,7 +296,8 @@ omitted. Explicit CLI arguments override inherited `args`; `--state` and
 `--weighted` use stdin for their populations, those operations require state
 inline. The LuaJIT CLI uses
 `DRANDOM_SEED`; the C/FFI CLI uses `DRANDOMZ_SEED`; the Rust CLI uses
-`DRANDOMR_SEED`. Each frontend ignores the other two namespaces.
+`DRANDOMR_SEED`; and the Lean frontend uses `DRANDOML_SEED`. Each frontend
+ignores the other three namespaces.
 An inherited frontend-specific seed variable makes a plain invocation
 deterministic, so security-sensitive callers should use `--true-random`, which
 overrides that frontend's environment variable and rejects deterministic flags.
@@ -285,6 +315,7 @@ LuaJIT-only gist has no separately visible license.
 nix run github:pmarreck/random            # run without installing
 nix run github:pmarreck/random#randomz    # C CLI over the Zig FFI
 nix run github:pmarreck/random#randomr    # Rust CLI
+nix run github:pmarreck/random#randoml    # Lean frontend + proved model
 nix profile install github:pmarreck/random
 ```
 
@@ -300,6 +331,12 @@ For Rust, run `cargo build --locked --release -p randomr-cli`; Cargo emits
 `randomr`, and the Nix package supplies `nrandomr` and `drandomr` aliases. Rust
 programs can depend on the workspace crate at `rust/randomr` and use `Drbg` as a
 `ByteSource` for any exported sampler without involving CLI I/O or formatting.
+
+For Lean, run `(cd lean && lake build)` with Lean 4.30.0. The importable
+`Randoml` modules and `randoml` executable appear under `lean/.lake/build`.
+Set `RANDOML_BACKEND` for a manual tree build, or place `randomz` beside
+`randoml`; the Nix package does the latter and installs the `nrandoml` and
+`drandoml` wrappers.
 
 The same build emits `zig-out/bin/randomz-wasi.wasm`, a WASI Preview 1 reactor
 module. It exports memory, the public deterministic `randomz_*` ABI, and
@@ -344,18 +381,19 @@ A dev shell with LuaJIT and the test tooling is provided:
 direnv allow      # or: nix develop
 ./test            # FAST mode (quick, quiet on success)
 FAST= ./test      # full statistical run
-./stats           # separate, deeper sanity analysis of all three implementations
-nix flake check   # hermetic CI check (runs all 19 suites, but FORCES FAST=1 --
+./stats           # separate, deeper sanity analysis of all four command families
+nix flake check   # hermetic CI check (runs all 21 suites, but FORCES FAST=1 --
                    # kernel_jit_diff's 60000-iteration deep JIT differential
                    # is deep-mode-only by design and is SKIPPED here, not run;
                    # run `FAST= ./test` locally for the full non-FAST suite)
 ```
 
 `./test` runs every suite under `tests/` (official BLAKE3 vectors, an independent
-Zig DRBG reference check, the same 80-check Bash CLI contract against all three
-executables, all three pairwise 141-case exact frontend matrices, Rust
+Zig DRBG reference check, the same 80-check Bash CLI contract against all four
+command families, the independent three-way exact frontend matrices, Rust
 mutation/downstream-library controls, a C-compiled public-ABI conformance
-test, isolated Zig-package reconstruction, 11-target Zig cross-compilation
+test, Lean trust-zero elaboration/frozen vectors/proof axiom audits, isolated
+Zig-package reconstruction, 11-target Zig cross-compilation
 (including Windows ARM64), Wine-executed Windows x86_64 parity, kernel unit
 tests, golden vectors, the `bc` sweep, the all-directions continuation
 matrix, and the deep-mode-only JIT differential).
@@ -368,17 +406,17 @@ multi-target artifact gates, not by the pure arithmetic checks themselves.
 `./stats` is intentionally separate from the correctness suite. It streams raw
 bytes and distribution samples without writing them to disk, checks obvious
 bias/shape failures, and first proves its thresholds reject deliberately bad
-generators. Use `./stats --lua`, `./stats --c`, `./stats --rust`, or
+generators. Use `./stats --lua`, `./stats --c`, `./stats --rust`, `./stats --lean`, or
 `./stats --cli PATH`; `FAST=1`
 reduces sample sizes. A pass is a statistical smoke test, not a cryptographic
 security certification. The sensitivity set rejects seven deliberately bad
 generators: an all-zero byte stream plus constant uniform, normal,
 exponential, Poisson, log-normal, and beta samples.
 
-`./bm` compares release-built LuaJIT, Zig/C, and Rust implementation payloads
+`./bm` compares release-built LuaJIT, Zig/C, Rust, and Lean command payloads
 over raw, encoded, uniform, and every nonlinear distribution. Before timing,
 it streams every seeded workload through SHA-256 and requires matching digests
-across all three packaged CLIs and the unwrapped Rust payload; generated bytes
+across all four packaged CLIs and the unwrapped Rust payload; generated bytes
 are never written to disk. Rust timing bypasses only the Nix
 Bash wrapper that makes installed `--test` self-contained, so wrapper startup
 is not misreported as core computation. Hyperfine runs with `--shell=none`, so
@@ -391,6 +429,8 @@ executable hashes, and the tool versions visible to the harness append to
 set, and timing surface provide a two-sided ±15% review threshold: regressions
 are loud, and surprising speedups are flagged in case work disappeared. Use
 `--quick` for a short run or `--check` for only the cross-implementation proof.
+The Lean row measures its current frontend plus the `randomz` child process;
+it is adapter overhead, not independent Lean distribution throughput.
 
 The Rust compile-time coefficient change was measured before and after on an
 AMD Ryzen Threadripper 3990X, using the quick suite's 5,000-sample batches and

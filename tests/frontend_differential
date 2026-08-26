@@ -13,9 +13,9 @@ if [ -z "$candidate" ] || [ ! -x "$candidate" ]; then
 	exit 1
 fi
 case "$kind" in
-	zig|rust) ;;
+	zig|rust|lean) ;;
 	*)
-		echo "frontend differential FAILED: CANDIDATE_KIND must be zig or rust" >&2
+		echo "frontend differential FAILED: CANDIDATE_KIND must be zig, rust, or lean" >&2
 		exit 1
 		;;
 esac

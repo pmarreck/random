@@ -1,0 +1,10 @@
+name = "randoml"
+version = "0.3.0"
+defaultTargets = ["randoml"]
+
+[[lean_lib]]
+name = "Randoml"
+
+[[lean_exe]]
+name = "randoml"
+root = "Main"

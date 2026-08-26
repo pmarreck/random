@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compare release-build CLI throughput across LuaJIT, Zig/C, and Rust.
+# Compare release-build CLI throughput across LuaJIT, Zig/C, Rust, and Lean.
 # Seeded outputs are proved byte-identical before any timing is recorded.
 set -u
 set -o pipefail
@@ -18,7 +18,7 @@ case "${1-}" in
 			'Usage: ./bm [--quick|--check]' \
 			'' \
 			'Benchmarks byte-identical deterministic work through random (LuaJIT),' \
-			'randomz (Zig/C), and randomr (Rust). Rust timing bypasses only the' \
+			'randomz (Zig/C), randomr (Rust), and randoml (Lean). Rust timing bypasses only the' \
 			'Nix self-test wrapper; the packaged CLI remains in the parity check.' \
 			'Parity payloads stream through SHA-256 and are never written to disk.' \
 			'Hyperfine executes each payload directly, without an intermediate shell,' \
@@ -52,10 +52,11 @@ fi
 lua_cli="$here/zig-out/bin/random"
 zig_cli="$here/zig-out/bin/randomz"
 rust_cli="$here/zig-out/bin/randomr"
+lean_cli="$here/zig-out/bin/randoml"
 rust_timing_cli="${BM_RUST_TIMING_CLI:-$here/zig-out/bin/.randomr-bench}"
-implementations=(luajit zig rust)
-parity_executables=("$lua_cli" "$zig_cli" "$rust_cli")
-timing_executables=("$lua_cli" "$zig_cli" "$rust_timing_cli")
+implementations=(luajit zig rust lean)
+parity_executables=("$lua_cli" "$zig_cli" "$rust_cli" "$lean_cli")
+timing_executables=("$lua_cli" "$zig_cli" "$rust_timing_cli" "$lean_cli")
 for executable in "${parity_executables[@]}" "$rust_timing_cli"; do
 	if [ ! -x "$executable" ]; then
 		echo "./bm requires a release executable: $executable" >&2
@@ -208,6 +209,7 @@ case "$lua_shebang" in
 esac
 zig_version="$(zig version 2>/dev/null || printf unknown)"
 rust_version="$(rustc --version 2>/dev/null || printf unknown)"
+lean_version="$(lean --version 2>/dev/null | head -n 1 || printf unknown)"
 hyperfine_version="$(hyperfine --version 2>/dev/null || printf unknown)"
 
 echo
@@ -265,6 +267,7 @@ for case_index in "${!case_names[@]}"; do
 			luajit) measured_executable="$lua_cli" ;;
 			zig) measured_executable="$zig_cli" ;;
 			rust) measured_executable="$rust_timing_cli" ;;
+			lean) measured_executable="$lean_cli" ;;
 			*) echo "Unknown hyperfine result: $implementation" >&2; exit 1 ;;
 		esac
 		binary_sha256="$(sha256sum "$measured_executable" | awk '{print $1}')"
@@ -283,6 +286,7 @@ for case_index in "${!case_names[@]}"; do
 			--arg luajit_version "$luajit_version" \
 			--arg zig_version "$zig_version" \
 			--arg rust_version "$rust_version" \
+			--arg lean_version "$lean_version" \
 			--arg hyperfine_version "$hyperfine_version" \
 			--argjson runs "$runs" \
 			--argjson warmup "$warmup" \
@@ -302,7 +306,8 @@ for case_index in "${!case_names[@]}"; do
 			  system_seconds: $system_seconds, cpu_seconds: $cpu_seconds,
 			  binary_sha256: $binary_sha256,
 			  luajit_version: $luajit_version, zig_version: $zig_version,
-			  rust_version: $rust_version, hyperfine_version: $hyperfine_version}' \
+			  rust_version: $rust_version, lean_version: $lean_version,
+			  hyperfine_version: $hyperfine_version}' \
 			>>"$history_file" || exit 1
 	done < <(jq -c '.results[]' <<<"$result_json")
 done

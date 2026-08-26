@@ -10,3 +10,6 @@ HANDOFF*
 # Zig build outputs
 zig-out
 .zig-cache
+
+# Lean/Lake build outputs
+lean/.lake

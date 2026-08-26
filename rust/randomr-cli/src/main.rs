@@ -50,7 +50,7 @@ enum Value {
 fn main() {
 	if let Err(message) = run() {
 		let encoded = format!(
-			"{{\"sv\":1,\"rv\":{},\"error\":{{\"code\":\"usage\",\"message\":{}}},\"notices\":[],\"warnings\":[]}}\n",
+			"{{\"sv\":2,\"rv\":{},\"error\":{{\"code\":\"usage\",\"message\":{}}},\"notices\":[],\"warnings\":[]}}\n",
 			state::quote(VERSION),
 			state::quote(&message)
 		);
@@ -227,7 +227,7 @@ fn emit_metadata(
 		use std::fmt::Write as _;
 		write!(
 			output,
-			"{{\"sv\":1,\"rv\":{},\"seed\":\"0x",
+			"{{\"sv\":2,\"rv\":{},\"seed\":\"0x",
 			state::quote(VERSION)
 		)
 		.map_err(|_| "state formatting failed".to_owned())?;
@@ -244,7 +244,7 @@ fn emit_metadata(
 	} else if notices.is_empty() {
 		return Ok(());
 	} else {
-		output.push_str(&format!("{{\"sv\":1,\"rv\":{}", state::quote(VERSION)));
+		output.push_str(&format!("{{\"sv\":2,\"rv\":{}", state::quote(VERSION)));
 	}
 	output.push_str(",\"notices\":[");
 	for (index, notice) in notices.iter().enumerate() {
@@ -254,10 +254,17 @@ fn emit_metadata(
 		output.push_str(&state::quote(notice));
 	}
 	output.push_str("],\"warnings\":[]}\n");
-	io::stderr()
-		.lock()
-		.write_all(output.as_bytes())
-		.map_err(|_| "stderr write failed".to_owned())
+	if options.state_stdout {
+		io::stdout()
+			.lock()
+			.write_all(output.as_bytes())
+			.map_err(|_| "stdout write failed".to_owned())
+	} else {
+		io::stderr()
+			.lock()
+			.write_all(output.as_bytes())
+			.map_err(|_| "stderr write failed".to_owned())
+	}
 }
 
 fn canonical_args(options: &Options, bounds: Option<(i64, i64, u64)>) -> String {
@@ -265,7 +272,7 @@ fn canonical_args(options: &Options, bounds: Option<(i64, i64, u64)>) -> String 
 	if options.choose || options.shuffle || options.weighted {
 		push_string(
 			&mut fields,
-			"operation",
+			"op",
 			if options.choose {
 				"choose"
 			} else if options.shuffle {
@@ -274,7 +281,7 @@ fn canonical_args(options: &Options, bounds: Option<(i64, i64, u64)>) -> String 
 				"weighted"
 			},
 		);
-		push_string(&mut fields, "delimiter", &options.delimiter);
+		push_string(&mut fields, "delim", &options.delimiter);
 		return format!("{{{}}}", fields.join(","));
 	}
 	let (start, end, count) = bounds.expect("generation bounds are present");
@@ -376,7 +383,7 @@ fn canonical_args(options: &Options, bounds: Option<(i64, i64, u64)>) -> String 
 		},
 	);
 	if !options.binary {
-		push_string(&mut fields, "delimiter", &options.delimiter);
+		push_string(&mut fields, "delim", &options.delimiter);
 	}
 	format!("{{{}}}", fields.join(","))
 }
@@ -679,6 +686,9 @@ fn read_items(delimiter: &str) -> Result<Vec<Vec<u8>>, String> {
 	io::stdin()
 		.read_to_end(&mut input)
 		.map_err(|_| "could not read stdin".to_owned())?;
+	if delimiter.is_empty() {
+		return Ok(input.into_iter().map(|byte| vec![byte]).collect());
+	}
 	let content = trim_ascii(&input);
 	if content.is_empty() {
 		return Ok(Vec::new());
@@ -704,6 +714,9 @@ fn read_items(delimiter: &str) -> Result<Vec<Vec<u8>>, String> {
 }
 
 fn stdin_operation(options: &Options, source: &mut Source) -> Result<(), String> {
+	if options.weighted && options.delimiter.is_empty() {
+		return Err("--weighted does not support an empty delimiter".to_owned());
+	}
 	let mut items = read_items(&options.delimiter)?;
 	if items.is_empty() {
 		return Err(if options.choose {
@@ -728,12 +741,19 @@ fn stdin_operation(options: &Options, source: &mut Source) -> Result<(), String>
 			let index = range(source, 1, count as i64).map_err(core_error)? as usize - 1;
 			items.swap(count - 1, index);
 		}
-		for item in items {
+		for (index, item) in items.into_iter().enumerate() {
+			if index > 0 {
+				output
+					.write_all(options.delimiter.as_bytes())
+					.map_err(|_| "stdout write failed".to_owned())?;
+			}
 			output
 				.write_all(&item)
-				.and_then(|()| output.write_all(b"\n"))
 				.map_err(|_| "stdout write failed".to_owned())?;
 		}
+		output
+			.write_all(b"\n")
+			.map_err(|_| "stdout write failed".to_owned())?;
 	} else {
 		let mut weighted = Vec::with_capacity(items.len());
 		let mut total = 0_i64;
@@ -895,7 +915,7 @@ fn print_help(program: &str, args: &[String]) -> Result<(), String> {
            -c, --count N       Output N numbers (default: 1, or 1024 with -b)\n\
            -d, --deterministic Use the cross-platform-identical BLAKE3 keyed XOF\n\
                --true-random   Force fresh OS/source CSPRNG entropy; ignore DRANDOMR_SEED\n\
-               --delimiter S   Set delimiter for output/input (default: newline)\n\
+               --delimiter S   Set delimiter; empty means individual input bytes\n\
                --precision N   Truncate fractional output to 0..18 places (default: 18)\n\
                --truncate N    Alias for --precision\n\
            -h, --help          Show this help message\n\
@@ -904,6 +924,7 @@ fn print_help(program: &str, args: &[String]) -> Result<(), String> {
                --seed N|0xHEX  Set unsigned 256-bit integer seed (implies -d)\n\
                --state [JSON|-] Resume from JSON; omitted value or '-' reads stdin\n\
                --resume [JSON|-] Alias for --state\n\
+               --state-stdout  Append resumable state as the final stdout line\n\
                --random-source PATH  Read entropy from PATH instead of the OS\n\
                --no-wait       Use nonblocking getrandom; fail if the pool is not ready\n\
                --kitty         Force Kitty graphics for a distribution help chart\n\
@@ -925,7 +946,8 @@ fn print_help(program: &str, args: &[String]) -> Result<(), String> {
            RANDOMZ_CHART_TYPE  utf8, kitty, or sixel; command-line flags override it\n\n\
          Deterministic mode never persists state. A seed starts at stream position\n\
          zero; --state/--resume continues at its exact BLAKE3 byte position.\n\
-         Deterministic success metadata and all diagnostics are JSON on stderr.\n\
+         Deterministic success metadata and all diagnostics are JSON on stderr;\n\
+         --state-stdout moves success state to the final stdout line.\n\
          Without a seed, deterministic mode obtains 32 bytes from OS entropy.\n\
          Seeded output, including alternate distributions, is byte-identical\n\
          across supported operating systems and CPU architectures.\n"

@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# Trust-zero elaboration, frozen BLAKE3 DRBG vector, and axiom audit for Lean.
+set -u
+set -o pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$root/lean" || exit 1
+
+lake build || exit 1
+
+vector=$(printf '%s\n' \
+	'import Randoml' \
+	'open Randoml' \
+	'#eval (match Drbg.init ((List.replicate 31 (0 : UInt8) ++ [42]).foldl ByteArray.push ByteArray.empty) with | some state => (match state.fill 64 with | some (b, _) => b.data.toList.map UInt8.toNat | none => []) | none => [])' |
+	lake env lean --trust=0 /dev/stdin) || exit 1
+
+expected='[105, 223, 226, 233, 181, 121, 207, 109, 254, 61, 113, 177, 16, 36, 219, 110, 180, 157, 91, 152, 97, 80, 91, 62, 207,
+ 195, 211, 121, 166, 220, 143, 4, 182, 144, 13, 179, 51, 210, 7, 96, 102, 18, 38, 218, 1, 13, 181, 137, 197, 8, 10, 175,
+ 95, 96, 104, 252, 8, 116, 206, 98, 172, 163, 111, 96]'
+if [ "$vector" != "$expected" ]; then
+	echo "Lean BLAKE3 DRBG vector diverged: $vector" >&2
+	exit 1
+fi
+
+normalize_numbers()
+{
+	tr '[],' '   ' | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//'
+}
+
+oracle_bytes()
+{
+	local seed="$1" position="$2" count="$3" seed_hex state
+	printf -v seed_hex '%064x' "$seed"
+	state="{\"sv\":2,\"rv\":\"0.3.0\",\"seed\":\"0x${seed_hex}\",\"next_pos\":\"${position}\",\"args\":{}}"
+	"$root/bin/random" --state "$state" --binaryoutput --count "$count" 2>/dev/null |
+		od -An -tu1 -v | normalize_numbers
+}
+
+lean_bytes()
+{
+	local seed="$1" position="$2" count="$3"
+	printf '%s\n' \
+		'import Randoml' \
+		'open Randoml' \
+		"#eval (match Drbg.init ((List.replicate 31 (0 : UInt8) ++ [${seed}]).foldl ByteArray.push ByteArray.empty) with | some state => (match state.seek ${position} with | some sought => (match sought.fill ${count} with | some (b, _) => b.data.toList.map UInt8.toNat | none => []) | none => []) | none => [])" |
+		lake env lean --trust=0 /dev/stdin | normalize_numbers
+}
+
+for case in '0 0 1' '1 1 63' '42 63 67' '255 64 80' '17 4097 130'; do
+	read -r seed position count <<<"$case"
+	oracle=$(oracle_bytes "$seed" "$position" "$count") || exit 1
+	modeled=$(lean_bytes "$seed" "$position" "$count") || exit 1
+	if [ "$modeled" != "$oracle" ]; then
+		echo "Lean DRBG differential diverged: seed=$seed position=$position count=$count" >&2
+		exit 1
+	fi
+done
+
+boundaries=$(printf '%s\n' \
+	'import Randoml' \
+	'open Randoml' \
+	'#eval [(Drbg.init ByteArray.empty).isNone, (Drbg.fill { key := ByteArray.empty, position := maxExactPosition + 1 } 0).isNone, (Drbg.fill { key := ByteArray.empty, position := maxExactPosition } 0).isSome, (Drbg.fill { key := ByteArray.empty, position := maxExactPosition } 1).isNone]' |
+	lake env lean --trust=0 /dev/stdin) || exit 1
+if [ "$boundaries" != '[true, true, true, true]' ]; then
+	echo "Lean DRBG seed/position boundary control diverged: $boundaries" >&2
+	exit 1
+fi
+
+axioms=$(printf '%s\n' \
+	'import Randoml' \
+	'#print axioms Randoml.fill_advances_position' \
+	'#print axioms Randoml.seek_sets_position' \
+	'#print axioms Randoml.fill_preserves_key' \
+	'#print axioms Randoml.fill_respects_position_limit' \
+	'#print axioms Randoml.adjacentSwap_perm' \
+	'#print axioms Randoml.swap_schedule_preserves_population' \
+	'#print axioms Randoml.mapped_draw_is_in_range' \
+	'#print axioms Randoml.stream_slice_chunking' |
+	lake env lean --trust=0 /dev/stdin) || exit 1
+if [[ "$axioms" == *'sorryAx'* ]] || [[ "$axioms" == *'Classical.choice'* ]] ||
+   [[ "$axioms" == *'propext, Quot.sound,'* ]]; then
+	echo "Lean theorem axiom audit found an unapproved dependency:" >&2
+	echo "$axioms" >&2
+	exit 1
+fi
+
+if rg -n '\b(sorry|admit|axiom|unsafe)\b' Randoml.lean Randoml Main.lean; then
+	echo "Lean trusted source contains a forbidden proof escape" >&2
+	exit 1
+fi
+
+echo "lean test PASSED: trust-zero build, frozen/multi-seek DRBG vectors, boundaries, and axiom audit"

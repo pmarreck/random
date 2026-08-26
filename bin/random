@@ -22,7 +22,7 @@ local state_json = require("state_json")
 
 local argv = arg or {}
 -- Keep in sync with the package manifests; Lua has no build-time injection.
-local VERSION = "0.2.0"
+local VERSION = "0.3.0"
 local DEFAULT_FRACTION_DIGITS = 18
 local MAX_FRACTION_DIGITS = 18
 local notices = {}
@@ -35,7 +35,7 @@ local function json_string_array(values)
 end
 
 local function emit_error_json(message, code)
-	io.stderr:write('{"sv":1,"rv":', state_json.quote(VERSION),
+	io.stderr:write('{"sv":2,"rv":', state_json.quote(VERSION),
 		',"error":{"code":', state_json.quote(code or "runtime"),
 		',"message":', state_json.quote(message), '},"notices":',
 		json_string_array(notices), ',"warnings":', json_string_array(warnings), '}\n')
@@ -936,7 +936,7 @@ local function print_help(invocation, distribution)
 	print("  -c, --count N       Output N numbers (default: 1, or 1024 with -b)")
 	print("  -d, --deterministic Use the cross-platform-identical BLAKE3 keyed XOF")
 	print("      --true-random   Force fresh OS/source CSPRNG entropy; ignore DRANDOM_SEED")
-		print("      --delimiter S   Set delimiter for output/input (default: newline)")
+		print("      --delimiter S   Set delimiter; empty means individual input bytes")
 		print("      --precision N   Truncate fractional output to 0..18 places (default: 18)")
 		print("      --truncate N    Alias for --precision")
 	print("  -h, --help          Show this help message")
@@ -945,6 +945,7 @@ local function print_help(invocation, distribution)
 	print("      --seed N|0xHEX  Set unsigned 256-bit integer seed (implies -d)")
 	print("      --state [JSON|-] Resume from JSON; omitted value or '-' reads stdin")
 	print("      --resume [JSON|-] Alias for --state")
+	print("      --state-stdout  Append resumable state as the final stdout line")
 	print("      --random-source PATH  Read entropy from PATH instead of the OS")
 	print("      --no-wait       Use nonblocking getrandom; fail if the pool is not ready")
 	print("      --kitty         Force Kitty graphics for a distribution help chart")
@@ -969,7 +970,8 @@ local function print_help(invocation, distribution)
 	print("")
 	print("Deterministic mode never persists state. A seed starts at stream position")
 	print("zero; --state/--resume continues at its exact BLAKE3 byte position.")
-	print("Deterministic success metadata and all diagnostics are JSON on stderr.")
+	print("Deterministic success metadata and all diagnostics are JSON on stderr;")
+	print("--state-stdout moves success state to the final stdout line.")
 	print("Without a seed, deterministic mode obtains 32 bytes from OS entropy.")
 	print("Seeded output, including alternate distributions, is byte-identical")
 	print("across supported operating systems and CPU architectures.")
@@ -981,6 +983,7 @@ local function print_help(invocation, distribution)
 	print("  random -d --seed 42       # Deterministic")
 	print("  state=$(random -d --seed 42 d20 2>&1 >/dev/null)")
 	print("  random --resume \"$state\" # Continue that exact sequence")
+	print("  packet=$(random --seed 42 --state-stdout d20); state=${packet##*$'\\n'}")
 	print("  random --hex -c 5         # 5 hex numbers")
 	print("  echo -e 'a\\nb\\nc' | random --choose")
 	print("  echo 'rare:1,common:10' | random --weighted --delimiter ','")
@@ -991,6 +994,11 @@ end
 local function read_stdin_items(delimiter)
 	local content = io.read("*a")
 	if not content or content == "" then return {} end
+	if delimiter == "" then
+		local bytes = {}
+		for index = 1, #content do bytes[index] = content:sub(index, index) end
+		return bytes
+	end
 	content = trim(content)
 	if content == "" then return {} end
 
@@ -1045,7 +1053,7 @@ local function apply_state(options, positionals)
 	for key in pairs(decoded) do
 		if not top_allowed[key] then return nil, "unknown state key: " .. tostring(key) end
 	end
-	if decoded.sv ~= 1 then return nil, "unsupported state schema version" end
+	if decoded.sv ~= 2 then return nil, "unsupported state schema version" end
 	if type(decoded.rv) ~= "string" then return nil, "state rv must be a string" end
 	if type(decoded.seed) ~= "string" or
 		not decoded.seed:match("^0x[0-9a-fA-F]+$") or #decoded.seed ~= 66 then
@@ -1071,19 +1079,19 @@ local function apply_state(options, positionals)
 	end
 
 	local args = decoded.args
-	local args_allowed = {operation=true, distribution=true, range=true, count=true,
+	local args_allowed = {op=true, distribution=true, range=true, count=true,
 		mean=true, stddev=true, rate=true, lambda=true, alpha=true, beta=true,
-		precision=true, binary=true, encoding=true, delimiter=true}
+		precision=true, binary=true, encoding=true, delim=true}
 	for key in pairs(args) do
 		if not args_allowed[key] then return nil, "unknown state args key: " .. tostring(key) end
 	end
 
 	local cli_stdin_mode = options.choose or options.shuffle or options.weighted
 	local cli_distribution = options.distribution_cli or #positionals > 0
-	if not cli_stdin_mode and not cli_distribution and args.operation ~= nil then
-		if args.operation == "choose" then options.choose = true
-		elseif args.operation == "shuffle" then options.shuffle = true
-		elseif args.operation == "weighted" then options.weighted = true
+	if not cli_stdin_mode and not cli_distribution and args.op ~= nil then
+		if args.op == "choose" then options.choose = true
+		elseif args.op == "shuffle" then options.shuffle = true
+		elseif args.op == "weighted" then options.weighted = true
 		else return nil, "state operation is unsupported" end
 	end
 	if not cli_distribution and not cli_stdin_mode and args.distribution ~= nil then
@@ -1110,9 +1118,9 @@ local function apply_state(options, positionals)
 		if first == nil or exclusive then return nil, "state range must be canonical M..N" end
 		options.start_val, options.end_val = first, last
 	end
-	if not options.delimiter_set and args.delimiter ~= nil then
-		if type(args.delimiter) ~= "string" or args.delimiter == "" then return nil, "state delimiter is invalid" end
-		options.delimiter = args.delimiter
+	if not options.delimiter_set and args.delim ~= nil then
+		if type(args.delim) ~= "string" then return nil, "state delimiter is invalid" end
+		options.delimiter = args.delim
 	end
 	if not options.encoding_set and args.encoding ~= nil then
 		if args.encoding == "text" then
@@ -1198,6 +1206,7 @@ local function parse_args()
 		state_from_stdin = false,
 		state_seed = nil,
 		state_position = nil,
+		state_stdout = false,
 		random_source = nil,
 		no_wait = false,
 		chart_renderer_flag = false,
@@ -1353,16 +1362,16 @@ local function parse_args()
 				stderr_write("Error: --delimiter requires a value\n")
 				os.exit(1)
 			end
-			if argv[i] == "" then
-				stderr_write("Error: --delimiter must not be empty\n")
-				os.exit(1)
-			end
 			if not state_json.valid_utf8(argv[i]) then
 				stderr_write("Error: --delimiter must be valid UTF-8\n")
 				os.exit(1)
 			end
 			options.delimiter = argv[i]
 			options.delimiter_set = true
+		elseif arg_val == "--state-stdout" then
+			options.generation_option_seen = true
+			options.state_stdout = true
+			options.deterministic = true
 		elseif arg_val == "--count" or arg_val == "-c" then
 			options.generation_option_seen = true
 			i = i + 1
@@ -1652,6 +1661,15 @@ local function parse_args()
 		stderr_write("Error: --base64 requires --binaryoutput\n")
 		os.exit(1)
 	end
+	if options.state_stdout and options.binary_output and
+		not options.hex_output and not options.base64_output then
+		stderr_write("Error: --state-stdout requires --hex or --base64 with binary output\n")
+		os.exit(1)
+	end
+	if options.state_stdout and options.force_true_random then
+		stderr_write("Error: --state-stdout cannot be combined with --true-random\n")
+		os.exit(1)
+	end
 		if options.hex_output and options.base64_output then
 		stderr_write("Error: --hex and --base64 are mutually exclusive\n")
 		os.exit(1)
@@ -1746,9 +1764,9 @@ local function canonical_args_json(options, start_val, end_val, count)
 	end
 
 	if options.choose or options.shuffle or options.weighted then
-		add_string("operation", options.choose and "choose" or
+		add_string("op", options.choose and "choose" or
 			(options.shuffle and "shuffle" or "weighted"))
-		add_string("delimiter", options.delimiter)
+		add_string("delim", options.delimiter)
 		return "{" .. table.concat(fields, ",") .. "}"
 	end
 
@@ -1791,7 +1809,7 @@ local function canonical_args_json(options, start_val, end_val, count)
 		encoding = options.hex_output and "hex" or "text"
 	end
 	add_string("encoding", encoding)
-	if not options.binary_output then add_string("delimiter", options.delimiter) end
+	if not options.binary_output then add_string("delim", options.delimiter) end
 	return "{" .. table.concat(fields, ",") .. "}"
 end
 
@@ -1802,17 +1820,18 @@ local function emit_success_metadata(options, seed_material, start_val, end_val,
 	end
 	local output
 	if seed_material ~= nil then
-		output = '{"sv":1,"rv":' .. state_json.quote(VERSION) ..
+		output = '{"sv":2,"rv":' .. state_json.quote(VERSION) ..
 			',"seed":"0x' .. bytes_to_hex(seed_material) .. '","next_pos":' ..
 			state_json.quote(exact_integer_text(drbg_pos)) .. ',"args":' ..
 			canonical_args_json(options, start_val, end_val, count) .. ',"notices":' ..
 			json_string_array(notices) .. ',"warnings":' .. json_string_array(warnings) .. '}\n'
 	elseif #notices > 0 or #warnings > 0 then
-		output = '{"sv":1,"rv":' .. state_json.quote(VERSION) .. ',"notices":' ..
+		output = '{"sv":2,"rv":' .. state_json.quote(VERSION) .. ',"notices":' ..
 			json_string_array(notices) .. ',"warnings":' .. json_string_array(warnings) .. '}\n'
 	end
 	if output ~= nil then
-		if not io.stderr:write(output) or not io.stderr:flush() then return false end
+		local stream = options.state_stdout and io.stdout or io.stderr
+		if not stream:write(output) or not stream:flush() then return false end
 	end
 	return true
 end
@@ -1884,14 +1903,16 @@ local function main()
 			os.exit(1)
 		end
 		shuffle_array(items, rand_func)
-		for _, item in ipairs(items) do
-			print(item)
-		end
+		io.stdout:write(table.concat(items, options.delimiter), "\n")
 		if not emit_success_metadata(options, seed_material) then os.exit(1) end
 		return
 	end
 
 	if options.weighted then
+		if options.delimiter == "" then
+			stderr_write("Error: --weighted does not support an empty delimiter\n")
+			os.exit(1)
+		end
 		local items = read_stdin_items(options.delimiter)
 		if #items == 0 then
 			stderr_write("Error: no items for weighted selection\n")

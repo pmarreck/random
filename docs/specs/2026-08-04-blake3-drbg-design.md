@@ -1,7 +1,8 @@
 # BLAKE3 keyed-DRBG replacement for PCG32 — design
 
 **Date:** 2026-08-04 · **Status:** implemented and gated in LuaJIT, Zig/C, and
-Rust · **Supersedes:** the PCG32 deterministic generator in `bin/random`
+Rust; independently formalized in Lean 4 · **Supersedes:** the PCG32
+deterministic generator in `bin/random`
 
 ## Why
 
@@ -67,12 +68,17 @@ seek_to_draw(n, width): pos = n * width    # O(1) only for fixed-width raw draws
 - Rust: the official `blake3` crate's pure-Rust backend, using derive-key mode
   and a keyed XOF reader with an explicit byte position. It shares neither
   implementation code nor FFI with the LuaJIT or Zig core.
+- Lean: an independent single-chunk derive-key/keyed-empty-message XOF model
+  in `lean/Randoml`, sufficient for this DRBG's fixed context and 32-byte seed.
+  Its frozen stream matches the other implementations. The current `randoml`
+  compatibility frontend delegates unformalized CLI/distribution work to
+  `randomz`, so Lean is not counted as a fourth independent oracle.
 - The keyed-hash *message* is empty; the key alone determines the stream. The
   KDF context string below domain-separates keys derived through this CLI.
 - LuaJIT numbers represent integers exactly only through 2^53. The Lua oracle
   therefore rejects any seek or consumption that would make `pos > 2^53`.
   Zig or Rust may support a wider internal position later, but the shared
-  public contract remains capped so all three implementations represent it
+  public contract remains capped so all implementations represent it
   exactly.
 - Seeking to a known byte position is O(1). Locating distribution item N from
   only a seed is generally O(N): rejection sampling and nonlinear samplers may
@@ -131,19 +137,25 @@ OS fallback), emit them as a replayable `0x` seed in JSON state, and feed the sa
 32 bytes through the KDF. This replaces `now_seed()` and fails closed if entropy
 is unavailable. Re-running with the emitted seed must reproduce the stream.
 
-`DRANDOM_SEED` (LuaJIT CLI), `DRANDOMZ_SEED` (C/FFI CLI), and `DRANDOMR_SEED`
-(Rust CLI) follow the same rules as `--seed`. Each frontend ignores the other
-two frontends' variables.
+`DRANDOM_SEED` (LuaJIT CLI), `DRANDOMZ_SEED` (C/FFI CLI), `DRANDOMR_SEED`
+(Rust CLI), and `DRANDOML_SEED` (Lean frontend) follow the same rules as
+`--seed`. Each frontend ignores the other frontends' variables.
 
 ## State and persistence
 
 The CLI performs no persistent writes. PCG32 state files, legacy seed files,
 `DRANDOM_CONTEXT`, and `DRANDOM_STATE_HOME` are removed without migration. A
-seed starts at byte position zero. Deterministic success emits one compact JSON
+seed starts at byte position zero. State schema 2 uses short `args.op` and
+`args.delim` keys and rejects schema 1. Deterministic success emits one compact JSON
 object on stderr containing compatibility version `sv`, producer application
 version `rv`, the canonical root `seed`, the actual XOF byte cursor `next_pos`,
 effective semantic `args`, and `notices`/`warnings`. Output values remain solely
 on stdout and are never duplicated in metadata.
+
+`--state-stdout` moves successful deterministic metadata from stderr to the
+final stdout line without duplicating values. It implies deterministic mode,
+conflicts with true-random mode, and requires a textual encoding for binary
+output. Errors remain JSON on stderr.
 
 `sv` is the enforced compatibility gate and must increment for any change to
 state or stream interpretation. `rv` records the producer application's version
@@ -156,7 +168,7 @@ value reads at most 1 MiB from stdin. Explicit CLI arguments override inherited
 `args`; state and `--seed` are mutually exclusive. Stdin population operations
 require inline state. The root seed—not the derived key—is serialized, and all
 three implementations reconstruct the DRBG then seek to `next_pos`. Thus state
-is implementation-neutral: every LuaJIT, Zig/C, and Rust producer→consumer
+is implementation-neutral: every LuaJIT, Zig/C, Rust, and Lean-frontend producer→consumer
 direction is tested across every distribution and direct binary output.
 State JSON must be valid UTF-8 and is structurally bounded to 64 nested levels,
 32 members per object, and 1024 items per array so hostile input cannot overflow
@@ -186,7 +198,7 @@ source changes from PCG32 to the BLAKE3 keystream:
 ## Public API preserved
 
 `-d`/`--deterministic`, `--seed`, the frontend-specific seed environment
-variable, and the `drandom`/`drandomz`/`drandomr` argv[0] aliases remain. Seed
+variable, and the `drandom`/`drandomz`/`drandomr`/`drandoml` aliases remain. Seed
 grammar and deterministic streams deliberately change.
 Implicit cross-call state continuity and its two state environment variables
 are removed.
@@ -257,6 +269,23 @@ independently by both the LuaJIT and Zig/C implementations across the complete
 seeded CLI matrix, while direct library vectors pin state, consumption, and
 every sampler without going through CLI formatting.
 
+## Implemented Lean boundary
+
+`lean/Randoml` is an importable, pure Lean 4.30 library. It independently
+implements the exact BLAKE3 compression/KDF/keyed-XOF construction needed by
+this DRBG, seekable byte generation, big-endian 32/64-bit assembly, and narrow
+and wide rejection sampling. Lean's kernel checks proofs for cursor
+advancement, key preservation, position bounds, compositional stream slicing,
+bounded range mapping, and population preservation under swap schedules.
+
+The `randoml` executable is intentionally a compatibility adapter over the
+installed `randomz` CLI for parsing, entropy, formatting, charts, stdin
+operations, and nonlinear fixed-point distributions. This makes the complete
+CLI usable and places it in the shared state/statistics/benchmark gates, but it
+does not prove or independently reimplement those delegated components. The
+claim boundary and recommendation are recorded in
+`docs/reports/2026-08-26-lean4-evaluation.md`.
+
 ## Finalized boundary decisions
 
 - The public C ABI uses caller-owned `{ key[32], position }` state, explicit
@@ -265,6 +294,6 @@ every sampler without going through CLI formatting.
   returns normalized heights and x-bounds to caller-owned storage; terminal
   protocols and rasterization remain in the CLIs. Panic-capable low-level
   arithmetic remains internal.
-- C, Zig, and Rust share the Lua oracle's exact-integer position ceiling of
+- C, Zig, Rust, and Lean share the Lua oracle's exact-integer position ceiling of
   2^53 so one serialized state has one meaning on every supported
   implementation.

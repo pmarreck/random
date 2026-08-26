@@ -7,7 +7,14 @@
   };
 
   outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
+    # Enumerate the supported native systems explicitly. flake-utils' default
+    # still includes x86_64-darwin, which nixpkgs 26.11 has dropped and this
+    # project no longer promises; Windows remains a Zig/Rust cross target.
+    flake-utils.lib.eachSystem [
+      "x86_64-linux"
+      "aarch64-linux"
+      "aarch64-darwin"
+    ] (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
@@ -110,6 +117,15 @@
           bashInteractive coreutils gnugrep ripgrep gawk bc xxd binutils gnutar
           stdenv.cc libsixel imagemagick nodejs wasm-tools
         ];
+        # The installed 80-case CLI self-test needs ordinary shell utilities,
+        # not the compilers, cross toolchains, image decoders, Node, or WASM
+        # tooling used by the repository-wide CI gates. Keeping this list
+        # separate prevents `random --test` from inflating the runtime closure
+        # by gigabytes merely to make those unrelated tools visible on PATH.
+        installedTestTools = with pkgs; [
+          bashInteractive coreutils gnugrep gnused gawk bc xxd binutils
+        ] ++ lib.optionals stdenv.isLinux [ glibc.bin ]
+          ++ lib.optionals stdenv.isDarwin [ darwin.cctools ];
 
         # Zig 0.16 for the port (docs/plans/2026-08-02-zig-port.md). Pinned to
         # the explicit `zig_0_16` attribute rather than the rolling `zig`, so a
@@ -127,10 +143,11 @@
           pkgs.rustfmt
           pkgs.rustPlatform.cargoSetupHook
         ];
+        leanTools = [ pkgs.lean4 ];
 
         mkRandomr = rustPkgs: runTests: rustPkgs.rustPlatform.buildRustPackage {
           pname = "randomr";
-          version = "0.2.0";
+          version = "0.3.0";
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
           cargoBuildFlags = [ "-p" "randomr-cli" ];
@@ -151,7 +168,7 @@
 			  patchShebangs "$out/share/randomr/tests/random_test"
 			  wrapProgram "$out/bin/randomr" \
 			    --set-default RANDOM_TEST_FILE "$out/share/randomr/tests/random_test" \
-			    --prefix PATH : ${pkgs.lib.makeBinPath (runtimeTools ++ testTools)}
+			    --prefix PATH : ${pkgs.lib.makeBinPath (runtimeTools ++ installedTestTools)}
 			''}
             runHook postInstall
           '';
@@ -191,9 +208,11 @@
 
         random = pkgs.stdenv.mkDerivation {
           pname = "random";
-          version = "0.2.0";
+          version = "0.3.0";
           src = ./.;
-          nativeBuildInputs = [ pkgs.makeWrapper pkgs.zig_0_16 ];
+          nativeBuildInputs = [
+            pkgs.makeWrapper pkgs.removeReferencesTo pkgs.zig_0_16 pkgs.lean4
+          ];
           buildInputs = runtimeTools;
           buildPhase = ''
             runHook preBuild
@@ -201,6 +220,7 @@
             export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-local"
             mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
             zig build -Doptimize=ReleaseFast
+            (cd lean && lake build)
             runHook postBuild
           '';
           installPhase = ''
@@ -215,11 +235,17 @@
             cp zig-out/bin/randomz $out/bin/randomz
             cp ${randomr}/bin/randomr $out/bin/randomr
             cp ${randomr}/libexec/randomr $out/libexec/randomr
+            cp lean/.lake/build/bin/randoml $out/bin/randoml
+            strip --strip-unneeded $out/bin/randoml
             cp zig-out/bin/randomz-wasi.wasm $out/lib/randomz-wasi.wasm
+            # Zig embeds source paths in this release WASM. They are inert
+            # diagnostics, but an intact /nix/store hash makes Nix retain the
+            # complete Zig/LLVM toolchain in the runtime closure.
+            remove-references-to -t ${pkgs.zig_0_16} $out/lib/randomz-wasi.wasm
             cp zig-out/lib/librandomz.a $out/lib/
             cp zig-out/include/randomz.h $out/include/
             cp LICENSE $out/share/licenses/random/LICENSE
-            chmod +x $out/bin/random $out/bin/randomz $out/bin/randomr \
+            chmod +x $out/bin/random $out/bin/randomz $out/bin/randomr $out/bin/randoml \
               $out/libexec/randomr $out/tests/random_test
             # Mode-by-invocation-name: nrandom => normalized, drandom => deterministic
             ln -s random $out/bin/nrandom
@@ -229,14 +255,18 @@
             ln -s randomz $out/bin/drandomz
             ln -s randomr $out/bin/nrandomr
             ln -s randomr $out/bin/drandomr
+            makeWrapper $out/bin/randoml $out/bin/nrandoml \
+              --set RANDOML_INVOKED_AS nrandoml
+            makeWrapper $out/bin/randoml $out/bin/drandoml \
+              --set RANDOML_INVOKED_AS drandoml
             # Resolve '#!/usr/bin/env luajit' to the store luajit
             patchShebangs $out/bin/random $out/tests/random_test
             wrapProgram $out/tests/random_test \
-              --prefix PATH : ${pkgs.lib.makeBinPath (runtimeTools ++ testTools ++ zigTools)}
+              --prefix PATH : ${pkgs.lib.makeBinPath (runtimeTools ++ installedTestTools)}
             runHook postInstall
           '';
           meta = with pkgs.lib; {
-            description = "Cross-platform-identical CSPRNG CLIs in LuaJIT, Zig/C, and Rust";
+            description = "Cross-platform-identical CSPRNG CLIs in LuaJIT, Zig/C, Rust, and Lean";
             license = licenses.mit;
             platforms = platforms.unix;
             mainProgram = "random";
@@ -255,6 +285,7 @@
           random = random;
           randomz = random;
           randomr = randomr;
+          randoml = random;
 
           # Exposed so a machine of ANY architecture can build the exact
           # interpreter tests/cross_arch_diff pins, without also needing the
@@ -287,12 +318,18 @@
           meta.description = "Run the Rust randomr CLI";
         };
 
+        apps.randoml = {
+          type = "app";
+          program = "${random}/bin/randoml";
+          meta.description = "Run the Lean frontend and proof-backed deterministic model";
+        };
+
         # Hermetic CI check: runs the FULL suite runner (./test), not just
         # tests/random_test, so fixed_test/golden_test/kernel_bc_sweep are
         # actually exercised here too, not just the CLI-behavior suite.
         checks.random-test = pkgs.runCommand "random-test"
           {
-            nativeBuildInputs = runtimeTools ++ testTools ++ zigTools ++ rustTools;
+            nativeBuildInputs = runtimeTools ++ testTools ++ zigTools ++ rustTools ++ leanTools;
             cargoDeps = rustCargoDeps;
           } ''
             cp -r ${./.} work
@@ -332,7 +369,7 @@
 
         checks.stats-smoke = pkgs.runCommand "random-stats-smoke"
           {
-            nativeBuildInputs = runtimeTools ++ testTools ++ zigTools ++ rustTools;
+            nativeBuildInputs = runtimeTools ++ testTools ++ zigTools ++ rustTools ++ leanTools;
             cargoDeps = rustCargoDeps;
           } ''
             cp -r ${./.} work
@@ -359,6 +396,15 @@
 
         checks.package-smoke = pkgs.runCommand "random-package-smoke"
           { nativeBuildInputs = [ pkgs.stdenv.cc pkgs.wasm-tools ]; } ''
+            export HOME="$TMPDIR/home"
+            export XDG_CONFIG_HOME="$HOME/.config"
+            export XDG_CACHE_HOME="$HOME/.cache"
+            export XDG_DATA_HOME="$HOME/.local/share"
+            export XDG_STATE_HOME="$HOME/.local/state"
+            export XDG_RUNTIME_DIR="$TMPDIR/runtime"
+            mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" \
+              "$XDG_DATA_HOME" "$XDG_STATE_HOME" "$XDG_RUNTIME_DIR"
+            chmod 0700 "$XDG_RUNTIME_DIR"
             test -s ${random}/share/licenses/random/LICENSE
             test -s ${random}/lib/randomz-wasi.wasm
             wasm-tools validate ${random}/lib/randomz-wasi.wasm
@@ -370,15 +416,20 @@
             ${random}/bin/drandomz --seed 42 -c 1 >/dev/null
             ${random}/bin/nrandomz --seed 42 -c 1 >/dev/null
             ${random}/bin/randomr --about >/dev/null
+            ${random}/bin/randoml --about >/dev/null
             ${random}/libexec/randomr --about >/dev/null
             ${random}/bin/drandomr --seed 42 -c 1 >/dev/null
             ${random}/bin/nrandomr --seed 42 -c 1 >/dev/null
+            ${random}/bin/drandoml --seed 42 -c 1 >/dev/null
+            ${random}/bin/nrandoml --seed 42 -c 1 >/dev/null
             ${random}/bin/drandom --seed 42 -c 1 >/dev/null
             ${random}/bin/nrandom --seed 42 -c 1 >/dev/null
             test "$(${random}/bin/random --seed 42 -c 8)" = \
               "$(${random}/bin/randomz --seed 42 -c 8)"
             test "$(${random}/bin/random --seed 42 -c 8)" = \
               "$(${random}/bin/randomr --seed 42 -c 8)"
+            test "$(${random}/bin/random --seed 42 -c 8)" = \
+              "$(${random}/bin/randoml --seed 42 -c 8)"
             test "$(${random}/bin/randomr --seed 42 -c 8)" = \
               "$(${random}/libexec/randomr --seed 42 -c 8)"
             ${random}/bin/random --test
@@ -457,7 +508,7 @@
           else pkgs.runCommand "random-windows-x64-smoke-not-applicable" { } "touch $out";
 
         devShells.default = pkgs.mkShell {
-          packages = runtimeTools ++ testTools ++ zigTools ++
+          packages = runtimeTools ++ testTools ++ zigTools ++ leanTools ++
             [ pkgs.cargo pkgs.clippy pkgs.rustc pkgs.rustfmt pkgs.openssh pkgs.rsync ];
         };
       });

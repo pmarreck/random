@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Lean frontend acceptance against the shared CLI oracle.
+set -u
+set -o pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+lean_cli="${RANDOML_TEST_CLI:-$root/lean/.lake/build/bin/randoml}"
+zig_cli="${RANDOML_TEST_ZIG_CLI:-$root/zig-out/bin/randomz}"
+
+if [ -z "${RANDOML_TEST_CLI:-}" ]; then
+	(cd "$root/lean" && lake build) || exit 1
+fi
+if [ -z "${RANDOML_TEST_ZIG_CLI:-}" ]; then
+	(cd "$root" && zig build -Doptimize=ReleaseFast) || exit 1
+fi
+if [ ! -x "$lean_cli" ] || [ ! -x "$zig_cli" ]; then
+	echo "randoml test RED: Lean frontend or Zig backend is absent" >&2
+	exit 1
+fi
+
+RANDOML_BACKEND="$zig_cli" RANDOM_TEST_CLI="$lean_cli" \
+	RANDOM_TEST_CLI_KIND=lean RANDOM_TEST_DEPTH=0 "$root/tests/random_test"

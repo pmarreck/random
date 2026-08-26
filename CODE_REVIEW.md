@@ -513,3 +513,125 @@ agreement; its semantic authority is differential rather than a separate
 external oracle. Together with the independent BLAKE3 implementations and
 existing sampler vectors, this is an appropriate control for a state transport
 feature rather than a new random algorithm.
+
+---
+
+# State-schema 2, byte-delimiter, and Lean 4 milestone addendum
+
+**Date:** 2026-08-26
+**Scope:** schema-2 continuation transport, empty-delimiter byte semantics,
+the Lean deterministic model/proofs/frontend, Nix packaging, and the shared
+four-command-family gates.
+**Method:** one primary-agent review across all thirteen dimensions, aided by
+the current codescan index, direct source inspection, hostile probes, a
+controlled mutation, and the complete local test/statistical/benchmark gates.
+No separate review agent was used for this addendum.
+**Result:** no critical finding remains. Three substantive review findings were
+fixed; the remaining limitations below are explicit proof/product boundaries.
+
+## 1. Functionality
+
+- **Fixed — WARNING:** a manually constructed Lean `Drbg` with a cursor already
+  above 2^53 could accept a zero-byte fill because natural-number subtraction
+  truncated the bound to zero. `Drbg.fill` now rejects an invalid incoming
+  cursor, and `fill_respects_position_limit` proves the successful result
+  cursor itself is at or below the ceiling.
+- **Fixed — WARNING:** `Drbg.init` accepted arbitrary seed lengths even though
+  the wire contract is exactly 32 bytes and the modeled BLAKE3 subset is
+  single-block. Initialization now returns `none` unless the seed is exactly
+  32 bytes.
+- **Remaining — explicit boundary:** `randoml` delegates its complete CLI,
+  entropy, fixed-point distribution, and formatting surface to `randomz`.
+  It is compatible but not a fourth independent behavioral oracle.
+
+## 2. Coverage adequacy
+
+- **Fixed — WARNING:** one frozen seed/cursor vector did not adequately probe
+  block boundaries or seeking in the independent Lean DRBG. The trust-zero
+  gate now retains that frozen vector and adds five LuaJIT-oracle differentials
+  across seeds, offsets 0/1/63/64/4097, and multi-block reads, plus seed and
+  position boundary controls.
+- The shared state gate covers every 4×4 producer/consumer direction for fixed
+  and variable consumption and every byte-oriented stdin operation direction.
+
+## 3. Test validity
+
+- **Mutation-verified:** flipping one bit in the Lean BLAKE3 IV made the external
+  vector gate fail; restoring the bit returned it to green. The proof-source
+  scan, trust-zero elaboration, and `#print axioms` audit are separate controls.
+
+## 4. Fast coverage
+
+No sleeps or timing assertions were introduced. The five extra pure Lean
+differentials add seconds, not minutes; the multi-minute full gate remains
+dominated by release/cross builds and intentional mutation builds.
+
+## 5. Duplication
+
+Schema serialization remains deliberately independent in Lua, C, and Rust so
+the differential can detect a single-implementation mistake. The shared Bash
+contract is the single behavioral owner. No actionable duplication finding.
+
+## 6. Organization
+
+The Lean modules separate BLAKE3, DRBG/range execution, and proofs. `Main.lean`
+states its subprocess trust boundary directly. The established large C CLI
+translation-unit warning remains, but this feature did not materially worsen
+it.
+
+## 7. Complexity
+
+State JSON is capped at 1 MiB and already enforces depth/member/item limits.
+Empty-delimiter shuffle is O(n) storage plus O(n) Fisher–Yates work. The Lean
+BLAKE3 reference allocates arrays and is not presented as a throughput engine.
+Removing unnecessary Lean interpreter support reduced the stripped adapter
+from 10,320,384 to 2,007,232 bytes without changing behavior or proofs.
+
+## 8. File purpose
+
+Every new Lean and test file has one named role. The evaluation report is the
+claim matrix and judgment log requested for this experiment; it is not a
+second specification.
+
+## 9. Language features
+
+Lean source uses spaces because Lean 4.30 rejects tab indentation. The formal
+model uses machine words for executable BLAKE3 but does not yet prove a
+refinement to a separate `BitVec`/`Nat` compression specification.
+
+## 10. Memory and resources
+
+The C byte-item spans retain ownership in one backing allocation and preserve
+embedded NUL bytes without calling string routines on byte items. Rust owns
+each byte item. The Lean frontend waits for its child and introduces no
+persistent state or temporary payload files.
+
+- **Fixed — WARNING:** the initial installed Nix closure was 2.4 GiB because
+  the CLI self-test wrapper retained the full CI toolchain and embedded Zig
+  source paths made the WASM retain Zig/LLVM. A minimal, package-smoke-verified
+  self-test PATH plus installation-time reference neutralization reduced the
+  closure to 127.8 MiB without removing the installed self-test or WASM.
+
+## 11. FFI correctness
+
+The schema/delimiter work does not change the public C ABI. The complete ABI
+symbol/layout test and C CLI dogfooding remain green. `randoml` crosses a
+process boundary, not the C ABI, and is documented accordingly.
+
+## 12. Error handling and proof gaps
+
+- **Remaining — WARNING:** `Drbg.range` is a `partial` executable rejection
+  loop. Mapping bounds are proved, but termination and statistical uniformity
+  of the complete loop are not; the report does not claim otherwise.
+- **Remaining — ADVISORY:** Lean's standard `List String` argv boundary cannot
+  distinguish invalid UTF-8 replacement from a literal U+FFFD. The frontend
+  fails closed, creating one documented false rejection. Exact parity would
+  require a native raw-argv launcher that adds no value to the currently
+  delegated CLI.
+- **Fixed — ADVISORY:** package smoke inherited `/homeless-shelter` as HOME,
+  so recoverable test-shim cleanup printed a failed-directory diagnostic. It
+  now uses private HOME/XDG directories and a mode-0700 runtime directory.
+
+## 13. Database access
+
+Not applicable. No command family persists RNG state or uses a database.

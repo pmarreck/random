@@ -84,6 +84,7 @@ typedef struct options {
 	uint8_t seed[32];
 	bool state_set;
 	bool state_from_stdin;
+	bool state_stdout;
 	const char *state_text;
 	char *state_owned_text;
 	uint64_t state_position;
@@ -130,10 +131,16 @@ typedef struct generated_value {
 	randomz_fixed fixed;
 } generated_value;
 
+typedef struct item_span {
+	char *data;
+	size_t length;
+} item_span;
+
 typedef struct item_list {
-	char **items;
+	item_span *items;
 	size_t count;
 	char *storage;
+	size_t storage_length;
 } item_list;
 
 static const char *program_name = "randomz";
@@ -145,7 +152,7 @@ static const char json_type_error_marker;
 
 static void print_error(const char *message)
 {
-	fputs("{\"sv\":1,\"rv\":\"" RANDOMZ_VERSION
+	fputs("{\"sv\":2,\"rv\":\"" RANDOMZ_VERSION
 		"\",\"error\":{\"code\":\"usage\",\"message\":", stderr);
 	state_json_write_string(stderr, message);
 	fputs("},\"notices\":[],\"warnings\":[]}\n", stderr);
@@ -449,7 +456,7 @@ static void print_help(distribution dist, chart_renderer renderer)
 	puts("  -c, --count N       Output N numbers (default: 1, or 1024 with -b)");
 	puts("  -d, --deterministic Use the cross-platform-identical BLAKE3 keyed XOF");
 	puts("      --true-random   Force fresh OS/source CSPRNG entropy; ignore DRANDOMZ_SEED");
-	puts("      --delimiter S   Set delimiter for output/input (default: newline)");
+	puts("      --delimiter S   Set delimiter; empty means individual input bytes");
 	puts("      --precision N   Truncate fractional output to 0..18 places (default: 18)");
 	puts("      --truncate N    Alias for --precision");
 	puts("  -h, --help          Show this help message");
@@ -458,6 +465,7 @@ static void print_help(distribution dist, chart_renderer renderer)
 	puts("      --seed N|0xHEX  Set unsigned 256-bit integer seed (implies -d)");
 	puts("      --state [JSON|-] Resume from JSON; omitted value or '-' reads stdin");
 	puts("      --resume [JSON|-] Alias for --state");
+	puts("      --state-stdout  Append resumable state as the final stdout line");
 	puts("      --random-source PATH  Read entropy from PATH instead of the OS");
 	puts("      --no-wait       Use nonblocking getrandom; fail if the pool is not ready");
 	puts("      --kitty         Force Kitty graphics for a distribution help chart");
@@ -482,7 +490,8 @@ static void print_help(distribution dist, chart_renderer renderer)
 	puts("");
 	puts("Deterministic mode never persists state. A seed starts at stream position");
 	puts("zero; --state/--resume continues at its exact BLAKE3 byte position.");
-	puts("Deterministic success metadata and all diagnostics are JSON on stderr.");
+	puts("Deterministic success metadata and all diagnostics are JSON on stderr;");
+	puts("--state-stdout moves success state to the final stdout line.");
 	puts("Without a seed, deterministic mode obtains 32 bytes from OS entropy.");
 	puts("Seeded output, including alternate distributions, is byte-identical");
 	puts("across supported operating systems and CPU architectures.");
@@ -703,7 +712,7 @@ static int apply_state(options *opts, const char *range_literal)
 		}
 	}
 	const state_json_value *sv = state_json_get(root, "sv");
-	if (sv == NULL || sv->kind != STATE_JSON_NUMBER || strcmp(sv->text, "1") != 0) {
+	if (sv == NULL || sv->kind != STATE_JSON_NUMBER || strcmp(sv->text, "2") != 0) {
 		print_error("unsupported state schema version"); return 1;
 	}
 	const char *rv = json_string(root, "rv", true, error, sizeof(error));
@@ -740,9 +749,9 @@ static int apply_state(options *opts, const char *range_literal)
 			}
 		}
 	}
-	static const char *const args_allowed[] = {"operation", "distribution", "range", "count",
+	static const char *const args_allowed[] = {"op", "distribution", "range", "count",
 		"mean", "stddev", "rate", "lambda", "alpha", "beta", "precision", "binary",
-		"encoding", "delimiter"};
+		"encoding", "delim"};
 	for (size_t i = 0; i < args->member_count; ++i) {
 		if (!json_key_allowed(args->members[i].key, args_allowed,
 			sizeof(args_allowed) / sizeof(args_allowed[0]))) {
@@ -752,7 +761,7 @@ static int apply_state(options *opts, const char *range_literal)
 	}
 	bool stdin_mode = opts->choose || opts->shuffle || opts->weighted;
 	if (!stdin_mode && !opts->dist_cli && range_literal == NULL) {
-		const char *operation = json_string(args, "operation", false, error, sizeof(error));
+		const char *operation = json_string(args, "op", false, error, sizeof(error));
 		if (operation == &json_type_error_marker) { print_error(error); return 1; }
 		if (operation != NULL) {
 			if (strcmp(operation, "choose") == 0) opts->choose = true;
@@ -799,10 +808,9 @@ static int apply_state(options *opts, const char *range_literal)
 		}
 	}
 	if (!opts->delimiter_set) {
-		text = json_string(args, "delimiter", false, error, sizeof(error));
+		text = json_string(args, "delim", false, error, sizeof(error));
 		if (text == &json_type_error_marker) { print_error(error); return 1; }
 		if (text != NULL) {
-			if (*text == '\0') { print_error("state delimiter is invalid"); return 1; }
 			opts->delimiter = text;
 		}
 	}
@@ -998,6 +1006,10 @@ static int parse_arguments(int argc, char **argv, options *opts)
 			opts->base64_output = true;
 			opts->encoding_set = true;
 			opts->generation_option_seen = true;
+		} else if (strcmp(arg, "--state-stdout") == 0) {
+			opts->state_stdout = true;
+			opts->deterministic = true;
+			opts->generation_option_seen = true;
 		} else if (strcmp(arg, "--choose") == 0) {
 			opts->choose = true;
 			opts->generation_option_seen = true;
@@ -1033,10 +1045,6 @@ static int parse_arguments(int argc, char **argv, options *opts)
 		} else if (strcmp(arg, "--delimiter") == 0 || strcmp(arg, "--delim") == 0) {
 			opts->generation_option_seen = true;
 			if (require_next(argc, argv, &i, "--delimiter requires a value", &value)) return 1;
-			if (*value == '\0') {
-				print_error("--delimiter must not be empty");
-				return 1;
-			}
 			if (!state_json_valid_utf8(value)) {
 				print_error("--delimiter must be valid UTF-8");
 				return 1;
@@ -1290,6 +1298,15 @@ static int parse_arguments(int argc, char **argv, options *opts)
 	}
 	if (opts->base64_output && !opts->binary_output) {
 		print_error("--base64 requires --binaryoutput");
+		return 1;
+	}
+	if (opts->state_stdout && opts->binary_output &&
+		!opts->hex_output && !opts->base64_output) {
+		print_error("--state-stdout requires --hex or --base64 with binary output");
+		return 1;
+	}
+	if (opts->state_stdout && opts->force_true_random) {
+		print_error("--state-stdout cannot be combined with --true-random");
 		return 1;
 	}
 	if (opts->hex_output && opts->base64_output) {
@@ -1549,7 +1566,7 @@ static char *trim_in_place(char *text)
 	return text;
 }
 
-static char *read_stdin_all(void)
+static char *read_stdin_all(size_t *out_length)
 {
 	size_t length = 0;
 	size_t capacity = 4096;
@@ -1569,6 +1586,7 @@ static char *read_stdin_all(void)
 	}
 	if (ferror(stdin)) { free(buffer); return NULL; }
 	buffer[length] = '\0';
+	*out_length = length;
 	return buffer;
 }
 
@@ -1580,8 +1598,23 @@ static bool delimiter_contains(const char *delimiter, char c)
 static item_list read_items(const char *delimiter)
 {
 	item_list list = {0};
-	list.storage = read_stdin_all();
+	list.storage = read_stdin_all(&list.storage_length);
 	if (list.storage == NULL) return list;
+	if (*delimiter == '\0') {
+		if (list.storage_length == 0) return list;
+		list.items = malloc(list.storage_length * sizeof(*list.items));
+		if (list.items == NULL) {
+			free(list.storage);
+			list.storage = NULL;
+			return list;
+		}
+		list.count = list.storage_length;
+		for (size_t index = 0; index < list.count; ++index) {
+			list.items[index].data = list.storage + index;
+			list.items[index].length = 1;
+		}
+		return list;
+	}
 	char *content = trim_in_place(list.storage);
 	if (*content == '\0') return list;
 
@@ -1611,7 +1644,7 @@ static item_list read_items(const char *delimiter)
 		if (*start == '\0') continue;
 		if (list.count == capacity) {
 			capacity *= 2;
-			char **grown = realloc(list.items, capacity * sizeof(*list.items));
+			item_span *grown = realloc(list.items, capacity * sizeof(*list.items));
 			if (grown == NULL) {
 				free(list.items);
 				free(list.storage);
@@ -1622,7 +1655,9 @@ static item_list read_items(const char *delimiter)
 			}
 			list.items = grown;
 		}
-		list.items[list.count++] = start;
+		list.items[list.count].data = start;
+		list.items[list.count].length = strlen(start);
+		list.count++;
 	}
 	return list;
 }
@@ -1635,6 +1670,10 @@ static void free_items(item_list *list)
 
 static int handle_stdin_operation(const options *opts, rng_source *source)
 {
+	if (opts->weighted && *opts->delimiter == '\0') {
+		print_error("--weighted does not support an empty delimiter");
+		return 1;
+	}
 	item_list list = read_items(opts->delimiter);
 	if (list.storage == NULL || (list.count > 0 && list.items == NULL)) {
 		free_items(&list);
@@ -1653,26 +1692,36 @@ static int handle_stdin_operation(const options *opts, rng_source *source)
 	if (opts->choose) {
 		int64_t index;
 		status = rng_range(source, 1, (int64_t)list.count, &index);
-		if (status == RANDOMZ_OK) puts(list.items[index - 1]);
+		if (status == RANDOMZ_OK) {
+			item_span item = list.items[index - 1];
+			fwrite(item.data, 1, item.length, stdout);
+			fputc('\n', stdout);
+		}
 	} else if (opts->shuffle) {
 		for (size_t i = list.count; i > 1 && status == RANDOMZ_OK; --i) {
 			int64_t index;
 			status = rng_range(source, 1, (int64_t)i, &index);
 			if (status == RANDOMZ_OK) {
-				char *temporary = list.items[i - 1];
+				item_span temporary = list.items[i - 1];
 				list.items[i - 1] = list.items[index - 1];
 				list.items[index - 1] = temporary;
 			}
 		}
-		if (status == RANDOMZ_OK) for (size_t i = 0; i < list.count; ++i) puts(list.items[i]);
+		if (status == RANDOMZ_OK) {
+			for (size_t i = 0; i < list.count; ++i) {
+				if (i > 0) fputs(opts->delimiter, stdout);
+				fwrite(list.items[i].data, 1, list.items[i].length, stdout);
+			}
+			fputc('\n', stdout);
+		}
 	} else {
 		int64_t *weights = calloc(list.count, sizeof(*weights));
 		int64_t total = 0;
 		if (weights == NULL) status = RANDOMZ_BUFFER_TOO_SMALL;
 		for (size_t i = 0; i < list.count && status == RANDOMZ_OK; ++i) {
-			char *colon = strrchr(list.items[i], ':');
-			if (colon == NULL || colon == list.items[i] || colon[1] == '\0') {
-				print_errorf("weighted item must be in format 'value:weight', got: %s", list.items[i]);
+			char *colon = strrchr(list.items[i].data, ':');
+			if (colon == NULL || colon == list.items[i].data || colon[1] == '\0') {
+				print_errorf("weighted item must be in format 'value:weight', got: %s", list.items[i].data);
 				status = RANDOMZ_INVALID_ARGUMENT;
 				break;
 			}
@@ -1681,11 +1730,11 @@ static int handle_stdin_operation(const options *opts, rng_source *source)
 				break;
 			}
 			if (status != RANDOMZ_OK) {
-				print_errorf("weighted item must be in format 'value:weight', got: %s", list.items[i]);
+				print_errorf("weighted item must be in format 'value:weight', got: %s", list.items[i].data);
 				break;
 			}
 			if (parse_safe_int(colon + 1, &weights[i]) != RANDOMZ_OK) {
-				print_errorf("weighted item weight is out of range (must be a whole number no larger than 2^53): %s", list.items[i]);
+				print_errorf("weighted item weight is out of range (must be a whole number no larger than 2^53): %s", list.items[i].data);
 				status = RANDOMZ_INVALID_ARGUMENT;
 				break;
 			}
@@ -1696,6 +1745,7 @@ static int handle_stdin_operation(const options *opts, rng_source *source)
 			}
 			total += weights[i];
 			*colon = '\0';
+			list.items[i].length = (size_t)(colon - list.items[i].data);
 		}
 		if (status == RANDOMZ_OK && total == 0) {
 			print_error("total weighted-item weight must be positive");
@@ -1707,7 +1757,11 @@ static int handle_stdin_operation(const options *opts, rng_source *source)
 			int64_t cumulative = 0;
 			for (size_t i = 0; i < list.count && status == RANDOMZ_OK; ++i) {
 				cumulative += weights[i];
-				if (pick <= cumulative) { puts(list.items[i]); break; }
+				if (pick <= cumulative) {
+					fwrite(list.items[i].data, 1, list.items[i].length, stdout);
+					fputc('\n', stdout);
+					break;
+				}
 			}
 		}
 		free(weights);
@@ -1880,12 +1934,12 @@ static int emit_text(const options *opts, rng_source *source,
 	return 0;
 }
 
-static int write_arg_string(bool *first, const char *key, const char *value)
+static int write_arg_string(FILE *stream, bool *first, const char *key, const char *value)
 {
-	if (!*first && fputc(',', stderr) == EOF) return 1;
+	if (!*first && fputc(',', stream) == EOF) return 1;
 	*first = false;
-	return state_json_write_string(stderr, key) || fputc(':', stderr) == EOF ||
-		state_json_write_string(stderr, value);
+	return state_json_write_string(stream, key) || fputc(':', stream) == EOF ||
+		state_json_write_string(stream, value);
 }
 
 static const char *distribution_name(distribution dist)
@@ -1905,72 +1959,73 @@ static int emit_metadata(const options *opts, const randomz_drbg *drbg,
 	int64_t start, int64_t end, uint64_t count, bool has_bounds)
 {
 	if (drbg == NULL && !default_range_notice && debug_warning == NULL) return 0;
+	FILE *stream = opts->state_stdout ? stdout : stderr;
 	static const char hex[] = "0123456789abcdef";
 	if (drbg != NULL) {
-		fputs("{\"sv\":1,\"rv\":\"" RANDOMZ_VERSION "\",\"seed\":\"0x", stderr);
+		fputs("{\"sv\":2,\"rv\":\"" RANDOMZ_VERSION "\",\"seed\":\"0x", stream);
 		for (size_t i = 0; i < 32; ++i) {
-			fputc(hex[opts->seed[i] >> 4], stderr);
-			fputc(hex[opts->seed[i] & 15], stderr);
+			fputc(hex[opts->seed[i] >> 4], stream);
+			fputc(hex[opts->seed[i] & 15], stream);
 		}
-		fprintf(stderr, "\",\"next_pos\":\"%" PRIu64 "\",\"args\":{", drbg->position);
+		fprintf(stream, "\",\"next_pos\":\"%" PRIu64 "\",\"args\":{", drbg->position);
 		bool first = true;
 		if (opts->choose || opts->shuffle || opts->weighted) {
 			const char *operation = opts->choose ? "choose" : (opts->shuffle ? "shuffle" : "weighted");
-			if (write_arg_string(&first, "operation", operation) ||
-				write_arg_string(&first, "delimiter", opts->delimiter)) return 1;
+			if (write_arg_string(stream, &first, "op", operation) ||
+				write_arg_string(stream, &first, "delim", opts->delimiter)) return 1;
 		} else if (has_bounds) {
 			char number[96];
-			if (write_arg_string(&first, "distribution", distribution_name(opts->dist))) return 1;
+			if (write_arg_string(stream, &first, "distribution", distribution_name(opts->dist))) return 1;
 			bool range_scaled = (opts->dist == DIST_UNIFORM || opts->dist == DIST_NORMAL) &&
 				!(opts->dist == DIST_NORMAL && (opts->mean_set || opts->stddev_set));
 			if (range_scaled) {
 				snprintf(number, sizeof(number), "%" PRId64 "..%" PRId64, start, end);
-				if (write_arg_string(&first, "range", number)) return 1;
+				if (write_arg_string(stream, &first, "range", number)) return 1;
 			}
 			snprintf(number, sizeof(number), "%" PRIu64, count);
-			if (write_arg_string(&first, "count", number)) return 1;
+			if (write_arg_string(stream, &first, "count", number)) return 1;
 			if (opts->dist == DIST_NORMAL && !range_scaled) {
-				if (write_arg_string(&first, "mean", opts->mean_text != NULL ? opts->mean_text : "0") ||
-					write_arg_string(&first, "stddev", opts->stddev_text != NULL ? opts->stddev_text : "1")) return 1;
+				if (write_arg_string(stream, &first, "mean", opts->mean_text != NULL ? opts->mean_text : "0") ||
+					write_arg_string(stream, &first, "stddev", opts->stddev_text != NULL ? opts->stddev_text : "1")) return 1;
 			} else if (opts->dist == DIST_EXPONENTIAL) {
-				if (write_arg_string(&first, "rate", opts->rate_text != NULL ? opts->rate_text : "1")) return 1;
+				if (write_arg_string(stream, &first, "rate", opts->rate_text != NULL ? opts->rate_text : "1")) return 1;
 			} else if (opts->dist == DIST_POISSON) {
 				const char *lambda = opts->lambda_text != NULL ? opts->lambda_text :
 					(opts->mean_text != NULL ? opts->mean_text : "1");
-				if (write_arg_string(&first, "lambda", lambda)) return 1;
+				if (write_arg_string(stream, &first, "lambda", lambda)) return 1;
 			} else if (opts->dist == DIST_LOG_NORMAL) {
-				if (write_arg_string(&first, "mean", opts->mean_text != NULL ? opts->mean_text : "0") ||
-					write_arg_string(&first, "stddev", opts->stddev_text != NULL ? opts->stddev_text : "1")) return 1;
+				if (write_arg_string(stream, &first, "mean", opts->mean_text != NULL ? opts->mean_text : "0") ||
+					write_arg_string(stream, &first, "stddev", opts->stddev_text != NULL ? opts->stddev_text : "1")) return 1;
 			} else if (opts->dist == DIST_BETA) {
-				if (write_arg_string(&first, "alpha", opts->alpha_text != NULL ? opts->alpha_text : "2") ||
-					write_arg_string(&first, "beta", opts->beta_text != NULL ? opts->beta_text : "2")) return 1;
+				if (write_arg_string(stream, &first, "alpha", opts->alpha_text != NULL ? opts->alpha_text : "2") ||
+					write_arg_string(stream, &first, "beta", opts->beta_text != NULL ? opts->beta_text : "2")) return 1;
 			}
 			if (opts->dist == DIST_EXPONENTIAL || opts->dist == DIST_LOG_NORMAL ||
 				opts->dist == DIST_BETA) {
 				snprintf(number, sizeof(number), "%zu", opts->precision);
-				if (write_arg_string(&first, "precision", number)) return 1;
+				if (write_arg_string(stream, &first, "precision", number)) return 1;
 			}
 			if (opts->binary_output) {
-				if (!first) fputc(',', stderr);
+				if (!first) fputc(',', stream);
 				first = false;
-				fputs("\"binary\":true", stderr);
+				fputs("\"binary\":true", stream);
 			}
 			const char *encoding = opts->binary_output ?
 				(opts->base64_output ? "base64" : (opts->hex_output ? "binary-hex" : "raw")) :
 				(opts->hex_output ? "hex" : "text");
-			if (write_arg_string(&first, "encoding", encoding)) return 1;
-			if (!opts->binary_output && write_arg_string(&first, "delimiter", opts->delimiter)) return 1;
+			if (write_arg_string(stream, &first, "encoding", encoding)) return 1;
+			if (!opts->binary_output && write_arg_string(stream, &first, "delim", opts->delimiter)) return 1;
 		}
-		fputc('}', stderr);
+		fputc('}', stream);
 	} else {
-		fputs("{\"sv\":1,\"rv\":\"" RANDOMZ_VERSION "\"", stderr);
+		fputs("{\"sv\":2,\"rv\":\"" RANDOMZ_VERSION "\"", stream);
 	}
-	fputs(",\"notices\":[", stderr);
-	if (default_range_notice) state_json_write_string(stderr, "with the default range 0..99");
-	fputs("],\"warnings\":[", stderr);
-	if (debug_warning != NULL) state_json_write_string(stderr, debug_warning);
-	fputs("]}\n", stderr);
-	return fflush(stderr) == EOF || ferror(stderr);
+	fputs(",\"notices\":[", stream);
+	if (default_range_notice) state_json_write_string(stream, "with the default range 0..99");
+	fputs("],\"warnings\":[", stream);
+	if (debug_warning != NULL) state_json_write_string(stream, debug_warning);
+	fputs("]}\n", stream);
+	return fflush(stream) == EOF || ferror(stream);
 }
 
 static randomz_distribution public_distribution(distribution dist)
