@@ -495,6 +495,19 @@ static void print_help(distribution dist, chart_renderer renderer)
 	puts("Without a seed, deterministic mode obtains 32 bytes from OS entropy.");
 	puts("Seeded output, including alternate distributions, is byte-identical");
 	puts("across supported operating systems and CPU architectures.");
+	puts("");
+	puts("Examples:");
+	printf("  %s                    # Uniform random 0-99\n", program_name);
+	printf("  %s d20                # Roll a 20-sided die\n", program_name);
+	printf("  %s -n --mean 50 --stddev 10  # Normal, custom params\n", program_name);
+	printf("  %s -d --seed 42       # Deterministic\n", program_name);
+	printf("  state=$(%s -d --seed 42 d20 2>&1 >/dev/null)\n", program_name);
+	printf("  %s --resume \"$state\" # Continue that exact sequence\n", program_name);
+	printf("  packet=$(%s --seed 42 --state-stdout d20); "
+		"state=$(printf '%%s\\n' \"$packet\" | tail -n 1)\n", program_name);
+	printf("  %s --hex -c 5         # 5 hex numbers\n", program_name);
+	printf("  echo -e 'a\\nb\\nc' | %s --choose\n", program_name);
+	printf("  echo 'rare:1,common:10' | %s --weighted --delimiter ','\n", program_name);
 	print_distribution_help(dist, renderer);
 }
 
@@ -940,14 +953,22 @@ static int parse_arguments(int argc, char **argv, options *opts)
 		const char *value;
 		if (strcmp(arg, "--about") == 0 || strcmp(arg, "-a") == 0) {
 			print_about();
-			exit(fflush(stdout) == 0 ? 0 : 1);
+			if (fflush(stdout) == EOF || ferror(stdout)) {
+				print_error("stdout write failed");
+				exit(1);
+			}
+			exit(0);
 		} else if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0) {
 			distribution help_dist = help_distribution_from_args(argc, argv);
 			chart_renderer renderer = CHART_UTF8;
 			if (help_dist != DIST_UNIFORM &&
 				!chart_renderer_for_help(argc, argv, &renderer)) return 1;
 			print_help(help_dist, renderer);
-			exit(fflush(stdout) == 0 ? 0 : 1);
+			if (fflush(stdout) == EOF || ferror(stdout)) {
+				print_error("stdout write failed");
+				exit(1);
+			}
+			exit(0);
 		} else if (strcmp(arg, "--test") == 0) {
 			exit(run_test_suite());
 		} else if (strcmp(arg, "--deterministic") == 0 || strcmp(arg, "-d") == 0) {

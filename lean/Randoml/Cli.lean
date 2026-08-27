@@ -1,4 +1,5 @@
 import Randoml.Chart
+import Randoml.GeneratedCharts
 import Randoml.Decimal
 import Randoml.CliOptions
 import Randoml.CliSource
@@ -185,6 +186,59 @@ def printChart (arguments : Array ByteArray) (spec : Chart.Spec) (help : Bool) :
   writeBytes stdout (spec.axis ++ "\n").toUTF8
   pure (.ok ())
 
+def embeddedKey : Mode → String
+  | .normal => "normal"
+  | .exponential => "exponential"
+  | .poisson => "poisson"
+  | .logNormal => "log_normal"
+  | .beta => "beta"
+  | .uniform => ""
+
+def renderEmbeddedKitty (chart : GeneratedCharts.EmbeddedChart) (tmux : Bool) :
+    ByteArray := Id.run do
+  let payload := chart.pngBase64.toUTF8
+  let mut output := ByteArray.empty
+  let mut offset := 0
+  while offset < payload.size do
+    let ending := min (offset + 4096) payload.size
+    let finalChunk := ending == payload.size
+    let control := if offset == 0 then
+      s!"a=T,f=100,t=d,c=56,r=12,C=1,q=2,m={if finalChunk then 0 else 1}"
+    else
+      s!"m={if finalChunk then 0 else 1}"
+    output := output ++ Chart.kittySequence control.toUTF8
+      (payload.extract offset ending) tmux
+    offset := ending
+  for _ in [0:12] do
+    output := output ++ "\r\n".toUTF8
+  pure output
+
+def renderEmbeddedSixel (chart : GeneratedCharts.EmbeddedChart) : ByteArray := Id.run do
+  let mut output := ByteArray.empty.push 27 |>.push 55 |>.push 27 |>.push 80
+  output := output ++ "0;1;0q".toUTF8 ++ chart.sixelData.toUTF8
+  output := output.push 27 |>.push 92 |>.push 27 |>.push 56
+  for _ in [0:12] do
+    output := output ++ "\r\n".toUTF8
+  pure output
+
+def printEmbeddedChart (arguments : Array ByteArray) (mode : Mode) :
+    IO (Except String Unit) := do
+  let some chart := GeneratedCharts.get? (embeddedKey mode) |
+    return .error "embedded chart is absent"
+  let rendererResult ← selectRenderer arguments
+  let .ok renderer := rendererResult |
+    return .error (match rendererResult with | .error message => message | _ => "renderer failed")
+  let tmux ← envPresent "TMUX"
+  let rendered := match renderer with
+    | .utf8 => chart.fallback.toUTF8
+    | .kitty => renderEmbeddedKitty chart tmux
+    | .sixel => renderEmbeddedSixel chart
+  let stdout ← IO.getStdout
+  writeBytes stdout s!"\nDistribution: {chart.title}\n{chart.parameters}\n\n".toUTF8
+  writeBytes stdout rendered
+  writeBytes stdout (chart.axis ++ "\n").toUTF8
+  pure (.ok ())
+
 def printAbout (program : String) : IO Unit := do
   let description := if normalInvocation program then
     "CSPRNG for normal variates with OS entropy or cross-platform-identical deterministic streams"
@@ -196,43 +250,94 @@ def printAbout (program : String) : IO Unit := do
     s!"{program} v{version} ({← Native.platformName}/{← Native.architectureName}): {description}\n".toUTF8
 
 def helpText (program : String) : String :=
-  s!"Usage: {program} [options] [dN|M-N|M..N|M...N]\n\n\
-Cryptographically secure random generator with alternate distributions.\n\
-Seeded mode provides cross-platform-identical deterministic streams.\n\
-True-random mode uses fresh OS CSPRNG entropy; deterministic mode uses a seeded BLAKE3 keyed XOF.\n\
-A positional dN rolls an N-sided die by selecting uniformly from 1..N.\n\n\
-Distributions: --normalized, --exponential, --poisson, --log-normal, --beta[=B]\n\
-Stdin operations: --choose, --shuffle, --weighted\n\n\
-Options:\n\
-  -a, --about         Show a short description\n\
-  -b, --binaryoutput  Output binary bytes\n\
-  -c, --count N       Output N numbers (default: 1, or 1024 with -b)\n\
-  -d, --deterministic Use the cross-platform-identical BLAKE3 keyed XOF\n\
-      --true-random   Force fresh OS/source CSPRNG entropy; ignore DRANDOML_SEED\n\
-      --delimiter S   Set delimiter; empty means individual input bytes\n\
-      --precision N   Truncate fractional output to 0..18 places (default: 18)\n\
-      --truncate N    Alias for --precision\n\
-  -h, --help          Show this help message\n\
-      --hex           Output as hexadecimal\n\
-      --base64        Output as base64 (for binary)\n\
-      --seed N|0xHEX  Set unsigned 256-bit integer seed (implies -d)\n\
-      --state [JSON|-] / --resume [JSON|-]  Resume a deterministic stream\n\
-      --state-stdout  Append resumable state as the final stdout line\n\
-      --random-source PATH  Read entropy from PATH instead of the OS\n\
-      --no-wait       Use nonblocking getrandom\n\
-      --kitty / --sixel / --utf8  Select distribution chart encoding\n\
-      --view          Show only the selected distribution with supplied parameters\n\
-      --mean M --stddev S --rate R --lambda L --alpha A\n\n\
-Symlinks: nrandoml implies --normalized; drandoml implies --deterministic.\n\
-Environment: DRANDOML_SEED; RANDOMZ_CHART_TYPE=utf8|kitty|sixel.\n\
-Deterministic success metadata and all diagnostics are JSON.\n\
-Seeded output, including alternate distributions, is byte-identical across supported operating systems and CPU architectures.\n"
+  String.intercalate "\n" [
+    s!"Usage: {program} [options] [dN|M-N|M..N|M...N]",
+    s!"       echo 'items' | {program} --choose",
+    s!"       echo 'items' | {program} --shuffle",
+    "",
+    "Cryptographically secure random generator with alternate distributions.",
+    "Seeded mode provides cross-platform-identical deterministic streams.",
+    "True-random mode uses fresh OS CSPRNG entropy; deterministic mode uses",
+    "a seeded BLAKE3 keyed XOF. A public seed is reproducible, not secret.",
+    "A positional dN rolls an N-sided die by selecting uniformly from 1..N.",
+    "",
+    "Distributions (mutually exclusive):",
+    "  (default)           Uniform distribution",
+    "  -n, --normalized    Normal (Gaussian) via Box-Muller",
+    "      --exponential   Exponential distribution (use --rate)",
+    "      --poisson       Poisson distribution (use --lambda or --mean)",
+    "      --log-normal    Log-normal distribution",
+    "      --beta[=B]      Beta distribution; optional B replaces default beta 2",
+    "",
+    "Stdin operations:",
+    "      --choose        Pick one random item from stdin",
+    "      --shuffle       Shuffle all items from stdin",
+    "      --weighted      Pick from weighted stdin (format: value:weight)",
+    "",
+    "Options:",
+    "  -a, --about         Show a short description",
+    "  -b, --binaryoutput  Output binary bytes",
+    "  -c, --count N       Output N numbers (default: 1, or 1024 with -b)",
+    "  -d, --deterministic Use the cross-platform-identical BLAKE3 keyed XOF",
+    "      --true-random   Force fresh OS/source CSPRNG entropy; ignore DRANDOML_SEED",
+    "      --delimiter S   Set delimiter; empty means individual input bytes",
+    "      --precision N   Truncate fractional output to 0..18 places (default: 18)",
+    "      --truncate N    Alias for --precision",
+    "  -h, --help          Show this help message",
+    "      --hex           Output as hexadecimal",
+    "      --base64        Output as base64 (for binary)",
+    "      --seed N|0xHEX  Set unsigned 256-bit integer seed (implies -d)",
+    "      --state [JSON|-] Resume from JSON; omitted value or '-' reads stdin",
+    "      --resume [JSON|-] Alias for --state",
+    "      --state-stdout  Append resumable state as the final stdout line",
+    "      --random-source PATH  Read entropy from PATH instead of the OS",
+    "      --no-wait       Use nonblocking getrandom; fail if the pool is not ready",
+    "      --kitty         Force Kitty graphics for a distribution help chart",
+    "      --sixel         Force Sixel graphics for a distribution help chart",
+    "      --utf8           Force the UTF-8 Braille distribution chart",
+    "      --utf8-graphics  Long alias for --utf8",
+    "      --view          Show only the selected distribution with supplied parameters",
+    "      --mean M        Set mean for normal/log-normal; Poisson lambda alias",
+    "      --stddev S      Set stddev for normal/log-normal",
+    "      --rate R        Set exponential rate",
+    "      --lambda L      Set Poisson lambda (clearer alias for --mean)",
+    "      --alpha A       Set alpha for beta distribution",
+    "      --test          Run the test suite",
+    "",
+    "Symlink behavior:",
+    "  'nrandoml' -> implies --normalized",
+    "  'drandoml' -> implies --deterministic",
+    "",
+    "Environment variables:",
+    "  DRANDOML_SEED     Unsigned decimal or 0x-prefixed seed (implies -d)",
+    "  RANDOMZ_CHART_TYPE  utf8, kitty, or sixel; command-line flags override it",
+    "",
+    "Deterministic mode never persists state. A seed starts at stream position",
+    "zero; --state/--resume continues at its exact BLAKE3 byte position.",
+    "Deterministic success metadata and all diagnostics are JSON on stderr;",
+    "--state-stdout moves success state to the final stdout line.",
+    "Without a seed, deterministic mode obtains 32 bytes from OS entropy.",
+    "Seeded output, including alternate distributions, is byte-identical",
+    "across supported operating systems and CPU architectures.",
+    "",
+    "Examples:",
+    s!"  {program}                    # Uniform random 0-99",
+    s!"  {program} d20                # Roll a 20-sided die",
+    s!"  {program} -n --mean 50 --stddev 10  # Normal, custom params",
+    s!"  {program} -d --seed 42       # Deterministic",
+    s!"  state=$({program} -d --seed 42 d20 2>&1 >/dev/null)",
+    s!"  {program} --resume \"$state\" # Continue that exact sequence",
+    s!"  packet=$({program} --seed 42 --state-stdout d20); state=$(printf '%s\\n' \"$packet\" | tail -n 1)",
+    s!"  {program} --hex -c 5         # 5 hex numbers",
+    s!"  echo -e 'a\\nb\\nc' | {program} --choose",
+    s!"  echo 'rare:1,common:10' | {program} --weighted --delimiter ','"
+  ] ++ "\n"
 
 def printHelp (arguments : Array ByteArray) (program : String) : IO (Except String Unit) := do
   writeBytes (← IO.getStdout) (helpText program).toUTF8
   let mode := selectedHelpMode arguments program
   if mode == .uniform then return .ok ()
-  printChart arguments (chartSpec mode none none none none none none true) true
+  printEmbeddedChart arguments mode
 
 def updateEnvironmentSeed (options : Options) : IO (Except String Options) := do
   if options.forceTrueRandom ∨ options.seed.isSome then return .ok options

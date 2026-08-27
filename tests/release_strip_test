@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Release binaries must be stripped by their own language build, independently
+# of any downstream packaging/fixup phase. On ELF hosts, absence of .symtab and
+# debug sections is a mechanical assertion; all hosts still smoke-test output.
+set -u
+set -o pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+zig_cli="${RELEASE_STRIP_ZIG_CLI:-$root/zig-out/bin/randomz}"
+lean_cli="${RELEASE_STRIP_LEAN_CLI:-$root/zig-out/bin/randoml}"
+rust_target="$(cd "$root" && cargo metadata --no-deps --format-version 1 |
+	sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')"
+rust_cli="${RELEASE_STRIP_RUST_CLI:-$rust_target/release/randomr}"
+
+if [ -z "${RELEASE_STRIP_ZIG_CLI:-}" ]; then
+	(cd "$root" && zig build -Doptimize=ReleaseFast) || exit 1
+fi
+if [ -z "${RELEASE_STRIP_RUST_CLI:-}" ]; then
+	(cd "$root" && cargo build --locked --release -p randomr-cli) || exit 1
+fi
+if [ -z "${RELEASE_STRIP_LEAN_CLI:-}" ]; then
+	"$root/lean/build-owned-cli" "$lean_cli" || exit 1
+fi
+
+fails=0
+for spec in "Zig/C:$zig_cli" "Rust:$rust_cli" "Lean:$lean_cli"; do
+	label="${spec%%:*}"
+	path="${spec#*:}"
+	if [ ! -x "$path" ]; then
+		echo "release strip test FAILED: $label binary is not executable: $path" >&2
+		fails=$((fails + 1))
+		continue
+	fi
+	if ! "$path" --about >/dev/null; then
+		echo "release strip test FAILED: $label binary does not run: $path" >&2
+		fails=$((fails + 1))
+		continue
+	fi
+
+	if [ "$(uname -s)" = Linux ]; then
+		sections="$(readelf -SW "$path")"
+		if printf '%s\n' "$sections" | grep -Eq '[.]symtab|[.](z?debug)_' ; then
+			echo "release strip test FAILED: $label retains symbol/debug sections" >&2
+			fails=$((fails + 1))
+		else
+			echo "  ✓ $label release ELF has no .symtab or debug sections"
+		fi
+	fi
+done
+
+if [ "$fails" -ne 0 ]; then
+	echo "release strip test FAILED: $fails implementation(s) violated policy" >&2
+	exit 1
+fi
+
+echo "release strip test PASSED: Zig, Rust, and Lean build stripped release executables"

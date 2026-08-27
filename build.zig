@@ -25,6 +25,16 @@ pub fn build(b: *std.Build) void {
         "Optimization mode (default: ReleaseFast)",
     ) orelse .ReleaseFast;
 
+    // A release artifact is a distribution artifact: discard its ordinary
+    // symbol table and debug metadata at link time instead of relying on a
+    // later packager (such as Nix) to happen to strip it. Keep Debug useful,
+    // and permit an explicit override for release-build diagnosis.
+    const strip_release_symbols = b.option(
+        bool,
+        "strip",
+        "Strip symbols from shipped artifacts (default: true outside Debug)",
+    ) orelse (optimize != .Debug);
+
     // Tests build ReleaseSafe regardless of the shipped mode, and deliberately
     // do NOT inherit `optimize`. A ReleaseFast test binary compiles out the
     // safety checks and therefore cannot observe UB -- fleet-wide floor since
@@ -75,6 +85,7 @@ pub fn build(b: *std.Build) void {
     const cli_mod = b.createModule(.{
         .target = target,
         .optimize = optimize,
+        .strip = strip_release_symbols,
         .link_libc = true,
     });
     cli_mod.addIncludePath(b.path("include"));
@@ -121,6 +132,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/differential_driver.zig"),
             .target = target,
             .optimize = optimize,
+            .strip = strip_release_symbols,
             .imports = &.{
                 .{ .name = "fixed", .module = fixed_mod },
             },
@@ -153,6 +165,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/randomz_wasi.zig"),
         .target = wasi_target,
         .optimize = optimize,
+        .strip = strip_release_symbols,
         .imports = &.{
             .{ .name = "randomz", .module = wasi_randomz_mod },
         },

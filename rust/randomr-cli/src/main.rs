@@ -890,67 +890,89 @@ fn selected_help_mode(args: &[String], program: &str) -> Mode {
 fn print_help(program: &str, args: &[String]) -> Result<(), String> {
 	let mode = selected_help_mode(args, program);
 	let text = format!(
-		"Usage: {program} [options] [dN|M-N|M..N|M...N]\n\
-                echo 'items' | {program} --choose\n\
-                echo 'items' | {program} --shuffle\n\n\
-         Cryptographically secure random generator with alternate distributions.\n\
-         Seeded mode provides cross-platform-identical deterministic streams.\n\
-         True-random mode uses fresh OS CSPRNG entropy; deterministic mode uses\n\
-         a seeded BLAKE3 keyed XOF. A public seed is reproducible, not secret.\n\
-         A positional dN rolls an N-sided die by selecting uniformly from 1..N.\n\n\
-         Distributions (mutually exclusive):\n\
-           (default)           Uniform distribution\n\
-           -n, --normalized    Normal (Gaussian) via Box-Muller\n\
-               --exponential   Exponential distribution (use --rate)\n\
-               --poisson       Poisson distribution (use --lambda or --mean)\n\
-               --log-normal    Log-normal distribution\n\
-               --beta[=B]      Beta distribution; optional B replaces default beta 2\n\n\
-         Stdin operations:\n\
-               --choose        Pick one random item from stdin\n\
-               --shuffle       Shuffle all items from stdin\n\
-               --weighted      Pick from weighted stdin (format: value:weight)\n\n\
-         Options:\n\
-           -a, --about         Show a short description\n\
-           -b, --binaryoutput  Output binary bytes\n\
-           -c, --count N       Output N numbers (default: 1, or 1024 with -b)\n\
-           -d, --deterministic Use the cross-platform-identical BLAKE3 keyed XOF\n\
-               --true-random   Force fresh OS/source CSPRNG entropy; ignore DRANDOMR_SEED\n\
-               --delimiter S   Set delimiter; empty means individual input bytes\n\
-               --precision N   Truncate fractional output to 0..18 places (default: 18)\n\
-               --truncate N    Alias for --precision\n\
-           -h, --help          Show this help message\n\
-               --hex           Output as hexadecimal\n\
-               --base64        Output as base64 (for binary)\n\
-               --seed N|0xHEX  Set unsigned 256-bit integer seed (implies -d)\n\
-               --state [JSON|-] Resume from JSON; omitted value or '-' reads stdin\n\
-               --resume [JSON|-] Alias for --state\n\
-               --state-stdout  Append resumable state as the final stdout line\n\
-               --random-source PATH  Read entropy from PATH instead of the OS\n\
-               --no-wait       Use nonblocking getrandom; fail if the pool is not ready\n\
-               --kitty         Force Kitty graphics for a distribution help chart\n\
-               --sixel         Force Sixel graphics for a distribution help chart\n\
-               --utf8           Force the UTF-8 Braille distribution chart\n\
-               --utf8-graphics  Long alias for --utf8\n\
-               --view          Show only the selected distribution with supplied parameters\n\
-               --mean M        Set mean for normal/log-normal; Poisson lambda alias\n\
-               --stddev S      Set stddev for normal/log-normal\n\
-               --rate R        Set exponential rate\n\
-               --lambda L      Set Poisson lambda (clearer alias for --mean)\n\
-               --alpha A       Set alpha for beta distribution\n\
-               --test          Run the test suite\n\n\
-         Symlink behavior:\n\
-           'nrandomr' -> implies --normalized\n\
-           'drandomr' -> implies --deterministic\n\n\
-         Environment variables:\n\
-           DRANDOMR_SEED     Unsigned decimal or 0x-prefixed seed (implies -d)\n\
-           RANDOMZ_CHART_TYPE  utf8, kitty, or sixel; command-line flags override it\n\n\
-         Deterministic mode never persists state. A seed starts at stream position\n\
-         zero; --state/--resume continues at its exact BLAKE3 byte position.\n\
-         Deterministic success metadata and all diagnostics are JSON on stderr;\n\
-         --state-stdout moves success state to the final stdout line.\n\
-         Without a seed, deterministic mode obtains 32 bytes from OS entropy.\n\
-         Seeded output, including alternate distributions, is byte-identical\n\
-         across supported operating systems and CPU architectures.\n"
+		concat!(
+			"Usage: {program} [options] [dN|M-N|M..N|M...N]\n",
+			"       echo 'items' | {program} --choose\n",
+			"       echo 'items' | {program} --shuffle\n",
+			"\n",
+			"Cryptographically secure random generator with alternate distributions.\n",
+			"Seeded mode provides cross-platform-identical deterministic streams.\n",
+			"True-random mode uses fresh OS CSPRNG entropy; deterministic mode uses\n",
+			"a seeded BLAKE3 keyed XOF. A public seed is reproducible, not secret.\n",
+			"A positional dN rolls an N-sided die by selecting uniformly from 1..N.\n",
+			"\n",
+			"Distributions (mutually exclusive):\n",
+			"  (default)           Uniform distribution\n",
+			"  -n, --normalized    Normal (Gaussian) via Box-Muller\n",
+			"      --exponential   Exponential distribution (use --rate)\n",
+			"      --poisson       Poisson distribution (use --lambda or --mean)\n",
+			"      --log-normal    Log-normal distribution\n",
+			"      --beta[=B]      Beta distribution; optional B replaces default beta 2\n",
+			"\n",
+			"Stdin operations:\n",
+			"      --choose        Pick one random item from stdin\n",
+			"      --shuffle       Shuffle all items from stdin\n",
+			"      --weighted      Pick from weighted stdin (format: value:weight)\n",
+			"\n",
+			"Options:\n",
+			"  -a, --about         Show a short description\n",
+			"  -b, --binaryoutput  Output binary bytes\n",
+			"  -c, --count N       Output N numbers (default: 1, or 1024 with -b)\n",
+			"  -d, --deterministic Use the cross-platform-identical BLAKE3 keyed XOF\n",
+			"      --true-random   Force fresh OS/source CSPRNG entropy; ignore DRANDOMR_SEED\n",
+			"      --delimiter S   Set delimiter; empty means individual input bytes\n",
+			"      --precision N   Truncate fractional output to 0..18 places (default: 18)\n",
+			"      --truncate N    Alias for --precision\n",
+			"  -h, --help          Show this help message\n",
+			"      --hex           Output as hexadecimal\n",
+			"      --base64        Output as base64 (for binary)\n",
+			"      --seed N|0xHEX  Set unsigned 256-bit integer seed (implies -d)\n",
+			"      --state [JSON|-] Resume from JSON; omitted value or '-' reads stdin\n",
+			"      --resume [JSON|-] Alias for --state\n",
+			"      --state-stdout  Append resumable state as the final stdout line\n",
+			"      --random-source PATH  Read entropy from PATH instead of the OS\n",
+			"      --no-wait       Use nonblocking getrandom; fail if the pool is not ready\n",
+			"      --kitty         Force Kitty graphics for a distribution help chart\n",
+			"      --sixel         Force Sixel graphics for a distribution help chart\n",
+			"      --utf8           Force the UTF-8 Braille distribution chart\n",
+			"      --utf8-graphics  Long alias for --utf8\n",
+			"      --view          Show only the selected distribution with supplied parameters\n",
+			"      --mean M        Set mean for normal/log-normal; Poisson lambda alias\n",
+			"      --stddev S      Set stddev for normal/log-normal\n",
+			"      --rate R        Set exponential rate\n",
+			"      --lambda L      Set Poisson lambda (clearer alias for --mean)\n",
+			"      --alpha A       Set alpha for beta distribution\n",
+			"      --test          Run the test suite\n",
+			"\n",
+			"Symlink behavior:\n",
+			"  'nrandomr' -> implies --normalized\n",
+			"  'drandomr' -> implies --deterministic\n",
+			"\n",
+			"Environment variables:\n",
+			"  DRANDOMR_SEED     Unsigned decimal or 0x-prefixed seed (implies -d)\n",
+			"  RANDOMZ_CHART_TYPE  utf8, kitty, or sixel; command-line flags override it\n",
+			"\n",
+			"Deterministic mode never persists state. A seed starts at stream position\n",
+			"zero; --state/--resume continues at its exact BLAKE3 byte position.\n",
+			"Deterministic success metadata and all diagnostics are JSON on stderr;\n",
+			"--state-stdout moves success state to the final stdout line.\n",
+			"Without a seed, deterministic mode obtains 32 bytes from OS entropy.\n",
+			"Seeded output, including alternate distributions, is byte-identical\n",
+			"across supported operating systems and CPU architectures.\n",
+			"\n",
+			"Examples:\n",
+			"  {program}                    # Uniform random 0-99\n",
+			"  {program} d20                # Roll a 20-sided die\n",
+			"  {program} -n --mean 50 --stddev 10  # Normal, custom params\n",
+			"  {program} -d --seed 42       # Deterministic\n",
+			"  state=$({program} -d --seed 42 d20 2>&1 >/dev/null)\n",
+			"  {program} --resume \"$state\" # Continue that exact sequence\n",
+			"  packet=$({program} --seed 42 --state-stdout d20); state=$(printf '%s\\n' \"$packet\" | tail -n 1)\n",
+			"  {program} --hex -c 5         # 5 hex numbers\n",
+			"  echo -e 'a\\nb\\nc' | {program} --choose\n",
+			"  echo 'rare:1,common:10' | {program} --weighted --delimiter ','\n",
+		),
+		program = program
 	);
 	io::stdout()
 		.lock()

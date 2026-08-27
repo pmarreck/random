@@ -30,6 +30,7 @@ compile "$build/../ir/Randoml/Drbg.c" -o "$build/drbg.o"
 compile "$build/../ir/Randoml/Distribution.c" -o "$build/distribution.o"
 compile "$build/../ir/Randoml/Decimal.c" -o "$build/decimal.o"
 compile "$build/../ir/Randoml/Curve.c" -o "$build/curve.o"
+compile "$build/../ir/Randoml/GeneratedCharts.c" -o "$build/generated_charts.o"
 compile "$build/../ir/Randoml/Native.c" -o "$build/native_lean.o"
 compile "$build/../ir/Randoml/Chart.c" -o "$build/chart.o"
 compile "$build/../ir/Randoml/CliOptions.c" -o "$build/cli_options.o"
@@ -42,5 +43,12 @@ lake env leanc -O3 -o "$output" \
 	"$build/launcher.o" "$build/native.o" "$build/native_lean.o" \
 	"$build/blake3.o" "$build/fixed.o" "$build/drbg.o" \
 	"$build/distribution.o" "$build/decimal.o" "$build/curve.o" \
+	"$build/generated_charts.o" \
 	"$build/chart.o" "$build/cli_options.o" "$build/cli_source.o" "$build/state.o" \
 	"$build/shuffle.o" "$build/cli.o"
+
+# This script is the production/release linker, not Lean's development build.
+# Strip here so direct builds have the same release policy as packaged builds.
+# The no-option form means "all removable symbols" in GNU, LLVM, and Apple
+# strip while retaining the dynamic-link information required at runtime.
+"${STRIP:-strip}" "$output"

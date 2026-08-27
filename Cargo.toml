@@ -14,3 +14,8 @@ blake3 = { version = "=1.8.5", default-features = false, features = ["pure", "ze
 getrandom = { version = "=0.4.3" }
 libc = { version = "=0.2.177" }
 zeroize = { version = "=1.8.2", default-features = false, features = ["derive"] }
+
+# Release executables are distribution artifacts. Keep dev/test profiles rich
+# enough to debug, but do not depend on a downstream packager to remove symbols.
+[profile.release]
+strip = "symbols"

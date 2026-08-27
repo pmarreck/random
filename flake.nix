@@ -194,7 +194,6 @@
           installPhase = ''
             runHook preInstall
             install -Dm755 randoml $out/bin/randoml
-            strip --strip-unneeded $out/bin/randoml
             install -Dm755 tests/random_test $out/share/randoml/tests/random_test
             install -Dm644 tests/cli_test_setup.sh $out/share/randoml/tests/cli_test_setup.sh
             install -Dm644 LICENSE $out/share/licenses/randoml/LICENSE
@@ -275,7 +274,6 @@
             cp ${randomr}/bin/randomr $out/bin/randomr
             cp ${randomr}/libexec/randomr $out/libexec/randomr
             cp zig-out/bin/randoml $out/bin/randoml
-            strip --strip-unneeded $out/bin/randoml
             cp zig-out/bin/randomz-wasi.wasm $out/lib/randomz-wasi.wasm
             # Zig embeds source paths in this release WASM. They are inert
             # diagnostics, but an intact /nix/store hash makes Nix retain the

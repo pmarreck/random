@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# Four-way CLI help contract for LuaJIT, Zig/C, Rust, and Lean.
+#
+# Intentional implementation namespaces are normalized to the LuaJIT spelling;
+# every other byte of stdout is part of the shared contract. Commands are
+# replayed to inspect stderr without temporary files.
+set -u
+set -o pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+lua_cli="${HELP_TEST_LUA_CLI:-$root/bin/random}"
+zig_cli="${HELP_TEST_ZIG_CLI:-$root/zig-out/bin/randomz}"
+
+rust_target="$(cd "$root" && cargo metadata --no-deps --format-version 1 |
+	sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')"
+rust_cli="${HELP_TEST_RUST_CLI:-$rust_target/release/randomr}"
+lean_cli="${HELP_TEST_LEAN_CLI:-$root/zig-out/bin/randoml}"
+
+if [ -z "${HELP_TEST_ZIG_CLI:-}" ]; then
+	(cd "$root" && zig build -Doptimize=ReleaseFast) || exit 1
+fi
+if [ -z "${HELP_TEST_RUST_CLI:-}" ]; then
+	(cd "$root" && cargo build --locked --release -p randomr-cli) || exit 1
+fi
+if [ -z "${HELP_TEST_LEAN_CLI:-}" ]; then
+	"$root/lean/build-owned-cli" "$lean_cli" || exit 1
+fi
+
+labels=(luajit zig rust lean)
+clis=("$lua_cli" "$zig_cli" "$rust_cli" "$lean_cli")
+for index in "${!clis[@]}"; do
+	if [ ! -x "${clis[index]}" ]; then
+		echo "help test RED: ${labels[index]} CLI is not executable: ${clis[index]}" >&2
+		exit 1
+	fi
+done
+
+fails=0
+checks=0
+
+normalize_help()
+{
+	sed \
+		-e 's/^  DRANDOM[ZRL]_SEED     /  DRANDOM_SEED      /' \
+		-e 's/DRANDOMZ_SEED/DRANDOM_SEED/g' \
+		-e 's/DRANDOMR_SEED/DRANDOM_SEED/g' \
+		-e 's/DRANDOML_SEED/DRANDOM_SEED/g' \
+		-e 's/randomz/random/g' \
+		-e 's/randomr/random/g' \
+		-e 's/randoml/random/g'
+}
+
+capture_help()
+{
+	local cli="$1"
+	shift
+	local output status error error_status
+	output=$(env -u TMUX RANDOMZ_CHART_TYPE=utf8 "$cli" "$@" 2>/dev/null)
+	status=$?
+	error=$(env -u TMUX RANDOMZ_CHART_TYPE=utf8 "$cli" "$@" 2>&1 >/dev/null)
+	error_status=$?
+	if [ "$status" -ne 0 ] || [ "$error_status" -ne 0 ] || [ -n "$error" ]; then
+		printf 'help test FAILED: %s %s exited %d/%d with stderr: %s\n' \
+			"$cli" "$*" "$status" "$error_status" "$error" >&2
+		return 1
+	fi
+	printf '%s\n' "$output" | normalize_help
+}
+
+compare_case()
+{
+	local description="$1"
+	shift
+	local expected actual index
+	expected=$(capture_help "$lua_cli" "$@")
+	if [ "$?" -ne 0 ]; then
+		fails=$((fails + 1))
+		return
+	fi
+	for index in "${!clis[@]}"; do
+		checks=$((checks + 1))
+		actual=$(capture_help "${clis[index]}" "$@")
+		if [ "$?" -ne 0 ]; then
+			fails=$((fails + 1))
+			continue
+		fi
+		if [ "$actual" != "$expected" ]; then
+			echo "help test FAILED: ${labels[index]} differs for $description" >&2
+			diff -u \
+				<(printf '%s\n' "$expected") \
+				<(printf '%s\n' "$actual") >&2 || true
+			fails=$((fails + 1))
+		fi
+	done
+}
+
+echo "Testing the complete four-way CLI help contract..."
+compare_case "--help" --help
+compare_case "-h" -h
+for distribution in --normalized --exponential --poisson --log-normal --beta; do
+	compare_case "$distribution --help" "$distribution" --help
+done
+for renderer in --kitty --sixel; do
+	for distribution in --normalized --exponential --poisson --log-normal --beta; do
+		compare_case "$distribution $renderer --help" \
+			"$distribution" "$renderer" --help
+	done
+done
+
+if [ "$fails" -ne 0 ]; then
+	echo "help test FAILED: $fails failure(s) across $checks comparisons" >&2
+	exit 1
+fi
+
+echo "help test PASSED: $checks complete outputs agree after namespace normalization"

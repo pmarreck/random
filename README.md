@@ -327,18 +327,22 @@ For the LuaJIT oracle, put `bin/` on your `PATH`; it requires `luajit`. For the
 C CLI and static library, run `zig build -Doptimize=ReleaseFast` and use
 `zig-out/bin/randomz`, `zig-out/include/randomz.h`, and
 `zig-out/lib/librandomz.a`. `nrandomz` and `drandomz` are installed aliases;
-the Nix package installs them as symlinks.
+the Nix package installs them as symlinks. Zig release artifacts are stripped
+by default; pass `-Dstrip=false` when a diagnostic release build needs symbols.
 
 For Rust, run `cargo build --locked --release -p randomr-cli`; Cargo emits
 `randomr`, and the Nix package supplies `nrandomr` and `drandomr` aliases. Rust
 programs can depend on the workspace crate at `rust/randomr` and use `Drbg` as a
 `ByteSource` for any exported sampler without involving CLI I/O or formatting.
+The workspace's release profile uses Cargo's `strip = "symbols"` policy.
 
 For Lean, `(cd lean && lake build)` with Lean 4.30.0 builds and checks the
 importable `Randoml` library. Build the byte-preserving production executable
 with `lean/build-owned-cli zig-out/bin/randoml`; no Zig binary or library is
 used by that command. The dedicated `.#randoml` Nix package installs only the
 Lean executable, `nrandoml`/`drandoml` aliases, and its self-test surface.
+`build-owned-cli` strips the linked production executable; ordinary Lake
+library/development builds retain their diagnostic information.
 
 The same build emits `zig-out/bin/randomz-wasi.wasm`, a WASI Preview 1 reactor
 module. It exports memory, the public deterministic `randomz_*` ABI, and
@@ -384,7 +388,7 @@ direnv allow      # or: nix develop
 ./test            # FAST mode (quick, quiet on success)
 FAST= ./test      # full statistical run
 ./stats           # separate, deeper sanity analysis of all four command families
-nix flake check   # hermetic CI check (runs all 22 suites, but FORCES FAST=1 --
+nix flake check   # hermetic CI check (runs all 24 suites, but FORCES FAST=1 --
                    # kernel_jit_diff's 60000-iteration deep JIT differential
                    # is deep-mode-only by design and is SKIPPED here, not run;
                    # run `FAST= ./test` locally for the full non-FAST suite)
@@ -392,7 +396,8 @@ nix flake check   # hermetic CI check (runs all 22 suites, but FORCES FAST=1 --
 
 `./test` runs every suite under `tests/` (official BLAKE3 vectors, an independent
 Zig DRBG reference check, the same 80-check Bash CLI contract against all four
-command families, the independent LuaJIT-vs-Zig/Rust/Lean exact frontend matrices, Rust
+command families, a 68-output byte-exact four-way help/chart contract, the
+independent LuaJIT-vs-Zig/Rust/Lean exact frontend matrices, Rust
 mutation/downstream-library controls, a C-compiled public-ABI conformance
 test, Lean trust-zero elaboration/frozen vectors/proof axiom audits, isolated
 Zig-package reconstruction, 11-target Zig cross-compilation
