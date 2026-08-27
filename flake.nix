@@ -217,12 +217,13 @@
           };
         };
 
+		randomLuaNativeBuildInputs = [ pkgs.makeWrapper pkgs.bash ];
 		randomLua = pkgs.stdenvNoCC.mkDerivation {
 		  pname = "random-luajit";
 		  version = "0.3.0";
 		  src = ./.;
 		  strictDeps = true;
-		  nativeBuildInputs = [ pkgs.makeWrapper pkgs.bash ];
+		  nativeBuildInputs = randomLuaNativeBuildInputs;
 		  dontBuild = true;
 		  installPhase = ''
 			runHook preInstall
@@ -325,6 +326,22 @@
 		luaConsumerClosure = pkgs.closureInfo {
 		  rootPaths = [ randomLua ];
 		};
+		# Keep this list mechanically tied to every external derivation named by
+		# randomLua: its stdenv, native tools, interpreter, and self-test PATH.
+		# This avoids a recursive .drv closure check, which would fetch Nixpkgs'
+		# entire compiler-bootstrap universe rather than model what selecting this
+		# binary-cache output asks a consumer to build.
+		luaDeclaredBuildInputNames = map pkgs.lib.getName
+		  ([ pkgs.stdenvNoCC luajitFixed ] ++ randomLuaNativeBuildInputs
+		    ++ installedTestTools);
+		luaForbiddenBuildMarkers = [
+		  "random-zig" "random-rust" "random-lean"
+		  "zig" "rustc" "cargo" "lean4"
+		];
+		luaDeclaredBuildInputsClean = builtins.all (name:
+		  builtins.all (marker: !(pkgs.lib.hasInfix marker name))
+		    luaForbiddenBuildMarkers
+		) luaDeclaredBuildInputNames;
         crossWithUnsupported = crossPkgs: import nixpkgs {
           localSystem = system;
           crossSystem = crossPkgs.stdenv.hostPlatform;
@@ -483,7 +500,10 @@
             touch $out
           '';
 
-		checks.package-split = pkgs.runCommand "random-package-split"
+		checks.package-split = assert pkgs.lib.assertMsg
+		  luaDeclaredBuildInputsClean
+		  "random-luajit has a Zig, Rust/Cargo, or Lean direct build input";
+		  pkgs.runCommand "random-package-split"
 		  { nativeBuildInputs = [ pkgs.gnugrep ]; } ''
 			# Each named output exposes only its implementation's command family.
 			test -x ${randomLua}/bin/random
@@ -522,9 +542,9 @@
 			${randomr}/bin/randomr --seed 42 --count 1 >/dev/null
 			${randoml}/bin/randoml --seed 42 --count 1 >/dev/null
 
-			# A consumer that selects only random-luajit must not acquire any
-			# compiler/toolchain from the other implementations. closureInfo is
-			# the exact transitive store closure a consuming derivation inherits.
+			# The eval-time assertion above checks the package's direct .drv inputs;
+			# this checks the exact transitive runtime closure inherited by a
+			# consumer of the installed output.
 			if grep -E -- '-(zig|rustc|cargo|lean4)(-|$)' \
 			    ${luaConsumerClosure}/store-paths; then
 			  echo "random-luajit closure unexpectedly contains a compiler toolchain" >&2

@@ -35,7 +35,8 @@
       `random-luajit`, `random-zig`, `random-rust`, and `random-lean`, retain
       `random-all` as the explicit aggregate and the backwards-compatible
       default, smoke-test each package independently, and prove the LuaJIT-only
-      consumer closure contains no Zig, Rust/Cargo, or Lean toolchain.
+      direct build inputs and runtime closure contain no Zig, Rust/Cargo, or
+      Lean toolchain.
 - [x] Reduce the installed Nix closure from 2.4 GiB to 127.8 MiB without
       weakening `--test`: separate the small runtime self-test PATH from the
       full CI toolchain, neutralize inert Zig store references embedded in the

@@ -321,10 +321,12 @@ nix run github:pmarreck/random#random-lean    # independent Lean implementation
 nix profile install github:pmarreck/random#random-all
 ```
 
-Each language-specific package closes over only the runtime and tools needed by
-that implementation. In particular, `random-luajit` does not acquire Zig,
-Rust/Cargo, or Lean. `random-all` is the explicit aggregate; the unqualified
-flake default remains an alias for it for backwards compatibility. The older
+Each language-specific package closes over only the runtime and build tools
+needed by that implementation. Blocking checks prove that `random-luajit`
+has no Zig, Rust/Cargo, Lean, or other implementation package among its direct
+derivation inputs or transitive installed closure. `random-all` is the explicit
+aggregate; the unqualified flake default remains an alias for it for backwards
+compatibility. The older
 `random`, `randomz`, `randomr`, and `randoml` output names remain compatibility
 aliases for the aggregate, Zig, Rust, and Lean packages respectively.
 
