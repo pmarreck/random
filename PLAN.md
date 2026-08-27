@@ -212,24 +212,38 @@
       nonlinear-distribution throughput under one runtime. Use the measurements
       to decide whether one or both WASM implementations ship.
 
-## Completed: Lean 4 formalization and frontend
+## Completed: independent Lean 4 implementation and formalization
 
 - [x] Create the reusable `lean4-development` skill, pin the project to Lean
       4.30.0, and require trust-zero elaboration, explicit axiom audits, frozen
       external vectors, and an honest proved/tested/assumed claim matrix.
 - [x] Implement an independent pure Lean BLAKE3 derive-key/keyed-XOF DRBG and
       uniform range model. Match the frozen seed-42 64-byte stream exactly.
-- [x] Prove cursor advancement, key preservation, bounded seek/fill,
-      compositional stream chunking, range mapping bounds, and population
+- [x] Prove cursor advancement, key preservation, bounded seek/fill, an abstract
+      compositional stream-slicing model, range result bounds, and population
       preservation for arbitrary swap schedules without `sorry`, `admit`,
       project axioms, or `unsafe` declarations in the trusted source.
-- [x] Ship `randoml`/`nrandoml`/`drandoml`, `DRANDOML_SEED`, Nix packaging,
-      shared CLI/statistics/benchmark integration, and a four-way 700-check
-      continuation matrix. The compatibility CLI deliberately delegates its
-      unformalized parser/I/O/fixed-distribution surface to sibling `randomz`;
-      it is not counted as a fourth independent oracle. Full conclusions and
-      hard decisions are in
+- [x] Ship `randoml`/`nrandoml`/`drandoml`, `DRANDOML_SEED`, a dedicated Lean-only
+      Nix package, shared CLI/statistics/benchmark integration, and a 736-check
+      all-directions continuation matrix. The executable owns its parser,
+      integer-only arithmetic, distributions, formatting, stdin operations,
+      and canonical charts and does not delegate to another implementation.
+      The final conclusions, measurements, and hard decisions are in
       `docs/reports/2026-08-26-lean4-evaluation.md`.
+- [x] Replace the compatibility delegation with the complete independent Lean
+      implementation and a thin native C adapter limited to raw argv, OS entropy,
+      platform labels, and terminal-transport Base64. Re-run the shared CLI,
+      141-case exact differential, state, statistics, proof, package, and
+      benchmark-parity gates.
+- [ ] Formally connect actual `Blake3.xofAt`/`Drbg.fill` byte content to the
+      abstract stream-chunking theorem; current 63/64-byte and 65,535–65,538-byte
+      chunk boundaries are controlled by exact external differentials.
+- [ ] Remove the remaining deterministic/entropy sampler duplication by
+      expressing the distribution program over a pure byte-source effect and
+      interpreting it with either DRBG state or the native entropy reader.
+- [ ] Add native Lean runtime/digest legs for aarch64 Linux/macOS and decide the
+      supported Windows Lean toolchain; the C entropy edge is already
+      cross-compiled/provenance-gated for Linux, macOS, BSD, and Windows.
 
 ## Approved directives (Peter, 2026-08-04)
 
@@ -309,6 +323,16 @@ recorded on 2026-08-04).
       port it through the Zig/C ABI and Rust core, run the shared CLI suite,
       `./stats`, and `./bm` against all three implementations, and add
       CLI-level differential vectors.
+
+## Post-shipment chart architecture
+
+- [ ] Permute the Lean experiment's explicit chart pipeline into LuaJIT, Zig,
+      and Rust: semantic `Chart.Spec` -> normalized canonical `Chart.Model` ->
+      indexed raster/dot-grid surfaces -> independent Kitty/Sixel/Braille
+      codecs. Keep terminal detection and byte writes at the I/O edge.
+- [ ] Add cross-implementation fixtures at each boundary so a discrepancy is
+      localized to spec-to-model, model-to-surface, or surface-to-encoding,
+      including compiled-native ESC framing controls for Kitty and Sixel.
 
 ## Post-shipment physical entropy
 

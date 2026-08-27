@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+lean_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$lean_dir/.." && pwd)"
+build="$lean_dir/.lake/build/randoml-c"
+if [ "$#" -gt 0 ]; then
+	case "$1" in
+		/*) output="$1" ;;
+		*) output="$(pwd)/$1" ;;
+	esac
+else
+	output="$lean_dir/.lake/build/bin/randoml"
+fi
+
+cd "$lean_dir"
+lake build Randoml Randoml.Cli
+mkdir -p "$build" "$(dirname "$output")"
+
+compile()
+{
+	lake env leanc -O3 -c "$@"
+}
+
+compile "$lean_dir/randoml_launcher.c" -o "$build/launcher.o"
+compile -I"$root/src" "$lean_dir/randoml_native.c" -o "$build/native.o"
+compile "$build/../ir/Randoml/Blake3.c" -o "$build/blake3.o"
+compile "$build/../ir/Randoml/Fixed.c" -o "$build/fixed.o"
+compile "$build/../ir/Randoml/Drbg.c" -o "$build/drbg.o"
+compile "$build/../ir/Randoml/Distribution.c" -o "$build/distribution.o"
+compile "$build/../ir/Randoml/Decimal.c" -o "$build/decimal.o"
+compile "$build/../ir/Randoml/Curve.c" -o "$build/curve.o"
+compile "$build/../ir/Randoml/Native.c" -o "$build/native_lean.o"
+compile "$build/../ir/Randoml/Chart.c" -o "$build/chart.o"
+compile "$build/../ir/Randoml/CliOptions.c" -o "$build/cli_options.o"
+compile "$build/../ir/Randoml/CliSource.c" -o "$build/cli_source.o"
+compile "$build/../ir/Randoml/State.c" -o "$build/state.o"
+compile "$build/../ir/Randoml/Shuffle.c" -o "$build/shuffle.o"
+compile "$build/../ir/Randoml/Cli.c" -o "$build/cli.o"
+
+lake env leanc -O3 -o "$output" \
+	"$build/launcher.o" "$build/native.o" "$build/native_lean.o" \
+	"$build/blake3.o" "$build/fixed.o" "$build/drbg.o" \
+	"$build/distribution.o" "$build/decimal.o" "$build/curve.o" \
+	"$build/chart.o" "$build/cli_options.o" "$build/cli_source.o" "$build/state.o" \
+	"$build/shuffle.o" "$build/cli.o"

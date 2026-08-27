@@ -22,6 +22,19 @@ if [ "$vector" != "$expected" ]; then
 	exit 1
 fi
 
+blake3_vectors=$(printf '%s\n' \
+	'import Randoml' \
+	'open Randoml' \
+	'#eval Cli.byteHex ((Blake3.hash32 ByteArray.empty).getD ByteArray.empty)' \
+	'#eval Cli.byteHex ((Blake3.hash32 "abc".toUTF8).getD ByteArray.empty)' |
+	lake env lean --trust=0 /dev/stdin) || exit 1
+expected_blake3_vectors='"af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+"6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85"'
+if [ "$blake3_vectors" != "$expected_blake3_vectors" ]; then
+	echo "Lean official BLAKE3 vectors diverged: $blake3_vectors" >&2
+	exit 1
+fi
+
 normalize_numbers()
 {
 	tr '[],' '   ' | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//'
@@ -59,10 +72,58 @@ done
 boundaries=$(printf '%s\n' \
 	'import Randoml' \
 	'open Randoml' \
-	'#eval [(Drbg.init ByteArray.empty).isNone, (Drbg.fill { key := ByteArray.empty, position := maxExactPosition + 1 } 0).isNone, (Drbg.fill { key := ByteArray.empty, position := maxExactPosition } 0).isSome, (Drbg.fill { key := ByteArray.empty, position := maxExactPosition } 1).isNone]' |
+	'#eval match Drbg.init (List.replicate 32 (0 : UInt8) |>.foldl ByteArray.push ByteArray.empty) with | some state => [(Drbg.init ByteArray.empty).isNone, (state.seek (maxExactPosition + 1)).isNone, (state.seek maxExactPosition >>= fun sought => sought.fill 0).isSome, (state.seek maxExactPosition >>= fun sought => sought.fill 1).isNone, (state.fill (maxFillCount + 1)).isNone] | none => []' |
 	lake env lean --trust=0 /dev/stdin) || exit 1
-if [ "$boundaries" != '[true, true, true, true]' ]; then
+if [ "$boundaries" != '[true, true, true, true, true]' ]; then
 	echo "Lean DRBG seed/position boundary control diverged: $boundaries" >&2
+	exit 1
+fi
+
+chunking=$(printf '%s\n' \
+	'import Randoml' \
+	'open Randoml' \
+	'def sameChunking (seed : ByteArray) (first second : Nat) : Bool := match Drbg.init seed with | none => false | some state => match state.fill (first + second) with | none => false | some (whole, wholeState) => match state.fill first with | none => false | some (left, middle) => match middle.fill second with | some (right, finalState) => whole == left ++ right && wholeState == finalState | none => false' \
+	'def zeroSeed : ByteArray := List.replicate 32 (0 : UInt8) |>.foldl ByteArray.push ByteArray.empty' \
+	'#eval [sameChunking zeroSeed 0 0, sameChunking zeroSeed 1 63, sameChunking zeroSeed 63 67, sameChunking zeroSeed 64 65, sameChunking zeroSeed 127 129]' |
+	lake env lean --trust=0 /dev/stdin) || exit 1
+if [ "$chunking" != '[true, true, true, true, true]' ]; then
+	echo "Lean production DRBG fill chunking control diverged: $chunking" >&2
+	exit 1
+fi
+
+parser_boundaries=$(printf '%s\n' \
+	'import Randoml' \
+	'open Randoml' \
+	'def nested (count : Nat) : String := String.ofList (List.replicate count '\''['\'') ++ "true" ++ String.ofList (List.replicate count '\'']'\'')' \
+	'def memberText (index : Nat) : String := "\"k" ++ toString index ++ "\":true"' \
+	'def objectText (count : Nat) : String := "{" ++ String.intercalate "," ((List.range count).map memberText) ++ "}"' \
+	'def arrayText (count : Nat) : String := "[" ++ String.intercalate "," (List.replicate count "true") ++ "]"' \
+	'#eval [(State.parse (nested 64).toUTF8).isOk, (State.parse (nested 65).toUTF8).isOk, (State.parse (objectText 32).toUTF8).isOk, (State.parse (objectText 33).toUTF8).isOk, (State.parse (arrayText 1024).toUTF8).isOk, (State.parse (arrayText 1025).toUTF8).isOk, State.inputSizeAllowed State.maxBytes, State.inputSizeAllowed (State.maxBytes + 1), (Blake3.hash32 (List.replicate 65 (0 : UInt8) |>.foldl ByteArray.push ByteArray.empty)).isNone]' |
+	lake env lean --trust=0 /dev/stdin) || exit 1
+if [ "$parser_boundaries" != '[true, false, true, false, true, false, true, false, true]' ]; then
+	echo "Lean parser/hash boundary controls diverged: $parser_boundaries" >&2
+	exit 1
+fi
+
+chart_layers=$(printf '%s\n' \
+	'import Randoml' \
+	'open Randoml Randoml.Fixed' \
+	'def spec : Chart.Spec := { kind := .normal, first := fromInt 0, second := fromInt 1, title := "Normal", parameters := "mean=0,stddev=1", axis := "axis" }' \
+	'def digest (bytes : ByteArray) : String := toString (bytes.foldl (fun hash byte => (hash ^^^ byte.toUInt64) * 1099511628211) (14695981039346656037 : UInt64))' \
+	'#eval match Chart.model spec 8 with | some m => s!"{m.curve.xMin.m}:{m.curve.xMin.e}|{m.curve.xMax.m}:{m.curve.xMax.e}|{m.curve.heights.toList.map UInt16.toNat}|{m.discrete}" | none => "none"' \
+	'#eval match Chart.makeRaster spec with | some r => s!"{r.width}x{r.height}:{r.pixels.size}:" ++ digest (r.pixels.foldl ByteArray.push ByteArray.empty) | none => "none"' \
+	'#eval match Chart.makeDotGrid spec with | some g => s!"{g.width}x{g.height}:{g.dots.size}:" ++ digest (g.dots.foldl ByteArray.push ByteArray.empty) | none => "none"' \
+	'#eval match Chart.makeDotGrid spec with | some g => digest (Chart.encodeBraille g) | none => "none"' \
+	'#eval match Chart.makeRaster spec with | some r => digest (Chart.encodeKitty r false) ++ "|" ++ digest (Chart.encodeSixel r) | none => "none"' |
+	lake env lean --trust=0 /dev/stdin) || exit 1
+expected_chart_layers='"-4611686018427387904:2|4611686018427387904:2|[21, 1106, 15077, 55663, 55663, 15077, 1106, 21]|false"
+"336x144:48384:15115623636319838406"
+"96x32:3072:16785813062963462856"
+"6183335590743353336"
+"17286199084711079891|18445333760874898505"'
+if [ "$chart_layers" != "$expected_chart_layers" ]; then
+	echo "Lean chart boundary fixture diverged:" >&2
+	echo "$chart_layers" >&2
 	exit 1
 fi
 
@@ -72,21 +133,45 @@ axioms=$(printf '%s\n' \
 	'#print axioms Randoml.seek_sets_position' \
 	'#print axioms Randoml.fill_preserves_key' \
 	'#print axioms Randoml.fill_respects_position_limit' \
+	'#print axioms Randoml.nextU32_advances_position' \
+	'#print axioms Randoml.nextU32_preserves_key' \
+	'#print axioms Randoml.uniform_advances_position' \
+	'#print axioms Randoml.uniform_preserves_key' \
+	'#print axioms Randoml.nextU64_advances_position' \
+	'#print axioms Randoml.nextU64_preserves_key' \
 	'#print axioms Randoml.adjacentSwap_perm' \
 	'#print axioms Randoml.swap_schedule_preserves_population' \
 	'#print axioms Randoml.mapped_draw_is_in_range' \
-	'#print axioms Randoml.stream_slice_chunking' |
+	'#print axioms Randoml.rangeWithFuel_result_bounds' \
+	'#print axioms Randoml.range_result_bounds' \
+	'#print axioms Randoml.stream_slice_chunking' \
+	'#print axioms Randoml.canonical_ofValue_preserves_value' \
+	'#print axioms Randoml.positive_is_canonical_and_positive' \
+	'#print axioms Randoml.normal_parameters_well_formed' \
+	'#print axioms Randoml.beta_parameters_well_formed' \
+	'#print axioms Randoml.chart_height_is_normalized' \
+	'#print axioms Randoml.curve_height_is_zero_when_nonpositive' \
+	'#print axioms Randoml.curve_height_saturates_at_one' \
+	'#print axioms Randoml.production_shuffle_step_preserves_population' \
+	'#print axioms Randoml.production_shuffle_schedule_preserves_population' |
 	lake env lean --trust=0 /dev/stdin) || exit 1
-if [[ "$axioms" == *'sorryAx'* ]] || [[ "$axioms" == *'Classical.choice'* ]] ||
-   [[ "$axioms" == *'propext, Quot.sound,'* ]]; then
-	echo "Lean theorem axiom audit found an unapproved dependency:" >&2
-	echo "$axioms" >&2
+approved_axioms="^'Randoml\.[A-Za-z0-9_]+' (does not depend on any axioms|depends on axioms: \[propext\]|depends on axioms: \[propext, Quot\.sound\])$"
+axiom_lines=0
+while IFS= read -r line; do
+	axiom_lines=$((axiom_lines + 1))
+	if ! [[ "$line" =~ $approved_axioms ]]; then
+		echo "Lean theorem axiom audit found an unapproved line: $line" >&2
+		exit 1
+	fi
+done <<<"$axioms"
+if [ "$axiom_lines" -ne 25 ]; then
+	echo "Lean theorem axiom audit expected 25 statements, got $axiom_lines" >&2
 	exit 1
 fi
 
-if rg -n '\b(sorry|admit|axiom|unsafe)\b' Randoml.lean Randoml Main.lean; then
+if rg -n '\b(sorry|admit|axiom|unsafe|partial)\b' Randoml.lean Randoml Main.lean; then
 	echo "Lean trusted source contains a forbidden proof escape" >&2
 	exit 1
 fi
 
-echo "lean test PASSED: trust-zero build, frozen/multi-seek DRBG vectors, boundaries, and axiom audit"
+echo "lean test PASSED: trust-zero build, DRBG/range/chart fixtures, production invariants, and axiom audit"

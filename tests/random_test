@@ -1005,9 +1005,7 @@ test_random() {
 
 	(( tests++ ))
 	echo "Testing --true-random and frontend seed-environment separation..."
-	local entropy_fixture true_bytes other_seed_bytes
-	entropy_fixture=$(mktemp "${TMPDIR:-/tmp}/random-entropy.XXXXXX")
-	dd if=/dev/zero of="$entropy_fixture" bs=32 count=1 status=none
+	local entropy_fixture=/dev/zero true_bytes other_seed_bytes
 	true_bytes=$(env "$RANDOM_TEST_SEED_ENV=424242" random --true-random --random-source "$entropy_fixture" -b -c 32 2>/dev/null | xxd -p -c 256)
 	other_seed_bytes=""
 	local one_other_seed_bytes
@@ -1017,7 +1015,6 @@ test_random() {
 		if [ -z "$other_seed_bytes" ]; then other_seed_bytes="$one_other_seed_bytes"; fi
 		if [ "$one_other_seed_bytes" != "$true_bytes" ]; then other_seed_bytes="mismatch"; fi
 	done
-	rm -f -- "$entropy_fixture"
 	if [ "$true_bytes" = "$(printf '00%.0s' {1..32})" ] && \
 	   [ "$other_seed_bytes" = "$(printf '00%.0s' {1..32})" ] && \
 	   ! random --true-random -d --seed 1 -c 1 >/dev/null 2>&1; then

@@ -4,11 +4,11 @@ set -u
 set -o pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-lean_cli="${RANDOML_TEST_CLI:-$root/lean/.lake/build/bin/randoml}"
+lean_cli="${RANDOML_TEST_CLI:-$root/zig-out/bin/randoml}"
 zig_cli="${RANDOML_TEST_ZIG_CLI:-$root/zig-out/bin/randomz}"
 
 if [ -z "${RANDOML_TEST_CLI:-}" ]; then
-	(cd "$root/lean" && lake build) || exit 1
+	"$root/lean/build-owned-cli" "$lean_cli" || exit 1
 fi
 if [ -z "${RANDOML_TEST_ZIG_CLI:-}" ]; then
 	(cd "$root" && zig build -Doptimize=ReleaseFast) || exit 1
@@ -19,4 +19,20 @@ if [ ! -x "$lean_cli" ] || [ ! -x "$zig_cli" ]; then
 fi
 
 RANDOML_BACKEND="$zig_cli" RANDOM_TEST_CLI="$lean_cli" \
-	RANDOM_TEST_CLI_KIND=lean RANDOM_TEST_DEPTH=0 "$root/tests/random_test"
+	RANDOM_TEST_CLI_KIND=lean RANDOM_TEST_DEPTH=0 "$root/tests/random_test" || exit 1
+CANDIDATE_CLI="$lean_cli" CANDIDATE_KIND=lean ORACLE_CLI="$root/bin/random" \
+	RANDOMZ_DIFFERENTIAL_ONLY=1 \
+	"$root/tests/frontend_differential" || exit 1
+
+lean_sixel=$(env -u TMUX "$lean_cli" --normalized --view --sixel 2>/dev/null | sha256sum | cut -d' ' -f1)
+zig_sixel=$(env -u TMUX "$zig_cli" --normalized --view --sixel 2>/dev/null | sha256sum | cut -d' ' -f1)
+sixel_hex=$(env -u TMUX "$lean_cli" --normalized --view --sixel 2>/dev/null | xxd -p -c 1048576)
+lean_kitty=$(env -u TMUX "$lean_cli" --normalized --view --kitty 2>/dev/null | sha256sum | cut -d' ' -f1)
+zig_kitty=$(env -u TMUX "$zig_cli" --normalized --view --kitty 2>/dev/null | sha256sum | cut -d' ' -f1)
+if [ "$lean_sixel" != "$zig_sixel" ] || [ "$lean_kitty" != "$zig_kitty" ] ||
+   [[ "$sixel_hex" != *'1b371b50'* ]] || [[ "$sixel_hex" != *'1b38'* ]]; then
+	echo "randoml compiled chart codec regression: sixel=$lean_sixel/$zig_sixel kitty=$lean_kitty/$zig_kitty" >&2
+	exit 1
+fi
+
+echo "randoml compiled chart codecs PASSED: layer output matches Zig and ESC framing is byte-exact"

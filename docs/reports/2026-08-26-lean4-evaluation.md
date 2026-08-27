@@ -2,263 +2,254 @@
 
 **Date:** 2026-08-26 EDT
 **Toolchain:** Lean 4.30.0 / Lake 5.0.0
-**Scope:** independent deterministic DRBG model and proofs; compatible
-`randoml` command family; state-schema and byte-delimiter enhancements across
-all frontends
+**Scope:** complete independent `randoml` library and CLI, selected machine-checked
+production invariants, shared differential/statistical tests, packaging, and
+performance evaluation
 
 ## Outcome
 
-Lean was useful here, but not in the simplistic sense that “the program is now
-proved correct.” The project now has an independent pure Lean implementation
-of the exact BLAKE3 derive-key plus keyed-empty-message XOF construction used by
-the DRBG, including seekable reads, big-endian draws, and narrow/wide rejection
-sampling. Its seed-42 64-byte stream matches the frozen external oracle.
+`randoml` is a fourth independent implementation, not a compatibility wrapper.
+Its importable Lean library owns the BLAKE3 derive-key/keyed-XOF DRBG, exact
+fixed-point arithmetic, all distributions, state parsing and serialization, CLI
+semantics, formatting, byte-oriented stdin operations, and the canonical chart
+model and encoders. It neither launches nor links LuaJIT, Zig, or Rust for normal
+operation.
 
-Lean's kernel checks useful state and sampling invariants: successful fills
-advance by exactly the requested byte count, preserve the key, and leave the
-result cursor at or below the 2^53 position ceiling; successful seeks set the requested cursor; stream slices
-compose across resumptions; modulo mapping stays within its requested span; and
-any schedule of adjacent swaps preserves the input population.
+The native C boundary is intentionally small and contains only I/O-facing work:
+raw byte-preserving argv capture, OS entropy, platform identification, Lean
+runtime startup, and Base64 transport acceleration. Lean-generated C and these
+small native objects are linked into one `randoml` executable. The C code does
+not select distributions, advance deterministic state, parse state JSON, format
+numbers, shuffle items, or construct chart geometry.
 
-The complete `randoml` CLI is deliberately narrower as a correctness claim. It
-delegates parsing, system entropy, formatting, charts, stdin operation details,
-and nonlinear fixed-point distributions to the sibling `randomz` executable.
-It therefore provides the complete user surface and participates in the shared
-state/statistical/benchmark gates, but it is not a fourth independent oracle
-and the delegated behavior is not proved by Lean.
+This changes the conclusion of the earlier delegated experiment. There was no
+defensible metric behind the statement that Lean was “not yet justified as a
+wholesale replacement”: that statement measured a subprocess wrapper, not a
+Lean implementation. It is retracted. The completed experiment shows that Lean
+is a strong fit for this library's integer-heavy core and materially increases
+assurance, although the present proofs cover selected invariants rather than
+the entire numerical or cryptographic specification.
 
-That distinction is the most important result of the exercise: a theorem about
-a clean model is valuable, but it becomes a theorem about the shipped program
-only when the executable is the proved definition or a refinement theorem
-connects the implementation to it.
+## Architecture and trust boundary
+
+The production path is:
+
+```text
+raw OS argv / entropy
+        │
+        ▼
+thin native C boundary
+        │
+        ▼
+Lean CLI ──► pure Lean DRBG / fixed arithmetic / distributions / state / charts
+        │
+        ▼
+stdout and structured stderr
+```
+
+The `Drbg` constructor is private. Public construction and restoration validate
+the 32-byte key and the 2^53 cursor ceiling. Public BLAKE3 helpers return
+`Option`, reject unsupported key/message shapes, and cap a single `fill` at 1
+MiB; larger CLI streams are produced in bounded chunks. These boundaries prevent
+callers from manufacturing the invalid states on which earlier proof statements
+quietly depended.
+
+One architectural imperfection remains explicit in `PLAN.md`: deterministic
+sampling uses the pure `Distribution` definitions, while the true-random
+interpreter repeats sampler control flow in the effectful Lean `CliSource`
+module so it can request OS bytes. The business logic is still Lean-owned and
+matches the oracle, but a future pure byte-source effect should make the two
+interpreters share one sampler program.
 
 ## Proof and evidence matrix
 
+“Proved” below means Lean 4.30 elaborated the production-linked theorem under
+`--trust=0`; the source contains no `sorry`, `admit`, project `axiom`, `unsafe`,
+or nonterminating `partial` definitions. The gate checks the exact theorem types
+through `ProofContract.lean`, audits each theorem's dependencies with
+`#print axioms`, and permits only the expected kernel-level `propext` and
+`Quot.sound` dependencies where needed.
+
 | Claim | Status | Evidence or boundary |
 |---|---|---|
-| Lean BLAKE3 DRBG produces the frozen seed-42 stream | Tested independently | Trust-zero Lean evaluation against the existing 64-byte frozen vector |
-| Lean seek/read agrees across seeds and BLAKE3 block boundaries | Differentially tested | Five LuaJIT-oracle cases at offsets 0, 1, 63, 64, and 4097, with reads up to 130 bytes |
-| A successful fill advances the cursor exactly | Proved | `fill_advances_position` |
-| A successful fill preserves the derived key | Proved | `fill_preserves_key` |
-| Fill and seek respect/set the supported position | Proved | `fill_respects_position_limit`, `seek_sets_position` |
-| Splitting a logical stream read preserves order/content | Proved for the stream model | `stream_slice_chunking` |
-| Accepted modulo mapping is inside `[start,start+span)` | Proved | `mapped_draw_is_in_range` |
-| Shuffle steps cannot add/drop bytes | Proved for arbitrary adjacent-swap schedules | `swap_schedule_preserves_population` |
-| Lean BLAKE3 definition matches the complete BLAKE3 standard | Not formally proved | Frozen vector plus the existing three independent implementations; no formal standard model |
-| Rejection sampling is statistically uniform | Not formally proved | Arithmetic mapping bound is proved; acceptance/uniformity remains a mathematical argument plus differential/statistical tests |
-| Nonlinear fixed-point distributions are correct | Not proved by Lean | Delegated to `randomz`; already covered by independent LuaJIT/Zig/Rust differential and statistical controls |
-| CLI parsing, JSON, entropy, formatting, and terminal protocols are correct | Not proved by Lean | Delegated and tested through the shared Bash contract |
-| BLAKE3 is cryptographically secure | Outside proof scope | Relies on BLAKE3's external cryptographic analysis; these proofs establish program invariants, not PRF security |
-| Compiler, runtime, kernel, and hardware are correct | Assumed trusted base | Standard systems boundary |
+| Successful `Drbg.fill` advances by exactly the requested bytes | Proved on the production definition | `fill_advances_position` |
+| Successful fill preserves the derived key and respects the 2^53 ceiling | Proved on the production definition | `fill_preserves_key`, `fill_respects_position_limit` |
+| Successful seek sets the requested cursor | Proved on the production definition | `seek_sets_position` |
+| `nextU32`, `nextU64`, and uniform draws advance by 4/8/4 bytes and preserve the key | Proved on production definitions | six cursor/key theorems |
+| Every successful rejection-sampled range result is inside its requested inclusive bounds | Proved, including the bounded rejection loop | `rangeWithFuel_result_bounds`, `range_result_bounds` |
+| Canonical and positive parameter wrappers preserve their represented value/invariants | Proved | canonical/positive/normal/beta parameter theorems |
+| Production shuffle steps and schedules neither add nor drop items | Proved for every supplied swap schedule | production shuffle permutation theorems |
+| Curve height is zero for nonpositive inputs and saturated at/above one | Proved on the production function | two curve-height theorems |
+| Splitting an arbitrary logical stream slice preserves order/content | Proved for the abstract stream model | `stream_slice_chunking` |
+| Actual BLAKE3 XOF/fill bytes compose identically across resumed chunks | Executably tested, not yet formally connected to the abstract theorem | direct production `fill(a+b)` versus `fill(a); fill(b)` controls across 63/64-byte boundaries, plus external 65,535–65,538-byte CLI differentials |
+| Lean BLAKE3 matches the standard and the other implementations | Tested, not formally refined to a separate standard model | official empty and `abc` BLAKE3 vectors; frozen seed-42 stream; offset/block-boundary differentials |
+| Fixed-point operations and all nonlinear distributions match the contract | Differentially and statistically tested, not proved end-to-end | 141 exact CLI cases, continuation matrix, benchmark digests, and statistical shape/sensitivity suite |
+| State parser/serializer, CLI parser, codecs, stdin operations, and chart transports match | Exactly tested, not proved | shared 80-case Bash contract, parser limit fixtures, 736 continuation checks, frozen chart layers, exact frontend differential |
+| Rejection sampling is statistically uniform | Not formally proved | result bounds are proved; uniformity relies on the standard argument plus statistical controls |
+| BLAKE3 is a secure PRF/XOF and this construction is a CSPRNG | External cryptographic assumption | proofs establish implementation invariants, not cryptographic security |
+| Lean compiler/runtime, C compiler, OS, and hardware are correct | Trusted base | conventional systems boundary; native runtime parity beyond x86_64 Linux remains planned |
 
-The trusted Lean source contains no `sorry`, `admit`, project `axiom`, or
-`unsafe` declaration. `lean --trust=0` elaborates it. `#print axioms` reports
-only Lean's standard `propext` and `Quot.sound` dependencies where simplification
-and `ByteArray` equality require them; `sorryAx` and `Classical.choice` are
-rejected by the gate.
+The abstract stream theorem is deliberately described as abstract. It does not
+silently stand in for a refinement proof about `Blake3.xofAt`; connecting those
+definitions is the most important remaining formal task.
 
-The external control is mutation-sensitive: changing one bit in the Lean
-BLAKE3 IV made the vector/differential gate fail, and restoring it returned the
-gate to green.
+## What the independent port found
 
-## Hard decisions made overnight
+- The singleton inclusive range path originally consumed four bytes in Lean even
+  though LuaJIT, Zig, and Rust consume zero. The independent implementation made
+  the cursor discrepancy visible; the Lean path was corrected and the behavior
+  is now in the shared state test.
+- The first state parser was recursively partial and had looser resource limits.
+  It is now structurally total, capped at 1 MiB, 64 levels, 32 object members,
+  and 1,024 array items, with exact accepted/rejected boundary fixtures.
+- A pre-parse scan for `--help`, `--about`, and `--test` confused option values
+  with actions—for example, a delimiter literally named `--help`. Actions now
+  come only from the value-aware parser.
+- Standard Lean `main (List String)` cannot preserve invalid UTF-8 argv. The thin
+  native launcher fixed this instead of accepting a missing feature or false
+  rejection. Raw input bytes now reach Lean unchanged.
+- Public `ByteArray`/`Array` constructors initially exposed invalid BLAKE3/DRBG
+  states and made some theorem preconditions social rather than typed. Private
+  constructors and checked factories now enforce them.
+- Pure Lean Base64 was correct but took roughly 22 seconds for 1 MiB. Moving only
+  that transport primitive to the native edge reduced the same exact output to
+  about 104 ms end-to-end while leaving DRBG bytes and chart construction in
+  Lean. Frozen byte digests and terminal framing guard the boundary.
+- The code review caught a Windows entropy hazard before runtime testing:
+  `BCryptGenRandom` accepts a 32-bit length. The C edge now chunks larger `size_t`
+  requests rather than narrowing them and risking an uninitialized tail.
+- The review also forced the project to distinguish theorem-shaped reassurance
+  from production-linked evidence. Exact theorem-type witnesses, a strict axiom
+  whitelist, private state constructors, official vectors, and an independence
+  gate now make weakening substantially louder.
 
-### State schema and application version
+Lean did not expose a divergence in the established BLAKE3 deterministic stream.
+The new implementation did initially contain an ordinary porting error—message
+words were indexed from the working state—which the official/frozen vector gate
+caught before any output was accepted.
 
-Renaming `args.operation` to `args.op` and `args.delimiter` to `args.delim`
-changes the serialized contract, so I bumped `sv` from 1 to 2 and rejected v1
-instead of maintaining compatibility aliases. The project explicitly does not
-need legacy-state compatibility. I bumped the application/package version from
-0.2.0 to 0.3.0 because this is a deliberate public CLI/state change, not a
-patch-level correction.
+## Runtime `libm` linkage
 
-### State on stdout
+The source and generated deterministic logic use no floating-point type or
+operation. The final ELF nevertheless has a `libm` dependency because Lean's
+general native runtime/link configuration brings that system library into the
+executable. A dynamic-library name is therefore not evidence that this program's
+numeric core uses floating point. The appropriate controls are structural source
+checks, integer-only definitions, exact cross-implementation bytes, and the
+absence of float/libm calls in the implementation code—not pretending the Lean
+runtime has a narrower dependency set than it does.
 
-The flag is `--state-stdout`, not bare `--stdout`, because ordinary values
-already use stdout. Payload remains first and the canonical compact state is
-the final line. Successful state is moved, not duplicated, so stderr is empty;
-errors remain structured JSON on stderr. The flag implies deterministic mode,
-auto-seeds when necessary, conflicts with `--true-random`, and rejects raw
-binary unless it is encoded with `--hex` or `--base64`. These choices make
-`tail -n1` sufficient without inventing a second envelope or repeating large
-value arrays.
+## Performance and size
 
-### Empty delimiters mean bytes
+The three-run `./bm --quick` measurement below used direct argv, one warmup, and
+a null sink for timed payloads. It first compared digests for every workload; all
+ten payloads were byte-identical across LuaJIT, Zig/C, Rust, and Lean. Times are
+end-to-end means on the current x86_64-Linux host:
 
-For `--choose` and `--shuffle`, `--delimiter ''` treats every input byte as an
-item. It does not trim a trailing newline and does not decode UTF-8, so NUL and
-invalid UTF-8 survive. Shuffle concatenates the permuted bytes and writes the
-ordinary final newline; choose writes one selected byte and a newline.
-`--weighted` rejects this mode because `value:weight` records cannot be
-represented when every byte is independently tokenized. Byte semantics were
-chosen over Unicode code points or grapheme clusters because they are exact,
-cross-platform, binary-safe, and match the requested `Peter` example.
-
-### Lean implementation boundary
-
-I rejected pretending that a subprocess wrapper was an independent fourth
-implementation. A complete independent Lean port of the 684-line fixed-point
-kernel, every nonlinear sampler, JSON parser, terminal renderers, and OS
-backends would have produced a large volume of new code faster than meaningful
-refinement proofs could be written. That would optimize for the label “Lean
-port,” not for justified confidence.
-
-Instead, the independent Lean portion stops at a coherent, security-relevant
-boundary: BLAKE3 DRBG, seek/state semantics, endian draws, and unbiased integer
-range mechanics. The compatibility executable delegates the rest and says so
-in source, docs, and this report. A future phase can move fixed-point functions
-into Lean one operation at a time, with a specification and refinement theorem
-before switching the production path.
-
-### Lean formatting and argv limitations
-
-Lean 4.30 rejects tab indentation in source files, so `.lean` files use spaces
-despite the repository's tab preference. This is enforced by the parser.
-
-Lean's ordinary `main (arguments : List String)` boundary also decodes OS argv
-as Unicode strings. Invalid UTF-8 is replaced before Lean code can distinguish
-it from a literal U+FFFD argument. `randoml` rejects arguments containing that
-replacement character so the shared invalid-UTF-8 safety checks fail closed,
-but this also rejects a genuinely encoded U+FFFD delimiter. Achieving exact
-raw-argv parity would require a native launcher/FFI boundary. Since `randoml`
-already delegates its CLI surface, adding that complexity now would not improve
-the proved core and was deferred explicitly.
-
-### Runtime `libm` linkage
-
-The Lean runtime links symbols from `libm` even though `lean/Randoml` contains
-no floating-point type or operation and the deterministic model is integer
-only. The old binary-level “no libm dependency” test therefore cannot classify
-a managed runtime correctly. For Lean, the gate structurally scans the trusted
-model; it does not misrepresent unrelated runtime linkage as deterministic
-floating-point arithmetic. The production nonlinear output remains the
-integer-only `randomz` backend.
-
-### Native systems and Nix closure
-
-The flake no longer uses flake-utils' generic default-system list: current
-nixpkgs has dropped x86_64-darwin and this project already dropped that target.
-Native flake outputs are now exactly x86_64-Linux, aarch64-Linux, and
-aarch64-macOS; Windows remains an intentional cross-build target.
-
-The first installed package also retained a 2.4 GiB closure. Two unrelated
-causes were fixed rather than accepted as “the cost of Lean”: the installed
-80-case CLI self-test had inherited the full CI toolchain (Zig/LLVM, Node,
-ImageMagick, WASM, and Sixel tools), and Zig source paths embedded in the WASM
-made Nix retain the entire compiler closure. The self-test now closes over only
-the utilities it actually executes, and the inert WASM store reference is
-neutralized during installation. Installed-package smoke still runs all
-frontends' shared self-tests and validates the WASM. The measured closure is
-127.8 MiB, down from 2.4 GiB.
-
-## Correctness versus performance
-
-Proofs add compile-time cost and source complexity, but zero runtime cost when
-they describe definitions erased from execution. The pure Lean BLAKE3 model is
-clear enough for frozen-vector evaluation and theorem work, but it has not been
-micro-optimized and is not yet the CLI's payload engine. The current `randoml`
-benchmark row measures Lean process startup plus a `randomz` child process; it
-is useful as an end-user latency measurement, not as Lean-versus-Zig algorithm
-throughput.
-
-This split is preferable to publishing a misleading fast number from delegated
-code or a misleading correctness claim about code the theorem does not reach.
-If Lean becomes the execution engine later, benchmark pure DRBG throughput,
-allocation, executable size, and nonlinear samplers separately; proof erasure
-does not guarantee an efficient extracted program.
-
-The first release build unnecessarily enabled Lean interpreter support and was
-10,320,384 bytes after stripping. The release review removed that setting; the
-same stripped executable is 2,007,232 bytes, versus 653,088 bytes for `randomz`
-and 1,007,424 bytes for the unwrapped Rust CLI on this x86_64-Linux build. The
-remaining size is principally Lean runtime/startup machinery, not precomputed
-random tables.
-
-The three-run `./bm --quick` measurement below sent timed payloads to
-Hyperfine's null sink and sent its history to `/dev/null`; no generated payload
-or benchmark history was written to disk. Times are end-to-end mean wall time:
-
-| Workload | LuaJIT | Zig/C | Rust | `randoml` adapter |
+| Workload | LuaJIT | Zig/C | Rust | Lean |
 |---|---:|---:|---:|---:|
-| 1 MiB raw | 197.1 ms | 3.7 ms | 2.6 ms | 8.9 ms |
-| 1 MiB hex | 239.6 ms | 8.3 ms | 5.1 ms | 20.0 ms |
-| 1 MiB base64 | 247.1 ms | 9.0 ms | 4.4 ms | 18.2 ms |
-| 5,000 uniform small | 18.7 ms | 4.8 ms | 3.9 ms | 12.7 ms |
-| 5,000 uniform wide | 28.2 ms | 4.6 ms | 4.8 ms | 11.6 ms |
-| 5,000 normal | 324.3 ms | 12.8 ms | 14.9 ms | 20.9 ms |
-| 5,000 exponential | 300.5 ms | 8.7 ms | 13.0 ms | 14.4 ms |
-| 5,000 Poisson | 617.0 ms | 30.0 ms | 32.4 ms | 34.8 ms |
-| 5,000 log-normal | 465.0 ms | 16.5 ms | 20.7 ms | 24.0 ms |
-| 5,000 beta | 908.5 ms | 38.5 ms | 43.3 ms | 47.7 ms |
+| 1 MiB raw | 197.0 ms | 3.1 ms | 2.6 ms | 103.4 ms |
+| 1 MiB hex | 238.8 ms | 8.2 ms | 5.5 ms | 120.4 ms |
+| 1 MiB Base64 | 241.0 ms | 7.3 ms | 4.3 ms | 104.3 ms |
+| 5,000 uniform small | 22.5 ms | 4.6 ms | 3.8 ms | 48.8 ms |
+| 5,000 uniform wide | 26.7 ms | 5.8 ms | 4.9 ms | 56.6 ms |
+| 5,000 normal | 298.1 ms | 13.1 ms | 15.3 ms | 564.4 ms |
+| 5,000 exponential | 306.2 ms | 9.4 ms | 13.2 ms | 467.2 ms |
+| 5,000 Poisson | 618.2 ms | 30.8 ms | 33.3 ms | 1.462 s |
+| 5,000 log-normal | 465.0 ms | 17.1 ms | 21.9 ms | 912.9 ms |
+| 5,000 beta | 862.7 ms | 38.2 ms | 43.0 ms | 1.705 s |
 
-All ten benchmark payload digests were identical across the four packaged
-frontends and the unwrapped Rust timing binary before timing began. The Lean
-adapter is 1.16–4.15× the fastest implementation in these amortized batches;
-the gap shrinks on compute-heavy distributions because its extra process
-startup is fixed while `randomz` performs the same payload work underneath.
+Lean is about 24–40× slower than the fastest implementation for the 1 MiB byte
+workloads and 12–53× slower for these value/distribution batches. The nonlinear
+gap comes from the clear reference-style arbitrary-precision/fixed-point code,
+not from proof checking—the proofs are erased from runtime. This is acceptable
+for an oracle and many ordinary CLI uses, but not yet competitive for a hot
+generation path. The measured results also identify concrete optimization work
+rather than guessing that extraction will be fast.
 
-The separate fast statistical suite also passed 46 sanity/sensitivity checks
-for each of four command families (184 target checks total). It used 262,144
-raw bytes and 10,000 values per distribution and rejected its deliberately bad
-all-zero/constant controls. These numbers establish gross-shape sanity, not
-cryptographic security, and `randoml`'s statistical row measures delegated
-`randomz` output rather than the independent Lean model.
+The dedicated stripped `randoml` executable is 2,781,384 bytes and its Nix
+runtime closure is 120.7 MiB on x86_64 Linux. That is larger than the 653,088-byte
+Zig/C and 1,007,424-byte Rust binaries measured during this work, but it is not a
+precomputed-random table cost. It is principally Lean runtime and generated-code
+machinery. Removing unused interpreter support had already eliminated the first
+10.3 MiB binary and a packaging review reduced an accidental 2.4 GiB closure.
 
-## What Lean caught or clarified
+## Platform evidence
 
-- It forced the cursor/seek contract into explicit preconditions and made the
-  successful-state postconditions mechanically checkable.
-- The release review found that the first `fill` definition only bounded the
-  requested count against natural-number subtraction. A manually constructed
-  state already beyond the ceiling could therefore accept a zero-byte fill.
-  Tightening the definition and theorem made the result cursor itself the
-  proved postcondition; no production stream or frozen vector changed.
-- Proving stream-slice composition clarified the exact property continuation
-  needs: the stored cursor is a byte offset, not an output-item index.
-- Proving swap-schedule preservation separated the deterministic choice of
-  indices from the invariant users actually need—no input byte is created or
-  lost.
-- It exposed two boundary facts that ordinary porting language can hide:
-  standard Lean argv is not byte-preserving, and linking `libm` says nothing by
-  itself about whether a managed-language deterministic core uses floats.
-- It did not uncover a divergence in the existing DRBG. The independent Lean
-  compression/KDF/XOF implementation matched the frozen stream immediately
-  after one local implementation mistake in the new code (message words were
-  initially indexed from the working state) was caught during its own first
-  build/review and corrected before any vector was accepted.
+Deterministic CLI equality for `randoml` is measured on x86_64 Linux. The flake
+defines native Lean package outputs for x86_64 Linux, aarch64 Linux, and aarch64
+macOS, but this session did not download and execute the multi-gigabyte aarch64
+closure merely to convert a source claim into a weak emulated one. The native C
+entropy edge is compile/provenance-gated for Linux, macOS, OpenBSD, FreeBSD,
+NetBSD, illumos/Solaris, and Windows, and Linux entropy failure is injected and
+verified to fail closed. Native Lean runtime/digest legs for aarch64 Linux/macOS
+and a supported Windows Lean toolchain remain explicit plan items.
+
+Accordingly, the repository-wide cross-platform-identical contract remains
+strongly evidenced by the established LuaJIT/Zig/Rust architecture matrix; the
+Lean implementation is a fourth exact oracle on the measured host, not yet an
+independent multi-architecture confirmation.
+
+## Other hard decisions
+
+- State schema version 2 uses the short `args.op` and `args.delim` keys and does
+  not preserve schema-1 compatibility, as the project explicitly permits
+  breaking legacy state.
+- `--state-stdout` moves canonical continuation state to the final stdout line;
+  it does not duplicate potentially large value streams in JSON.
+- Empty delimiter mode treats choose/shuffle input as raw bytes, including NUL
+  and invalid UTF-8. Weighted records reject that mode because byte items cannot
+  represent `value:weight` records.
+- Lean source uses spaces because Lean 4.30 rejects tab indentation. Shell, C,
+  Nix, and other repository files retain the project's tab preference where
+  their formatters/parsers allow it.
 
 ## Recommendation
 
-Use Lean selectively for libraries where a small pure kernel carries a large
-share of the risk: parsers with crisp grammars, serialization/state machines,
-bounded arithmetic, cryptographic framing, allocation/accounting invariants,
-and transformations such as shuffles that have strong conservation laws.
+For this library, keep and deepen the complete Lean implementation. It already
+provides three kinds of value that a model beside a delegated wrapper could not:
 
-Do not begin by proving a whole CLI or by rewriting every mature numerical
-routine. First identify a narrow executable kernel and an independently useful
-specification. Require:
+1. a genuinely independent typed implementation that catches differing state
+   and parser assumptions;
+2. kernel-checked properties of the actual production definitions; and
+3. an executable oracle whose exact outputs can challenge all three mature
+   implementations.
 
-1. the production definition itself to be proved, or an explicit refinement
-   theorem connecting production code to the model;
-2. external vectors/differential tests for underspecified algorithms and for
-   mistakes shared by a model and its proofs;
-3. mutation controls showing the gates can reject plausible defects;
-4. a published claim matrix separating proved, tested, externally assumed,
-   and out-of-scope properties;
-5. `--trust=0`, forbidden proof escapes, and `#print axioms` in CI.
+Lean is especially well matched to deterministic integer libraries with explicit
+state, bounded arithmetic, parsers, serialization, and conservation properties.
+The tradeoff is real: implementation/proof effort is higher, runtime is currently
+much slower, and “written in Lean” does not imply end-to-end correctness.
 
-For `random`, the best next Lean investment is to formalize the complete
-rejection loop and connect `Blake3.xofAt` to `streamSlice`, then port and refine
-one fixed-point primitive with the highest historical defect rate. Only after
-those links are proved should `randoml` replace delegation for that path. Lean
-is worth using here as a precision tool and executable specification; it is not
-yet justified as a wholesale replacement for the three mature independent
-implementations.
+For libraries seeking similar assurance:
+
+1. make the proved definition the production definition, or publish a refinement
+   theorem that connects them;
+2. pair proofs with independent official vectors, differential/property tests,
+   and mutation-sensitive controls;
+3. publish a claim matrix separating proved, tested, externally assumed, and
+   out-of-scope properties;
+4. close constructors around invariants instead of documenting them as caller
+   obligations;
+5. gate `--trust=0`, forbidden proof escapes, exact theorem signatures, and
+   explicit axiom dependencies in CI; and
+6. measure the extracted executable before deciding whether it is a production
+   hot path, an authoritative oracle, or both.
+
+The next formal priorities are to connect actual `Blake3.xofAt`/`Drbg.fill` bytes
+to the abstract stream theorem, add a separate BLAKE3 specification/refinement
+layer, and prove more of the fixed-point and distribution error bounds. The next
+architectural priority is the shared pure byte-source sampler program described
+above. These are reasons to continue the Lean investment, not grounds for
+discounting the complete implementation already delivered.
 
 ## Verification summary
 
-The pre-shipment local gate passed all 21 suites, 700 shared state/continuation
-checks, 184 statistical sanity/sensitivity checks, ten benchmark parity
-digests, 11 Zig/C cross-compilation targets, WASI validation, installed-package
-self-tests, trust-zero Lean elaboration/axiom audit, and the controlled Lean
-mutation. Exact CI status is reported with the shipping handoff.
+The final pre-shipment gate covers 22 required suites, the shared 80-case CLI
+contract against all four command families, 141 exact LuaJIT-versus-Lean cases,
+736 all-direction continuation checks, official/frozen vectors, production
+chunking boundaries, parser resource boundaries, chart layer and framing
+fixtures, trust-zero proof elaboration and exact axiom auditing, independence
+controls, statistical shape/sensitivity checks, entropy fault injection and
+cross-compilation, package self-tests, ten benchmark digest comparisons, and the
+existing Zig/Rust/WASI/cross-architecture gates. Exact CI status belongs to the
+shipping handoff rather than being predicted here.

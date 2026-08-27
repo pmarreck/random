@@ -71,7 +71,7 @@ def wordAt (bytes : ByteArray) (offset : Nat) : UInt32 :=
     ((bytes.get! (offset + 2)).toUInt32 <<< 16) |||
     ((bytes.get! (offset + 3)).toUInt32 <<< 24)
 
-def blockWords (bytes : ByteArray) : Words :=
+private def blockWords (bytes : ByteArray) : Words :=
   let padded := (List.range (64 - bytes.size)).foldl (fun out _ => out.push 0) bytes
   (List.range 16).foldl (fun words index => words.push (wordAt padded (index * 4))) #[]
 
@@ -93,7 +93,7 @@ def Output.rootBlock (output : Output) (outputCounter : UInt64) : ByteArray :=
   wordsToBytes (compress output.cv output.block outputCounter output.blockLength
     (output.flags ||| root))
 
-def singleBlockOutput (bytes : ByteArray) (key : Words) (flags : UInt32) : Output :=
+private def singleBlockOutput (bytes : ByteArray) (key : Words) (flags : UInt32) : Output :=
   {
     cv := key
     block := blockWords bytes
@@ -102,25 +102,29 @@ def singleBlockOutput (bytes : ByteArray) (key : Words) (flags : UInt32) : Outpu
     flags := flags ||| chunkStart ||| chunkEnd
   }
 
-def hash32 (bytes : ByteArray) (key : Words := iv) (flags : UInt32 := 0) : ByteArray :=
-  (singleBlockOutput bytes key flags).rootBlock 0 |>.extract 0 32
+def hash32 (bytes : ByteArray) (key : Words := iv) (flags : UInt32 := 0) : Option ByteArray :=
+  if bytes.size ≤ 64 ∧ key.size = 8 then
+    some ((singleBlockOutput bytes key flags).rootBlock 0 |>.extract 0 32)
+  else
+    none
 
-def keyWords (bytes : ByteArray) : Words :=
+private def keyWords (bytes : ByteArray) : Words :=
   (List.range 8).foldl (fun words index => words.push (wordAt bytes (index * 4))) #[]
 
-def deriveKey (context : String) (material : ByteArray) : ByteArray :=
-  let contextKey := hash32 context.toUTF8 iv deriveKeyContext
+def deriveKey (context : String) (material : ByteArray) : Option ByteArray := do
+  let contextKey ← hash32 context.toUTF8 iv deriveKeyContext
   hash32 material (keyWords contextKey) deriveKeyMaterial
 
-def keyedEmptyOutput (key : ByteArray) : Output :=
+private def keyedEmptyOutput (key : ByteArray) : Output :=
   singleBlockOutput ByteArray.empty (keyWords key) keyedHash
 
-def xofAt (key : ByteArray) (position count : Nat) : ByteArray :=
+def xofAt (key : ByteArray) (position count : Nat) : Option ByteArray := do
+  if key.size != 32 then none else pure ()
   let firstBlock := position / 64
   let offset := position % 64
   let blockCount := (offset + count + 63) / 64
   let bytes := (List.range blockCount).foldl (fun out index =>
     out ++ (keyedEmptyOutput key).rootBlock (UInt64.ofNat (firstBlock + index))) ByteArray.empty
-  bytes.extract offset (offset + count)
+  pure (bytes.extract offset (offset + count))
 
 end Randoml.Blake3

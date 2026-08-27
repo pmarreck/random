@@ -1,7 +1,7 @@
 # BLAKE3 keyed-DRBG replacement for PCG32 — design
 
-**Date:** 2026-08-04 · **Status:** implemented and gated in LuaJIT, Zig/C, and
-Rust; independently formalized in Lean 4 · **Supersedes:** the PCG32
+**Date:** 2026-08-04 · **Status:** implemented and gated independently in LuaJIT,
+Zig/C, Rust, and Lean 4; selected production invariants formalized in Lean 4 · **Supersedes:** the PCG32
 deterministic generator in `bin/random`
 
 ## Why
@@ -70,9 +70,10 @@ seek_to_draw(n, width): pos = n * width    # O(1) only for fixed-width raw draws
   implementation code nor FFI with the LuaJIT or Zig core.
 - Lean: an independent single-chunk derive-key/keyed-empty-message XOF model
   in `lean/Randoml`, sufficient for this DRBG's fixed context and 32-byte seed.
-  Its frozen stream matches the other implementations. The current `randoml`
-  compatibility frontend delegates unformalized CLI/distribution work to
-  `randomz`, so Lean is not counted as a fourth independent oracle.
+  The same importable Lean library owns the integer-only numeric kernel, every
+  distribution, state parser, CLI semantics, formatting, stdin operations, and
+  canonical chart model. `randoml` is therefore a fourth independent oracle;
+  it has no `randomz` process or library dependency.
 - The keyed-hash *message* is empty; the key alone determines the stream. The
   KDF context string below domain-separates keys derived through this CLI.
 - LuaJIT numbers represent integers exactly only through 2^53. The Lua oracle
@@ -274,16 +275,20 @@ every sampler without going through CLI formatting.
 `lean/Randoml` is an importable, pure Lean 4.30 library. It independently
 implements the exact BLAKE3 compression/KDF/keyed-XOF construction needed by
 this DRBG, seekable byte generation, big-endian 32/64-bit assembly, and narrow
-and wide rejection sampling. Lean's kernel checks proofs for cursor
-advancement, key preservation, position bounds, compositional stream slicing,
-bounded range mapping, and population preservation under swap schedules.
+and wide rejection sampling. It also owns fixed arithmetic, all six
+distributions, JSON state, CLI validation, formatting, stdin operations, and
+the semantic/chart-raster pipeline. Lean's kernel checks production-linked
+proofs for cursor advancement, key preservation, position/range bounds,
+canonical parameter boundaries, curve endpoints, and population preservation
+under the production shuffle operations. A separate abstract stream theorem
+establishes slice composition; byte equality for two actual `xofAt`/`fill`
+chunks remains differentially tested rather than formally connected to it.
 
-The `randoml` executable is intentionally a compatibility adapter over the
-installed `randomz` CLI for parsing, entropy, formatting, charts, stdin
-operations, and nonlinear fixed-point distributions. This makes the complete
-CLI usable and places it in the shared state/statistics/benchmark gates, but it
-does not prove or independently reimplement those delegated components. The
-claim boundary and recommendation are recorded in
+The executable uses a thin C adapter only where operating-system bytes require
+it: byte-preserving `argv`, OS entropy handles, platform/architecture labels,
+and the Base64 transport codec used for terminal output. The canonical chart
+shape/raster remains Lean-owned. The exact proved/tested/assumed boundary is
+recorded in
 `docs/reports/2026-08-26-lean4-evaluation.md`.
 
 ## Finalized boundary decisions

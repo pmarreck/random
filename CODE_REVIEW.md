@@ -635,3 +635,174 @@ process boundary, not the C ABI, and is documented accordingly.
 ## 13. Database access
 
 Not applicable. No command family persists RNG state or uses a database.
+
+---
+
+# Full independent Lean implementation — final addendum (2026-08-26)
+
+This addendum supersedes the delegated-adapter conclusions in the preceding Lean
+checkpoint. Three fresh-context reviews independently covered the Lean core and
+proofs, the CLI/native boundary, and repository-wide build/test/package behavior.
+Their actionable findings were reproduced and incorporated before shipment.
+
+## 1. Summary and scope
+
+`randoml` now owns its complete production behavior. The native C code is limited
+to raw argv, OS entropy, platform labels, Lean runtime startup, and Base64
+transport acceleration. The independence gate rejects subprocess/dynamic-load
+surfaces and compares all deterministic distribution families to the external
+oracle while poisoning the former delegation environment variable.
+
+- **Fixed — BLOCKER:** the previous executable delegated nearly the entire CLI to
+  `randomz`, so benchmarks and shared tests did not evaluate Lean algorithms.
+  Delegation was removed; 141 exact CLI cases and ten benchmark payloads now run
+  the Lean implementation itself.
+- **Fixed — BLOCKER:** the exact frontend differential was not wired into
+  `tests/randoml_test`, allowing an edge mismatch (`1...1`) through the nominal
+  shared suite. It now runs on every `randoml_test` invocation.
+- **Fixed — BLOCKER:** a clean suite could reach `randoml_test` before building
+  `randoml`. The suite and independence gate now build the owned executable when
+  one is not explicitly supplied.
+
+## 2. Correctness
+
+- **Fixed — BLOCKER:** Lean's singleton range path consumed one draw while the
+  other three implementations consumed none. Production now returns the
+  singleton without advancing state; shared continuation tests freeze it.
+- **Fixed — WARNING:** raw action-flag pre-scanning interpreted option values such
+  as `--delimiter --help` as actions. The value-aware parser now owns action
+  selection.
+- **Fixed — WARNING:** invalid UTF-8 delimiters could fail only after earlier
+  output had already been emitted. Validation now occurs before output.
+- **Fixed — WARNING:** `normalInt` accepted a range one unit wider than the common
+  2^53 contract because its comparison was exclusive. It now rejects
+  `width >= clamp`.
+- **Fixed — WARNING:** public BLAKE3 and DRBG shapes admitted invalid key/message
+  sizes and manually manufactured invalid state. Constructors/helpers are now
+  checked, `Drbg.mk` is private, and large fills are bounded and streamed.
+- **Fixed — WARNING:** the state parser's recursive implementation and resource
+  limits were not production-total. It is structurally terminating and its exact
+  1 MiB/depth/member/item boundaries are controlled.
+
+## 3. Tests and test quality
+
+- **Fixed — BLOCKER:** installed `randoml --test` recursively selected a wrapper
+  and failed. The wrapper uses a default test path and the Lean CLI explicitly
+  identifies itself to the shared harness. The dedicated installed package now
+  self-tests.
+- **Fixed — WARNING:** the axiom gate was name-shaped and could continue passing
+  after theorem weakening. `ProofContract.lean` restates release-critical exact
+  theorem types, and the audit requires exactly 25 approved result lines.
+- **Fixed — WARNING:** BLAKE3 testing lacked standard vectors and parser tests
+  lacked exact limits. Official empty/`abc` vectors and both sides of all parser
+  boundaries are now gated.
+- **Fixed — WARNING:** the only chunking theorem concerned an abstract stream.
+  That theorem is now described honestly; executable controls separately compare
+  production `fill(a+b)` with resumed `fill(a); fill(b)` across BLAKE3 boundaries.
+- **Remaining — WARNING:** `Blake3.xofAt`/`Drbg.fill` byte content has no formal
+  refinement theorem connecting it to `streamSlice`. Exact independent vectors
+  and differentials control it today; formal connection is tracked in `PLAN.md`.
+
+## 4. Fast coverage
+
+Pure theorem/vector fixtures remain fast. The shared CLI/state tests are pure
+calculation except deliberate OS-entropy controls. Cold full-suite time is still
+dominated by release, cross-target, package, and mutation builds, not sampling.
+No sleeps or timing assertions were introduced.
+
+## 5. Duplication
+
+- **Remaining — WARNING:** `CliSource` repeats the deterministic distribution
+  control flow for OS-entropy draws. Both copies are Lean-owned and exact tests
+  agree, but the correct abstraction is one pure sampler program interpreted by
+  either a DRBG or native byte source. This is tracked as post-port architecture
+  work rather than hidden as an I/O exception.
+- The four independent implementations intentionally duplicate algorithms; the
+  shared Bash contract, official vectors, and cross-implementation differentials
+  turn that duplication into an oracle rather than an unreviewed fork.
+
+## 6. Organization
+
+- **Fixed — WARNING:** dormant callback/FFI/ABI files described a second unbuilt
+  architecture, lacked correct runtime initialization, and duplicated sampling
+  logic. They were removed to Trash. The surviving native files have one purpose
+  each: runtime/raw-argv launch and native I/O/transport helpers.
+- **Fixed — ADVISORY:** Lake's default target built a diagnostic dummy instead of
+  the library. `lake build` now builds `Randoml`; the owned executable has one
+  explicit build script.
+
+## 7. Complexity
+
+- **Fixed — WARNING:** pure Lean Base64 took about 22 seconds for a 1 MiB payload.
+  The byte transform is now accelerated at the native transport edge and matches
+  frozen digests/framing; end-to-end Base64 is about 104 ms in the quick run.
+- **Fixed — ADVISORY:** JSON quoting, stdin accumulation, and byte trimming used
+  repeated immutable concatenation. They now use byte builders/chunk collection.
+- **Remaining — ADVISORY:** the reference-style Lean fixed-point/nonlinear code is
+  12–53x slower than the fastest implementation in the quick suite. This is
+  acceptable for an oracle, but profiling/algorithmic work is required before
+  presenting it as a high-throughput path.
+
+## 8. File purpose
+
+Every new production module now has a distinct concern: native declarations,
+DRBG/BLAKE3, fixed arithmetic, samplers, state, options, source interpretation,
+shuffle, chart model/encoding, CLI orchestration, proofs, and exact proof
+contracts. The evaluation report is the requested experiment record and claim
+matrix rather than a second normative specification.
+
+## 9. Language features and proof discipline
+
+The implementation uses private constructors and checked wrapper types to carry
+invariants into theorem statements. Recursive rejection sampling is explicitly
+fuel-bounded by the public cursor ceiling; there are no proof escapes or
+nontermination markers in trusted source. Lean files use spaces because Lean
+4.30 rejects tab indentation.
+
+- **Remaining — WARNING:** BLAKE3 compression has no refinement to a separate
+  `BitVec`/mathematical standard model, and fixed/transcendental numerical error
+  bounds are not formally established. The report labels these as tested, not
+  proved.
+
+## 10. Memory and resources
+
+- **Fixed — BLOCKER:** `xofAt` could allocate an arbitrary caller-requested
+  output. Public fill is capped at 1 MiB per call and CLI output streams bounded
+  chunks, preserving the 2^53 logical cursor.
+- **Fixed — BLOCKER:** Windows `BCryptGenRandom` narrowed `size_t` to `ULONG`,
+  potentially leaving a large-request tail uninitialized. Requests are chunked
+  at the API's 32-bit ceiling.
+- State input remains capped at 1 MiB and parser containers/depth are bounded.
+  The dedicated stripped binary is 2,781,384 bytes; the measured Nix closure is
+  120.7 MiB rather than the accidental initial 2.4 GiB.
+
+## 11. FFI/native-boundary correctness
+
+The final executable has no public Lean-specific C ABI: its native calls are an
+internal implementation boundary. Every platform entropy branch checks short
+reads/errors and Linux denial is fault-injected. The C source is cross-compiled
+and symbol/provenance-gated for Linux, macOS, OpenBSD, FreeBSD, NetBSD, illumos,
+and Windows.
+
+- **Fixed — WARNING:** the illumos preprocessor label was shadowed by the generic
+  Solaris branch. Ordering now makes the intended label reachable.
+- **Remaining — WARNING:** native Lean runtime/digest execution is currently
+  measured only on x86_64 Linux. aarch64 Linux/macOS and a supported Windows Lean
+  toolchain are explicit plan items; source cross-compilation is not reported as
+  runtime proof.
+
+## 12. Error handling and proof gaps
+
+Errors remain structured JSON and entropy failures fail closed. Checked factories
+return `Option`/`Except`; malformed state and unsupported sizes cannot reach
+unchecked internal constructors. User-facing parse errors are differentiated
+where the shared contract requires exact text.
+
+Remaining formal gaps are stated in the evaluation matrix: actual XOF refinement,
+cryptographic security, statistical uniformity, complete fixed-point/distribution
+accuracy, and compiler/runtime/hardware correctness are not claimed as proved.
+
+## 13. Database access
+
+Not applicable. RNG continuation state is explicit process input/output and no
+implementation persists it in a database or temporary payload file.

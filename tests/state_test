@@ -20,9 +20,9 @@ if [ -z "${STATE_TEST_RUST_CLI:-}" ]; then
 	(cd "$root" && cargo build --locked --release -p randomr-cli) || exit 1
 fi
 
-lean_cli="${STATE_TEST_LEAN_CLI:-$root/lean/.lake/build/bin/randoml}"
+lean_cli="${STATE_TEST_LEAN_CLI:-$root/zig-out/bin/randoml}"
 if [ -z "${STATE_TEST_LEAN_CLI:-}" ]; then
-	(cd "$root/lean" && lake build) || exit 1
+	"$root/lean/build-owned-cli" "$lean_cli" || exit 1
 fi
 export RANDOML_BACKEND="${RANDOML_BACKEND:-$zig_cli}"
 
@@ -199,6 +199,7 @@ resume_case()
 
 echo "Testing all same- and cross-implementation continuation directions..."
 resume_case "uniform die" text 5 14 d20
+resume_case "singleton uniform range" text 5 14 5..5
 resume_case "rejection-sampled wide range" text 5 14 0..2147483648
 resume_case "normal" text 3 9 --normalized -18...19
 resume_case "custom normal" text 3 9 --normalized --mean -3.25 --stddev 1.75

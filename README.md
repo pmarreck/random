@@ -9,13 +9,14 @@ normal, exponential, Poisson, log-normal, and beta distributions. True-random
 mode instead draws fresh entropy from the operating system CSPRNG and is
 intentionally not reproducible.
 
-The project ships three independent matching implementations: the original
+The project ships four independent matching implementations: the original
 [LuaJIT](https://luajit.org/) oracle, a Zig core exposed through a public C ABI
-and dogfooded by a C CLI, and a pure-core Rust library with a separate Rust CLI.
-A fourth command family, `randoml`, accompanies an independent pure Lean 4
-BLAKE3/DRBG model and machine-checked state/sampling invariants. Its production
-CLI compatibility surface currently delegates to `randomz`; it is therefore a
-formalization and frontend, not a fourth independent differential oracle.
+and dogfooded by a C CLI, a pure-core Rust library with a separate Rust CLI, and
+a Lean 4 implementation with a byte-preserving native launcher. `randoml` owns
+its BLAKE3 DRBG, integer-only numeric kernel, distributions, state parser,
+formatting, stdin operations, and canonical chart model; it does not launch or
+link another implementation. Lean's kernel additionally checks selected
+production invariants.
 A seeded BLAKE3 keyed XOF powers cross-platform-identical deterministic streams;
 stdin operations and multiple output encodings make the same small tool useful
 beyond number generation.
@@ -23,7 +24,7 @@ beyond number generation.
 It ships four equivalent command families: `random`/`nrandom`/`drandom` use
 LuaJIT, `randomz`/`nrandomz`/`drandomz` use the C frontend over Zig, and
 `randomr`/`nrandomr`/`drandomr` use Rust. `randoml`/`nrandoml`/`drandoml` use
-the Lean frontend described above. The invocation name selects normalized or
+the independent Lean implementation described above. The invocation name selects normalized or
 deterministic mode in every family.
 
 ## Features
@@ -47,10 +48,11 @@ deterministic mode in every family.
 - **Native Rust library:** the `randomr` crate exposes the caller-owned DRBG,
   integer-only fixed arithmetic, samplers, and curve generation; only its
   explicitly selected `entropy` module performs I/O
-- **Lean 4 formal model:** `lean/Randoml` independently implements the BLAKE3
-  KDF/keyed-XOF DRBG and uniform sampler and proves cursor advancement, key
-  preservation, seek, stream chunking, bounded mapping, and shuffle-population
-  invariants under Lean's kernel; see the honest proof boundary in the
+- **Lean 4 implementation and proofs:** `lean/Randoml` independently implements
+  the complete CLI/core surface and proves cursor advancement, key preservation,
+  seek/range bounds, canonical-value boundary properties, curve saturation, and
+  production shuffle-population invariants under Lean's kernel; see the exact
+  proved/tested/assumed boundary in the
   [Lean evaluation report](docs/reports/2026-08-26-lean4-evaluation.md)
 - **WASM build:** `randomz-wasi.wasm` exports the same deterministic core plus
   a fail-closed adapter to the host's WASI `random_get`; the pure Rust core is
@@ -58,8 +60,8 @@ deterministic mode in every family.
   deferred until a measured size/performance comparison decides whether
   shipping one or both is useful
 - **Small runtime surface:** LuaJIT for the oracle CLI; libc for `randomz`;
-  `randomr` is a native Rust executable; `randoml` uses the Lean runtime and
-  launches the installed `randomz` compatibility backend
+  `randomr` is a native Rust executable; `randoml` uses the Lean runtime plus a
+  thin C boundary for raw argv, OS entropy, and terminal-transport Base64
 
 ### Determinism
 
@@ -315,7 +317,7 @@ LuaJIT-only gist has no separately visible license.
 nix run github:pmarreck/random            # run without installing
 nix run github:pmarreck/random#randomz    # C CLI over the Zig FFI
 nix run github:pmarreck/random#randomr    # Rust CLI
-nix run github:pmarreck/random#randoml    # Lean frontend + proved model
+nix run github:pmarreck/random#randoml    # independent Lean implementation
 nix profile install github:pmarreck/random
 ```
 
@@ -332,11 +334,11 @@ For Rust, run `cargo build --locked --release -p randomr-cli`; Cargo emits
 programs can depend on the workspace crate at `rust/randomr` and use `Drbg` as a
 `ByteSource` for any exported sampler without involving CLI I/O or formatting.
 
-For Lean, run `(cd lean && lake build)` with Lean 4.30.0. The importable
-`Randoml` modules and `randoml` executable appear under `lean/.lake/build`.
-Set `RANDOML_BACKEND` for a manual tree build, or place `randomz` beside
-`randoml`; the Nix package does the latter and installs the `nrandoml` and
-`drandoml` wrappers.
+For Lean, `(cd lean && lake build)` with Lean 4.30.0 builds and checks the
+importable `Randoml` library. Build the byte-preserving production executable
+with `lean/build-owned-cli zig-out/bin/randoml`; no Zig binary or library is
+used by that command. The dedicated `.#randoml` Nix package installs only the
+Lean executable, `nrandoml`/`drandoml` aliases, and its self-test surface.
 
 The same build emits `zig-out/bin/randomz-wasi.wasm`, a WASI Preview 1 reactor
 module. It exports memory, the public deterministic `randomz_*` ABI, and
@@ -382,7 +384,7 @@ direnv allow      # or: nix develop
 ./test            # FAST mode (quick, quiet on success)
 FAST= ./test      # full statistical run
 ./stats           # separate, deeper sanity analysis of all four command families
-nix flake check   # hermetic CI check (runs all 21 suites, but FORCES FAST=1 --
+nix flake check   # hermetic CI check (runs all 22 suites, but FORCES FAST=1 --
                    # kernel_jit_diff's 60000-iteration deep JIT differential
                    # is deep-mode-only by design and is SKIPPED here, not run;
                    # run `FAST= ./test` locally for the full non-FAST suite)
@@ -390,7 +392,7 @@ nix flake check   # hermetic CI check (runs all 21 suites, but FORCES FAST=1 --
 
 `./test` runs every suite under `tests/` (official BLAKE3 vectors, an independent
 Zig DRBG reference check, the same 80-check Bash CLI contract against all four
-command families, the independent three-way exact frontend matrices, Rust
+command families, the independent LuaJIT-vs-Zig/Rust/Lean exact frontend matrices, Rust
 mutation/downstream-library controls, a C-compiled public-ABI conformance
 test, Lean trust-zero elaboration/frozen vectors/proof axiom audits, isolated
 Zig-package reconstruction, 11-target Zig cross-compilation
@@ -429,8 +431,15 @@ executable hashes, and the tool versions visible to the harness append to
 set, and timing surface provide a two-sided ±15% review threshold: regressions
 are loud, and surprising speedups are flagged in case work disappeared. Use
 `--quick` for a short run or `--check` for only the cross-implementation proof.
-The Lean row measures its current frontend plus the `randomz` child process;
-it is adapter overhead, not independent Lean distribution throughput.
+The Lean row measures the independent compiled Lean implementation. Its native
+code handles only the approved byte/I/O boundary; timed DRBG, arithmetic, and
+distribution work is Lean-owned.
+
+Lean CLI parity is currently executed on x86_64 Linux. The repository's
+multi-architecture contract is independently measured by the established
+LuaJIT/Zig/Rust matrix; native Lean digest legs for aarch64 Linux/macOS and a
+supported Windows Lean toolchain remain tracked in `PLAN.md` rather than being
+claimed from source inspection alone.
 
 The Rust compile-time coefficient change was measured before and after on an
 AMD Ryzen Threadripper 3990X, using the quick suite's 5,000-sample batches and

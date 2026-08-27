@@ -179,6 +179,43 @@
           };
         };
         randomr = mkRandomr pkgs true;
+        randoml = pkgs.stdenv.mkDerivation {
+          pname = "randoml";
+          version = "0.3.0";
+          src = ./.;
+          strictDeps = true;
+          nativeBuildInputs = [ pkgs.lean4 pkgs.makeWrapper pkgs.bash ];
+          buildInputs = [ pkgs.gmp pkgs.libuv ];
+          buildPhase = ''
+            runHook preBuild
+            bash lean/build-owned-cli randoml
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            install -Dm755 randoml $out/bin/randoml
+            strip --strip-unneeded $out/bin/randoml
+            install -Dm755 tests/random_test $out/share/randoml/tests/random_test
+            install -Dm644 tests/cli_test_setup.sh $out/share/randoml/tests/cli_test_setup.sh
+            install -Dm644 LICENSE $out/share/licenses/randoml/LICENSE
+			substituteInPlace $out/share/randoml/tests/random_test \
+			  --replace-fail '#!/usr/bin/env bash' '#!${pkgs.bash}/bin/bash'
+            makeWrapper $out/bin/randoml $out/bin/nrandoml \
+              --set RANDOML_INVOKED_AS nrandoml
+            makeWrapper $out/bin/randoml $out/bin/drandoml \
+              --set RANDOML_INVOKED_AS drandoml
+            wrapProgram $out/bin/randoml \
+              --set-default RANDOM_TEST_FILE $out/share/randoml/tests/random_test \
+              --prefix PATH : ${pkgs.lib.makeBinPath installedTestTools}
+            runHook postInstall
+          '';
+          meta = with pkgs.lib; {
+            description = "Independent Lean 4 implementation of the cross-platform-identical random CSPRNG";
+            license = licenses.mit;
+            platforms = platforms.unix;
+            mainProgram = "randoml";
+          };
+        };
         crossWithUnsupported = crossPkgs: import nixpkgs {
           localSystem = system;
           crossSystem = crossPkgs.stdenv.hostPlatform;
@@ -220,7 +257,7 @@
             export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-local"
             mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
             zig build -Doptimize=ReleaseFast
-            (cd lean && lake build)
+            bash lean/build-owned-cli zig-out/bin/randoml
             runHook postBuild
           '';
           installPhase = ''
@@ -232,10 +269,12 @@
             # build sandbox, not from $out/bin.
             cp lib/*.lua $out/lib/
             cp tests/random_test tests/cli_test_setup.sh $out/tests/
+			substituteInPlace $out/tests/random_test \
+			  --replace-fail '#!/usr/bin/env bash' '#!${pkgs.bash}/bin/bash'
             cp zig-out/bin/randomz $out/bin/randomz
             cp ${randomr}/bin/randomr $out/bin/randomr
             cp ${randomr}/libexec/randomr $out/libexec/randomr
-            cp lean/.lake/build/bin/randoml $out/bin/randoml
+            cp zig-out/bin/randoml $out/bin/randoml
             strip --strip-unneeded $out/bin/randoml
             cp zig-out/bin/randomz-wasi.wasm $out/lib/randomz-wasi.wasm
             # Zig embeds source paths in this release WASM. They are inert
@@ -263,6 +302,9 @@
             patchShebangs $out/bin/random $out/tests/random_test
             wrapProgram $out/tests/random_test \
               --prefix PATH : ${pkgs.lib.makeBinPath (runtimeTools ++ installedTestTools)}
+            wrapProgram $out/bin/randoml \
+              --set-default RANDOM_TEST_FILE $out/tests/random_test \
+              --prefix PATH : ${pkgs.lib.makeBinPath (runtimeTools ++ installedTestTools)}
             runHook postInstall
           '';
           meta = with pkgs.lib; {
@@ -285,7 +327,7 @@
           random = random;
           randomz = random;
           randomr = randomr;
-          randoml = random;
+          randoml = randoml;
 
           # Exposed so a machine of ANY architecture can build the exact
           # interpreter tests/cross_arch_diff pins, without also needing the
@@ -320,8 +362,8 @@
 
         apps.randoml = {
           type = "app";
-          program = "${random}/bin/randoml";
-          meta.description = "Run the Lean frontend and proof-backed deterministic model";
+          program = "${randoml}/bin/randoml";
+          meta.description = "Run the independent Lean implementation";
         };
 
         # Hermetic CI check: runs the FULL suite runner (./test), not just
@@ -357,7 +399,7 @@
             # The Nix sandbox has no /usr/bin/env, so resolve shebangs in both the
             # program (bin/) and the test scripts (tests/) — `random --test` execs the
             # latter via its #!/usr/bin/env bash shebang.
-            patchShebangs bin tests
+            patchShebangs bin tests lean/build-owned-cli
             export HOME="$TMPDIR"
             export PATH="$PWD/bin:$PATH"
             # ./test sets RANDOM_TEST_FILE itself; FAST=1 keeps this hermetic
@@ -387,7 +429,7 @@
             export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
             export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-local"
             mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
-            patchShebangs bin tests stats
+            patchShebangs bin tests stats lean/build-owned-cli
             export HOME="$TMPDIR"
             export PATH="$PWD/bin:$PATH"
             FAST=1 RANDOM_STATS_SKIP_TRUE=1 bash ./stats --all
@@ -435,6 +477,7 @@
             ${random}/bin/random --test
             ${random}/bin/randomz --test
             RANDOM_TEST_FILE=${random}/tests/random_test ${random}/bin/randomr --test
+            ${random}/bin/randoml --test
 			${randomr}/bin/randomr --test
             touch $out
           '';
@@ -442,6 +485,22 @@
         # On aarch64-darwin this is the macOS target gate; cross-linking it
         # from Linux currently fails inside Nixpkgs' xcbuild before Rust runs.
         checks.randomr-native = randomr;
+
+		checks.randoml-native = pkgs.runCommand "randoml-native" { } ''
+		  export HOME="$TMPDIR/home"
+		  export XDG_CONFIG_HOME="$HOME/.config"
+		  export XDG_CACHE_HOME="$HOME/.cache"
+		  export XDG_DATA_HOME="$HOME/.local/share"
+		  export XDG_STATE_HOME="$HOME/.local/state"
+		  export XDG_RUNTIME_DIR="$TMPDIR/runtime"
+		  mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" \
+		    "$XDG_DATA_HOME" "$XDG_STATE_HOME" "$XDG_RUNTIME_DIR"
+		  chmod 0700 "$XDG_RUNTIME_DIR"
+		  ${randoml}/bin/randoml --test
+		  ${randoml}/bin/drandoml --seed 42 --count 8 >/dev/null
+		  ${randoml}/bin/nrandoml --seed 42 --count 8 >/dev/null
+		  touch $out
+		'';
 
         checks.random-crossarch = if crossSupported then
           pkgs.runCommand "random-crossarch"

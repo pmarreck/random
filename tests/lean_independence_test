@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# Prove randoml owns its production behavior rather than delegating to another frontend.
+set -u
+set -o pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+randoml="${RANDOML_BIN:-$root/zig-out/bin/randoml}"
+oracle="${RANDOM_BIN:-$root/bin/random}"
+
+if [ -z "${RANDOML_BIN:-}" ]; then
+	"$root/lean/build-owned-cli" "$randoml" || exit 1
+fi
+
+frontend_sources=(
+	"$root/lean/Main.lean"
+	"$root/lean/Randoml"
+	"$root/lean/randoml_launcher.c"
+	"$root/lean/randoml_native.c"
+)
+
+delegation_hits="$(rg -n 'RANDOML_BACKEND|["]randomz["]' "${frontend_sources[@]}" || true)"
+if [ -n "$delegation_hits" ]; then
+	printf '%s\n' "$delegation_hits" >&2
+	echo "Lean independence FAILED: production frontend still delegates" >&2
+	exit 1
+fi
+
+# The sole process launch is the explicit --test hook for the shared external
+# Bash contract. Production RNG, parsing, formatting, charts, and stdin paths
+# must not acquire another subprocess boundary unnoticed.
+process_hits="$(rg -n 'IO\.Process' "$root/lean/Main.lean" "$root/lean/Randoml" || true)"
+process_count="$(printf '%s\n' "$process_hits" | sed '/^$/d' | wc -l)"
+if [ "$process_count" -ne 1 ] ||
+   ! printf '%s\n' "$process_hits" | rg -q 'Randoml/Cli\.lean:.*IO\.Process\.spawn'; then
+	printf '%s\n' "$process_hits" >&2
+	echo "Lean independence FAILED: unexpected process-launch surface" >&2
+	exit 1
+fi
+
+native_process_hits="$(rg -n '\b(execl|execle|execlp|execv|execve|execvp|execvpe|system|popen|dlopen)\s*\(' \
+	"$root/lean/randoml_launcher.c" "$root/lean/randoml_native.c" || true)"
+if [ -n "$native_process_hits" ]; then
+	printf '%s\n' "$native_process_hits" >&2
+	echo "Lean independence FAILED: native frontend can launch or load another implementation" >&2
+	exit 1
+fi
+
+if [ ! -x "$randoml" ] || [ ! -x "$oracle" ]; then
+	echo "Lean independence FAILED: build both randoml and the LuaJIT oracle first" >&2
+	exit 1
+fi
+
+identity=$("$randoml" --about 2>/dev/null | sed -n '1s/ .*//p') || exit 1
+if [ "$identity" != randoml ]; then
+	echo "Lean independence FAILED: candidate identifies as '$identity', not randoml" >&2
+	exit 1
+fi
+
+for arguments in \
+	'--seed 42 --count 16 d20' \
+	'--seed 42 --count 16 --normalized --mean -5 --stddev 3' \
+	'--seed 99 --count 16 --exponential --rate 2' \
+	'--seed 123 --count 16 --poisson --mean 7' \
+	'--seed 7 --count 16 --log-normal --mean 1 --stddev 2' \
+	'--seed 17 --count 16 --beta 4 --alpha 1'; do
+	read -r -a argv <<<"$arguments"
+	expected=$(
+		"$oracle" "${argv[@]}" 2>/dev/null | sha256sum | cut -d' ' -f1
+		printf ':%s' "${PIPESTATUS[0]}"
+	)
+	actual=$(
+		RANDOML_BACKEND=/definitely/not/a/backend "$randoml" "${argv[@]}" 2>/dev/null |
+			sha256sum | cut -d' ' -f1
+		printf ':%s' "${PIPESTATUS[0]}"
+	)
+	if [ "$actual" != "$expected" ]; then
+		echo "Lean independence FAILED: output/status digest diverged for $arguments" >&2
+		exit 1
+	fi
+done
+
+echo "Lean independence PASSED: no delegated frontend and all deterministic families agree"

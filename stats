@@ -9,7 +9,7 @@ c_cli="$root/zig-out/bin/randomz"
 rust_target="$(cd "$root" && cargo metadata --no-deps --format-version 1 |
 	sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')"
 rust_cli="$rust_target/release/randomr"
-lean_cli="$root/lean/.lake/build/bin/randoml"
+lean_cli="$root/zig-out/bin/randoml"
 
 usage() {
 	cat <<'EOF'
@@ -29,7 +29,7 @@ EOF
 targets=()
 case "${1:---all}" in
 	--all)
-		targets=("LuaJIT oracle:$lua_cli" "Zig core / C FFI:$c_cli" "Rust core / CLI:$rust_cli" "Lean frontend / proved model:$lean_cli") ;;
+		targets=("LuaJIT oracle:$lua_cli" "Zig core / C FFI:$c_cli" "Rust core / CLI:$rust_cli" "Lean core / native CLI:$lean_cli") ;;
 	--lua)
 		targets=("LuaJIT oracle:$lua_cli") ;;
 	--c)
@@ -37,7 +37,7 @@ case "${1:---all}" in
 	--rust)
 		targets=("Rust core / CLI:$rust_cli") ;;
 	--lean)
-		targets=("Lean frontend / proved model:$lean_cli") ;;
+		targets=("Lean core / native CLI:$lean_cli") ;;
 	--cli)
 		if [ "$#" -ne 2 ]; then usage >&2; exit 2; fi
 		targets=("selected CLI:$2") ;;
@@ -47,13 +47,11 @@ case "${1:---all}" in
 		usage >&2; exit 2 ;;
 esac
 
-if [ "${1:---all}" = "--all" ] || [ "${1:---all}" = "--c" ] ||
-   [ "${1:---all}" = "--lean" ]; then
+if [ "${1:---all}" = "--all" ] || [ "${1:---all}" = "--c" ]; then
 	zig build -Doptimize=ReleaseFast >/dev/null || exit 1
 fi
 if [ "${1:---all}" = "--all" ] || [ "${1:---all}" = "--lean" ]; then
-	(cd "$root/lean" && lake build) >/dev/null || exit 1
-	export RANDOML_BACKEND="$c_cli"
+	"$root/lean/build-owned-cli" "$lean_cli" >/dev/null || exit 1
 fi
 if [ "${1:---all}" = "--all" ] || [ "${1:---all}" = "--rust" ]; then
 	(cd "$root" && cargo build --locked --release -p randomr-cli) >/dev/null || exit 1
