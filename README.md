@@ -314,12 +314,19 @@ LuaJIT-only gist has no separately visible license.
 ### Nix (flake)
 
 ```sh
-nix run github:pmarreck/random            # run without installing
-nix run github:pmarreck/random#randomz    # C CLI over the Zig FFI
-nix run github:pmarreck/random#randomr    # Rust CLI
-nix run github:pmarreck/random#randoml    # independent Lean implementation
-nix profile install github:pmarreck/random
+nix run github:pmarreck/random#random-luajit  # LuaJIT oracle only
+nix run github:pmarreck/random#random-zig     # Zig core, C ABI/CLI, and WASI
+nix run github:pmarreck/random#random-rust    # Rust library and CLI
+nix run github:pmarreck/random#random-lean    # independent Lean implementation
+nix profile install github:pmarreck/random#random-all
 ```
+
+Each language-specific package closes over only the runtime and tools needed by
+that implementation. In particular, `random-luajit` does not acquire Zig,
+Rust/Cargo, or Lean. `random-all` is the explicit aggregate; the unqualified
+flake default remains an alias for it for backwards compatibility. The older
+`random`, `randomz`, `randomr`, and `randoml` output names remain compatibility
+aliases for the aggregate, Zig, Rust, and Lean packages respectively.
 
 ### Manual
 

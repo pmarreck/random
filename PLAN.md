@@ -31,6 +31,11 @@
       every new control, run the complete suite, and commit only green units.
 
 ## Done
+- [x] Split Nix distribution outputs by implementation: publish
+      `random-luajit`, `random-zig`, `random-rust`, and `random-lean`, retain
+      `random-all` as the explicit aggregate and the backwards-compatible
+      default, smoke-test each package independently, and prove the LuaJIT-only
+      consumer closure contains no Zig, Rust/Cargo, or Lean toolchain.
 - [x] Reduce the installed Nix closure from 2.4 GiB to 127.8 MiB without
       weakening `--test`: separate the small runtime self-test PATH from the
       full CI toolchain, neutralize inert Zig store references embedded in the

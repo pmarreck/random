@@ -74,13 +74,26 @@ test_random() {
 	about_lines=$(printf '%s\n' "$about_output" | wc -l | tr -d ' ')
 	# Per this fleet's mandatory CLI convention (CROSS_PROJECT_CLAUDE.md):
 	# --about must show a one-line description, VERSION, and platform/arch
-	# -- not just prose. Check dynamically against luajit's own jit.os/
-	# jit.arch (this test's `random` invocation and this check run under
-	# the same interpreter), not a hardcoded "Linux"/"x64", so this stays
-	# correct cross-platform (Mac aarch64, Linux aarch64/x86_64, Windows).
+	# -- not just prose. Derive the canonical names from the host rather than
+	# requiring LuaJIT merely to self-test the Zig, Rust, or Lean package.
+	# Keep these mappings synchronized with all four frontends.
 	local about_os about_arch
-	about_os=$(luajit -e 'io.write(jit.os)')
-	about_arch=$(luajit -e 'io.write(jit.arch)')
+	case "$(uname -s)" in
+		Darwin) about_os=OSX ;;
+		Linux) about_os=Linux ;;
+		FreeBSD) about_os=FreeBSD ;;
+		NetBSD) about_os=NetBSD ;;
+		OpenBSD) about_os=OpenBSD ;;
+		DragonFly) about_os=DragonFlyBSD ;;
+		SunOS) about_os=Solaris ;;
+		*) about_os=Unknown ;;
+	esac
+	case "$(uname -m)" in
+		aarch64|arm64) about_arch=arm64 ;;
+		x86_64|amd64) about_arch=x64 ;;
+		i386|i486|i586|i686) about_arch=x86 ;;
+		*) about_arch=unknown ;;
+	esac
 
 	if [ -n "$about_output" ] && [ "$about_lines" -eq 1 ] && [ "$about_a_output" = "$about_output" ] && \
 	   [[ "$about_output" == *"$about_os"* ]] && [[ "$about_output" == *"$about_arch"* ]] && \

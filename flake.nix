@@ -145,8 +145,8 @@
         ];
         leanTools = [ pkgs.lean4 ];
 
-        mkRandomr = rustPkgs: runTests: rustPkgs.rustPlatform.buildRustPackage {
-          pname = "randomr";
+		mkRandomr = rustPkgs: runTests: rustPkgs.rustPlatform.buildRustPackage {
+		  pname = "random-rust";
           version = "0.3.0";
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
@@ -168,8 +168,9 @@
 			  patchShebangs "$out/share/randomr/tests/random_test"
 			  wrapProgram "$out/bin/randomr" \
 			    --set-default RANDOM_TEST_FILE "$out/share/randomr/tests/random_test" \
-			    --prefix PATH : ${pkgs.lib.makeBinPath (runtimeTools ++ installedTestTools)}
+			    --prefix PATH : ${pkgs.lib.makeBinPath installedTestTools}
 			''}
+			install -Dm644 LICENSE "$out/share/licenses/random-rust/LICENSE"
             runHook postInstall
           '';
           meta = with pkgs.lib; {
@@ -179,8 +180,8 @@
           };
         };
         randomr = mkRandomr pkgs true;
-        randoml = pkgs.stdenv.mkDerivation {
-          pname = "randoml";
+		randoml = pkgs.stdenv.mkDerivation {
+		  pname = "random-lean";
           version = "0.3.0";
           src = ./.;
           strictDeps = true;
@@ -196,7 +197,7 @@
             install -Dm755 randoml $out/bin/randoml
             install -Dm755 tests/random_test $out/share/randoml/tests/random_test
             install -Dm644 tests/cli_test_setup.sh $out/share/randoml/tests/cli_test_setup.sh
-            install -Dm644 LICENSE $out/share/licenses/randoml/LICENSE
+			install -Dm644 LICENSE $out/share/licenses/random-lean/LICENSE
 			substituteInPlace $out/share/randoml/tests/random_test \
 			  --replace-fail '#!/usr/bin/env bash' '#!${pkgs.bash}/bin/bash'
             makeWrapper $out/bin/randoml $out/bin/nrandoml \
@@ -215,6 +216,115 @@
             mainProgram = "randoml";
           };
         };
+
+		randomLua = pkgs.stdenvNoCC.mkDerivation {
+		  pname = "random-luajit";
+		  version = "0.3.0";
+		  src = ./.;
+		  strictDeps = true;
+		  nativeBuildInputs = [ pkgs.makeWrapper pkgs.bash ];
+		  dontBuild = true;
+		  installPhase = ''
+			runHook preInstall
+			mkdir -p $out/bin $out/lib $out/tests $out/share/licenses/random-luajit
+			install -Dm755 bin/random $out/bin/random
+			cp lib/*.lua $out/lib/
+			install -Dm755 tests/random_test $out/tests/random_test
+			install -Dm644 tests/cli_test_setup.sh $out/tests/cli_test_setup.sh
+			install -Dm644 LICENSE $out/share/licenses/random-luajit/LICENSE
+			ln -s random $out/bin/nrandom
+			ln -s random $out/bin/drandom
+			substituteInPlace $out/bin/random \
+			  --replace-fail '#!/usr/bin/env luajit' '#!${luajitFixed}/bin/luajit'
+			substituteInPlace $out/tests/random_test \
+			  --replace-fail '#!/usr/bin/env bash' '#!${pkgs.bash}/bin/bash'
+			wrapProgram $out/tests/random_test \
+			  --prefix PATH : ${pkgs.lib.makeBinPath installedTestTools}
+			runHook postInstall
+		  '';
+		  meta = with pkgs.lib; {
+			description = "LuaJIT oracle CLI for the cross-platform-identical random CSPRNG";
+			license = licenses.mit;
+			platforms = platforms.unix;
+			mainProgram = "random";
+		  };
+		};
+
+		randomZig = pkgs.stdenv.mkDerivation {
+		  pname = "random-zig";
+		  version = "0.3.0";
+		  src = ./.;
+		  strictDeps = true;
+		  nativeBuildInputs = [
+			pkgs.makeWrapper pkgs.removeReferencesTo pkgs.zig_0_16
+		  ];
+		  buildPhase = ''
+			runHook preBuild
+			export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
+			export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-local"
+			mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
+			zig build -Doptimize=ReleaseFast
+			runHook postBuild
+		  '';
+		  installPhase = ''
+			runHook preInstall
+			mkdir -p $out/bin $out/lib $out/include $out/tests \
+			  $out/share/licenses/random-zig
+			install -Dm755 zig-out/bin/randomz $out/bin/randomz
+			ln -s randomz $out/bin/nrandomz
+			ln -s randomz $out/bin/drandomz
+			install -Dm644 zig-out/lib/librandomz.a $out/lib/librandomz.a
+			install -Dm644 zig-out/bin/randomz-wasi.wasm $out/lib/randomz-wasi.wasm
+			remove-references-to -t ${pkgs.zig_0_16} $out/lib/randomz-wasi.wasm
+			install -Dm644 zig-out/include/randomz.h $out/include/randomz.h
+			install -Dm755 tests/random_test $out/tests/random_test
+			install -Dm644 tests/cli_test_setup.sh $out/tests/cli_test_setup.sh
+			install -Dm644 LICENSE $out/share/licenses/random-zig/LICENSE
+			patchShebangs $out/tests/random_test
+			wrapProgram $out/tests/random_test \
+			  --prefix PATH : ${pkgs.lib.makeBinPath installedTestTools}
+			runHook postInstall
+		  '';
+		  meta = with pkgs.lib; {
+			description = "Zig CSPRNG library, C ABI/CLI, and WASI reactor";
+			license = licenses.mit;
+			platforms = platforms.unix;
+			mainProgram = "randomz";
+		  };
+		};
+
+		# Compose the compatibility aggregate deliberately. Both the LuaJIT and
+		# Zig packages carry the same shared Bash oracle at /tests; selecting the
+		# LuaJIT copy here avoids buildEnv's collision suppression while retaining
+		# one canonical aggregate self-test surface.
+		randomAll = pkgs.runCommand "random-all-0.3.0" {
+		  meta = with pkgs.lib; {
+			description = "Aggregate LuaJIT, Zig/C, Rust, and Lean random CSPRNG distribution";
+			license = licenses.mit;
+			platforms = platforms.unix;
+			mainProgram = "random";
+		  };
+		} ''
+		  mkdir -p $out/bin $out/lib $out/libexec $out/include \
+			$out/share/licenses
+		  ln -s ${randomLua}/bin/* ${randomZig}/bin/* ${randomr}/bin/* \
+			${randoml}/bin/* $out/bin/
+		  ln -s ${randomLua}/lib/* ${randomZig}/lib/* $out/lib/
+		  ln -s ${randomr}/libexec/* $out/libexec/
+		  ln -s ${randomZig}/include/* $out/include/
+		  ln -s ${randomLua}/tests $out/tests
+		  ln -s ${randomr}/share/randomr $out/share/randomr
+		  ln -s ${randoml}/share/randoml $out/share/randoml
+		  ln -s ${randomLua}/share/licenses/random-luajit \
+			${randomZig}/share/licenses/random-zig \
+			${randomr}/share/licenses/random-rust \
+			${randoml}/share/licenses/random-lean \
+			$out/share/licenses/
+		'';
+
+		luaConsumerClosure = pkgs.closureInfo {
+		  rootPaths = [ randomLua ];
+		};
         crossWithUnsupported = crossPkgs: import nixpkgs {
           localSystem = system;
           crossSystem = crossPkgs.stdenv.hostPlatform;
@@ -241,77 +351,6 @@
           pkgs.linkFarm "randomr-cross-targets"
             (pkgs.lib.mapAttrsToList (name: path: { inherit name path; })
               randomrCrossPackages);
-
-        random = pkgs.stdenv.mkDerivation {
-          pname = "random";
-          version = "0.3.0";
-          src = ./.;
-          nativeBuildInputs = [
-            pkgs.makeWrapper pkgs.removeReferencesTo pkgs.zig_0_16 pkgs.lean4
-          ];
-          buildInputs = runtimeTools;
-          buildPhase = ''
-            runHook preBuild
-            export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
-            export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-local"
-            mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
-            zig build -Doptimize=ReleaseFast
-            bash lean/build-owned-cli zig-out/bin/randoml
-            runHook postBuild
-          '';
-          installPhase = ''
-            runHook preInstall
-            mkdir -p $out/bin $out/lib $out/libexec $out/include $out/tests $out/share/licenses/random
-            cp bin/random $out/bin/random
-            # bin/random resolves '../lib/?.lua' relative to itself -- without
-            # this, the packaged binary can find lib/fixed.lua only inside the
-            # build sandbox, not from $out/bin.
-            cp lib/*.lua $out/lib/
-            cp tests/random_test tests/cli_test_setup.sh $out/tests/
-			substituteInPlace $out/tests/random_test \
-			  --replace-fail '#!/usr/bin/env bash' '#!${pkgs.bash}/bin/bash'
-            cp zig-out/bin/randomz $out/bin/randomz
-            cp ${randomr}/bin/randomr $out/bin/randomr
-            cp ${randomr}/libexec/randomr $out/libexec/randomr
-            cp zig-out/bin/randoml $out/bin/randoml
-            cp zig-out/bin/randomz-wasi.wasm $out/lib/randomz-wasi.wasm
-            # Zig embeds source paths in this release WASM. They are inert
-            # diagnostics, but an intact /nix/store hash makes Nix retain the
-            # complete Zig/LLVM toolchain in the runtime closure.
-            remove-references-to -t ${pkgs.zig_0_16} $out/lib/randomz-wasi.wasm
-            cp zig-out/lib/librandomz.a $out/lib/
-            cp zig-out/include/randomz.h $out/include/
-            cp LICENSE $out/share/licenses/random/LICENSE
-            chmod +x $out/bin/random $out/bin/randomz $out/bin/randomr $out/bin/randoml \
-              $out/libexec/randomr $out/tests/random_test
-            # Mode-by-invocation-name: nrandom => normalized, drandom => deterministic
-            ln -s random $out/bin/nrandom
-            ln -s random $out/bin/drandom
-            # The C frontend dogfoods librandomz exclusively through randomz.h.
-            ln -s randomz $out/bin/nrandomz
-            ln -s randomz $out/bin/drandomz
-            ln -s randomr $out/bin/nrandomr
-            ln -s randomr $out/bin/drandomr
-            makeWrapper $out/bin/randoml $out/bin/nrandoml \
-              --set RANDOML_INVOKED_AS nrandoml
-            makeWrapper $out/bin/randoml $out/bin/drandoml \
-              --set RANDOML_INVOKED_AS drandoml
-            # Resolve '#!/usr/bin/env luajit' to the store luajit
-            patchShebangs $out/bin/random $out/tests/random_test
-            wrapProgram $out/tests/random_test \
-              --prefix PATH : ${pkgs.lib.makeBinPath (runtimeTools ++ installedTestTools)}
-            wrapProgram $out/bin/randoml \
-              --set-default RANDOM_TEST_FILE $out/tests/random_test \
-              --prefix PATH : ${pkgs.lib.makeBinPath (runtimeTools ++ installedTestTools)}
-            runHook postInstall
-          '';
-          meta = with pkgs.lib; {
-            description = "Cross-platform-identical CSPRNG CLIs in LuaJIT, Zig/C, Rust, and Lean";
-            license = licenses.mit;
-            platforms = platforms.unix;
-            mainProgram = "random";
-          };
-        };
       in {
         # The conditional attribute is merged INSIDE `packages`, not by `//`-ing
         # a second `{ packages.crossToolchains = ...; }` onto the outputs set.
@@ -321,9 +360,19 @@
         # (it exercised `checks.*`, which was untouched); Mechatron Prime did,
         # with "target failed: packages.x86_64-linux.default".
         packages = {
-          default = random;
-          random = random;
-          randomz = random;
+		  # Preserve the historical default for compatibility, but expose its
+		  # aggregate nature explicitly so consumers can select one implementation.
+          default = randomAll;
+          random-all = randomAll;
+		  random-luajit = randomLua;
+		  random-zig = randomZig;
+		  random-rust = randomr;
+		  random-lean = randoml;
+
+		  # Compatibility aliases. Language-named aliases now resolve to their
+		  # minimal package; `random` remains the historical aggregate alias.
+          random = randomAll;
+          randomz = randomZig;
           randomr = randomr;
           randoml = randoml;
 
@@ -348,7 +397,7 @@
 
         apps.randomz = {
           type = "app";
-          program = "${random}/bin/randomz";
+          program = "${randomZig}/bin/randomz";
           meta.description = "Run the C CLI over the Zig randomz library";
         };
 
@@ -434,6 +483,62 @@
             touch $out
           '';
 
+		checks.package-split = pkgs.runCommand "random-package-split"
+		  { nativeBuildInputs = [ pkgs.gnugrep ]; } ''
+			# Each named output exposes only its implementation's command family.
+			test -x ${randomLua}/bin/random
+			test -x ${randomLua}/bin/nrandom
+			test -x ${randomLua}/bin/drandom
+			test ! -e ${randomLua}/bin/randomz
+			test ! -e ${randomLua}/bin/randomr
+			test ! -e ${randomLua}/bin/randoml
+
+			test -x ${randomZig}/bin/randomz
+			test -s ${randomZig}/lib/librandomz.a
+			test -s ${randomZig}/lib/randomz-wasi.wasm
+			test -s ${randomZig}/include/randomz.h
+			test ! -e ${randomZig}/bin/random
+			test ! -e ${randomZig}/bin/randomr
+			test ! -e ${randomZig}/bin/randoml
+
+			test -x ${randomr}/bin/randomr
+			test ! -e ${randomr}/bin/random
+			test ! -e ${randomr}/bin/randomz
+			test ! -e ${randomr}/bin/randoml
+
+			test -x ${randoml}/bin/randoml
+			test ! -e ${randoml}/bin/random
+			test ! -e ${randoml}/bin/randomz
+			test ! -e ${randoml}/bin/randomr
+
+			# The backwards-compatible default is the documented aggregate and
+			# therefore exposes every implementation.
+			for executable in random randomz randomr randoml; do
+			  test -x ${randomAll}/bin/"$executable"
+			done
+
+			${randomLua}/bin/random --seed 42 --count 1 >/dev/null
+			${randomZig}/bin/randomz --seed 42 --count 1 >/dev/null
+			${randomr}/bin/randomr --seed 42 --count 1 >/dev/null
+			${randoml}/bin/randoml --seed 42 --count 1 >/dev/null
+
+			# A consumer that selects only random-luajit must not acquire any
+			# compiler/toolchain from the other implementations. closureInfo is
+			# the exact transitive store closure a consuming derivation inherits.
+			if grep -E -- '-(zig|rustc|cargo|lean4)(-|$)' \
+			    ${luaConsumerClosure}/store-paths; then
+			  echo "random-luajit closure unexpectedly contains a compiler toolchain" >&2
+			  exit 1
+			fi
+			for forbidden in ${randomZig} ${randomr} ${randoml}; do
+			  if grep -Fx -- "$forbidden" ${luaConsumerClosure}/store-paths; then
+				echo "random-luajit closure unexpectedly contains $forbidden" >&2
+				exit 1
+			  fi
+			done
+			touch $out
+		  '';
+
         checks.package-smoke = pkgs.runCommand "random-package-smoke"
           { nativeBuildInputs = [ pkgs.stdenv.cc pkgs.wasm-tools ]; } ''
             export HOME="$TMPDIR/home"
@@ -445,37 +550,40 @@
             mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" \
               "$XDG_DATA_HOME" "$XDG_STATE_HOME" "$XDG_RUNTIME_DIR"
             chmod 0700 "$XDG_RUNTIME_DIR"
-            test -s ${random}/share/licenses/random/LICENSE
-            test -s ${random}/lib/randomz-wasi.wasm
-            wasm-tools validate ${random}/lib/randomz-wasi.wasm
-            cc -std=c11 -Wall -Wextra -Werror -I${random}/include \
-              ${./tests/randomz_abi_test.c} ${random}/lib/librandomz.a \
+            test -s ${randomAll}/share/licenses/random-luajit/LICENSE
+            test -s ${randomAll}/share/licenses/random-zig/LICENSE
+            test -s ${randomAll}/share/licenses/random-rust/LICENSE
+			test -s ${randomAll}/share/licenses/random-lean/LICENSE
+            test -s ${randomAll}/lib/randomz-wasi.wasm
+            wasm-tools validate ${randomAll}/lib/randomz-wasi.wasm
+            cc -std=c11 -Wall -Wextra -Werror -I${randomAll}/include \
+              ${./tests/randomz_abi_test.c} ${randomAll}/lib/librandomz.a \
               -o randomz-abi-test
             ./randomz-abi-test
-            ${random}/bin/randomz --about >/dev/null
-            ${random}/bin/drandomz --seed 42 -c 1 >/dev/null
-            ${random}/bin/nrandomz --seed 42 -c 1 >/dev/null
-            ${random}/bin/randomr --about >/dev/null
-            ${random}/bin/randoml --about >/dev/null
-            ${random}/libexec/randomr --about >/dev/null
-            ${random}/bin/drandomr --seed 42 -c 1 >/dev/null
-            ${random}/bin/nrandomr --seed 42 -c 1 >/dev/null
-            ${random}/bin/drandoml --seed 42 -c 1 >/dev/null
-            ${random}/bin/nrandoml --seed 42 -c 1 >/dev/null
-            ${random}/bin/drandom --seed 42 -c 1 >/dev/null
-            ${random}/bin/nrandom --seed 42 -c 1 >/dev/null
-            test "$(${random}/bin/random --seed 42 -c 8)" = \
-              "$(${random}/bin/randomz --seed 42 -c 8)"
-            test "$(${random}/bin/random --seed 42 -c 8)" = \
-              "$(${random}/bin/randomr --seed 42 -c 8)"
-            test "$(${random}/bin/random --seed 42 -c 8)" = \
-              "$(${random}/bin/randoml --seed 42 -c 8)"
-            test "$(${random}/bin/randomr --seed 42 -c 8)" = \
-              "$(${random}/libexec/randomr --seed 42 -c 8)"
-            ${random}/bin/random --test
-            ${random}/bin/randomz --test
-            RANDOM_TEST_FILE=${random}/tests/random_test ${random}/bin/randomr --test
-            ${random}/bin/randoml --test
+			${randomAll}/bin/randomz --about >/dev/null
+			${randomAll}/bin/drandomz --seed 42 -c 1 >/dev/null
+			${randomAll}/bin/nrandomz --seed 42 -c 1 >/dev/null
+			${randomAll}/bin/randomr --about >/dev/null
+			${randomAll}/bin/randoml --about >/dev/null
+			${randomAll}/libexec/randomr --about >/dev/null
+			${randomAll}/bin/drandomr --seed 42 -c 1 >/dev/null
+			${randomAll}/bin/nrandomr --seed 42 -c 1 >/dev/null
+			${randomAll}/bin/drandoml --seed 42 -c 1 >/dev/null
+			${randomAll}/bin/nrandoml --seed 42 -c 1 >/dev/null
+			${randomAll}/bin/drandom --seed 42 -c 1 >/dev/null
+			${randomAll}/bin/nrandom --seed 42 -c 1 >/dev/null
+			test "$(${randomAll}/bin/random --seed 42 -c 8)" = \
+			  "$(${randomAll}/bin/randomz --seed 42 -c 8)"
+			test "$(${randomAll}/bin/random --seed 42 -c 8)" = \
+			  "$(${randomAll}/bin/randomr --seed 42 -c 8)"
+			test "$(${randomAll}/bin/random --seed 42 -c 8)" = \
+			  "$(${randomAll}/bin/randoml --seed 42 -c 8)"
+			test "$(${randomAll}/bin/randomr --seed 42 -c 8)" = \
+			  "$(${randomAll}/libexec/randomr --seed 42 -c 8)"
+			${randomAll}/bin/random --test
+			${randomAll}/bin/randomz --test
+			RANDOM_TEST_FILE=${randomAll}/tests/random_test ${randomAll}/bin/randomr --test
+			${randomAll}/bin/randoml --test
 			${randomr}/bin/randomr --test
             touch $out
           '';
