@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Cross-link the complete Rust CLI for every BSD target whose standard library
-# Rust 1.97 distributes, using Zig's libc/sysroot, then inspect each artifact.
+# Rust 1.97.1 distributes, using Zig's libc/sysroot, then inspect each artifact.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-toolchain="${RANDOMR_RUST_TOOLCHAIN:-1.97.0}"
+toolchain="${RANDOMR_RUST_TOOLCHAIN:-1.97.1}"
 targets=(
 	x86_64-unknown-freebsd:x86_64-freebsd:003e
 	x86_64-unknown-netbsd:x86_64-netbsd:003e

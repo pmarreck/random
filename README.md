@@ -276,7 +276,7 @@ but Zig 0.16 currently lacks usable cross-libc support for their full artifacts;
 native runtime validation remains pending and support is not yet claimed.
 
 For Rust, the cross-build gate covers Linux aarch64, Windows x86_64/ARM64,
-FreeBSD x86_64, and NetBSD x86_64 in addition to native Linux. Rust 1.97 does
+FreeBSD x86_64, and NetBSD x86_64 in addition to native Linux. Rust 1.97.1 does
 not distribute standard libraries for OpenBSD or BSD ARM64, so those are
 explicit target-library gaps rather than silent skips. Native ARM64 macOS and
 Windows workflow legs have passed with architecture-sensitive controls, a
@@ -315,9 +315,13 @@ LuaJIT-only gist has no separately visible license.
 
 ```sh
 nix run github:pmarreck/random#random-luajit  # LuaJIT oracle only
-nix run github:pmarreck/random#random-zig     # Zig core, C ABI/CLI, and WASI
-nix run github:pmarreck/random#random-rust    # Rust library and CLI
-nix run github:pmarreck/random#random-lean    # independent Lean implementation
+nix run github:pmarreck/random#random-zig     # C CLI over the Zig core
+nix run github:pmarreck/random#random-rust    # Rust CLI
+nix run github:pmarreck/random#random-lean    # Lean CLI
+nix build github:pmarreck/random#random-luajit-lib
+nix build github:pmarreck/random#random-zig-lib
+nix build github:pmarreck/random#random-rust-lib
+nix build github:pmarreck/random#random-lean-lib
 nix profile install github:pmarreck/random#random-all
 ```
 
@@ -330,12 +334,22 @@ compatibility. The older
 `random`, `randomz`, `randomr`, and `randoml` output names remain compatibility
 aliases for the aggregate, Zig, Rust, and Lean packages respectively.
 
+The four `*-lib` outputs are independently consumable and contain no CLI:
+`random-luajit-lib/lib` holds the Lua modules; `random-zig-lib` exposes the Zig
+package source at `src`, the C header at `include/randomz.h`, and static/shared
+libraries under `lib`; `random-rust-lib/src/rust/randomr` is a standalone Cargo
+path dependency; and `random-lean-lib` supplies source under `src` plus compiled
+modules under `lib/lean`. The package gate imports each native-language surface,
+and loads the installed shared `librandomz` directly through LuaJIT FFI.
+
 ### Manual
 
 For the LuaJIT oracle, put `bin/` on your `PATH`; it requires `luajit`. For the
-C CLI and static library, run `zig build -Doptimize=ReleaseFast` and use
+C CLI and static/shared libraries, run `zig build -Doptimize=ReleaseFast` and use
 `zig-out/bin/randomz`, `zig-out/include/randomz.h`, and
-`zig-out/lib/librandomz.a`. `nrandomz` and `drandomz` are installed aliases;
+`zig-out/lib/librandomz.a` or the platform shared library. Zig programs consume
+the exported `randomz` module from this repository's `build.zig`. `nrandomz` and
+`drandomz` are installed aliases;
 the Nix package installs them as symlinks. Zig release artifacts are stripped
 by default; pass `-Dstrip=false` when a diagnostic release build needs symbols.
 
@@ -343,7 +357,24 @@ For Rust, run `cargo build --locked --release -p randomr-cli`; Cargo emits
 `randomr`, and the Nix package supplies `nrandomr` and `drandomr` aliases. Rust
 programs can depend on the workspace crate at `rust/randomr` and use `Drbg` as a
 `ByteSource` for any exported sampler without involving CLI I/O or formatting.
-The workspace's release profile uses Cargo's `strip = "symbols"` policy.
+Nix consumers should pin this flake and use its source-overlay package rather
+than add a separate Cargo Git dependency:
+
+```nix
+let
+  randomrLib = random.packages.${system}.random-rust-lib;
+  randomrCargoPath = "${randomrLib}/${randomrLib.cargoPath}";
+in # substitute randomrCargoPath into the consumer's vendored path dependency
+```
+
+`random-rust-lib` is deliberately source rather than a precompiled `.rlib`:
+Rust library artifacts are compiler- and dependency-graph-specific, while the
+source overlay compiles within the consumer's Nix-vendored Cargo graph. Its
+manifest uses compatible semver ranges so it can share that graph's `libc`,
+`zeroize`, `blake3`, and `getrandom` versions; this repository's `Cargo.lock`
+retains exact release-build resolution. The MSRV and pinned build toolchain are
+Rust 1.97.1. The workspace's release profile uses Cargo's `strip = "symbols"`
+policy.
 
 For Lean, `(cd lean && lake build)` with Lean 4.30.0 builds and checks the
 importable `Randoml` library. Build the byte-preserving production executable
@@ -494,7 +525,7 @@ tests/random_test   CLI behavior + statistical distribution suite (bash)
 tests/randomz_test  shared later-frontend contract + exact LuaJIT differential matrix
 tests/randomr_test  Rust architecture, shared-contract, and two-oracle gate
 tests/randomr_mutation_test  proves five Rust acceptance controls can turn red
-tests/randomr_bsd_targets  Rust 1.97 distributed BSD-target cross-link gate
+tests/randomr_bsd_targets  Rust 1.97.1 distributed BSD-target cross-link gate
 tests/randomz_cross_compile_test  Linux/macOS/Windows x86_64/aarch64 build gate
 stats               standalone raw/distribution statistical sanity analysis
 bm                  three-implementation release benchmark and parity preflight

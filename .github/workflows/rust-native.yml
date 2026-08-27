@@ -18,24 +18,24 @@ jobs:
         with:
           version: 0.16.0
       - name: Cross-link distributed Rust BSD targets
-        run: RANDOMR_RUST_TOOLCHAIN=1.97.0 tests/randomr_bsd_targets
+        run: RANDOMR_RUST_TOOLCHAIN=1.97.1 tests/randomr_bsd_targets
       - name: Cross-link Windows ARM64 through the license-free Zig toolchain
-        run: RANDOMR_RUST_TOOLCHAIN=1.97.0 tests/randomr_windows_arm64
+        run: RANDOMR_RUST_TOOLCHAIN=1.97.1 tests/randomr_windows_arm64
       - name: Check the pure core for WASI
         run: |
-          rustup toolchain install 1.97.0 --profile minimal --target wasm32-wasip1
-          cargo +1.97.0 check --locked -p randomr --no-default-features --target wasm32-wasip1
+          rustup toolchain install 1.97.1 --profile minimal --target wasm32-wasip1
+          cargo +1.97.1 check --locked -p randomr --no-default-features --target wasm32-wasip1
 
   windows-arm64:
     runs-on: windows-11-arm
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install pinned Rust
-        run: rustup toolchain install 1.97.0 --profile minimal
+        run: rustup toolchain install 1.97.1 --profile minimal
       - name: Test and build
         run: |
-          cargo +1.97.0 test --locked --workspace
-          cargo +1.97.0 build --locked --release -p randomr-cli
+          cargo +1.97.1 test --locked --workspace
+          cargo +1.97.1 build --locked --release -p randomr-cli
       - name: Prove native architecture and deterministic runtime
         shell: pwsh
         run: |
@@ -97,11 +97,11 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install pinned Rust
-        run: rustup toolchain install 1.97.0 --profile minimal
+        run: rustup toolchain install 1.97.1 --profile minimal
       - name: Test and build
         run: |
-          cargo +1.97.0 test --locked --workspace
-          cargo +1.97.0 build --locked --release -p randomr-cli
+          cargo +1.97.1 test --locked --workspace
+          cargo +1.97.1 build --locked --release -p randomr-cli
       - name: Prove native architecture and deterministic runtime
         run: |
           test "$(uname -m)" = arm64

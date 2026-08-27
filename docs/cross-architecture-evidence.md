@@ -116,8 +116,8 @@ both its libc and architecture axes before this verdict is accepted.
 Cross-build evidence currently covers native Linux x86_64, Linux aarch64,
 Windows x86_64, a license-free Windows ARM64 PE (`aarch64-pc-windows-gnullvm`
 linked with Zig), FreeBSD x86_64, and NetBSD x86_64. The latter two use the
-standard libraries Rust 1.97 actually distributes plus Zig's BSD sysroots.
-Rust 1.97 distributes no standard-library artifact for OpenBSD or for any of
+standard libraries Rust 1.97.1 actually distributes plus Zig's BSD sysroots.
+Rust 1.97.1 distributes no standard-library artifact for OpenBSD or for any of
 these BSD ARM64 targets; those four combinations are named target-library gaps,
 not passing skips. Native macOS ARM64 and Windows ARM64 workflow legs completed
 successfully for commit `5ae3524` in [GitHub Actions run

@@ -5,7 +5,7 @@ set -u
 set -o pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-toolchain="${RANDOMR_RUST_TOOLCHAIN:-1.97.0}"
+toolchain="${RANDOMR_RUST_TOOLCHAIN:-1.97.1}"
 target="aarch64-pc-windows-gnullvm"
 
 for command_name in rustup cargo zig od; do

@@ -146,11 +146,20 @@ No test is allowed to regenerate its expected values from `randomr` itself.
 Cargo builds use the checked-in lockfile. Nix vendors the locked dependencies,
 builds the library and release CLI hermetically, installs `randomr` plus its two
 aliases, and exposes the library source/API for ordinary Rust path or registry
-consumption. The root `./build` copies all three frontend families to the stable
+consumption. The root `./build` copies all four frontend families to the stable
 build output.
 
+The flake publishes the Rust library independently as `random-rust-lib`. It is
+a CLI-free source overlay, not a precompiled `.rlib`: downstream Nix builds use
+the package's `cargoPath` passthru as a Cargo path dependency and compile it
+inside their own vendored dependency graph. Library manifests therefore use
+compatible semver ranges while this repository's lockfile pins the exact
+release resolution. The package gate compiles a standalone consumer against
+the same `libc` and `zeroize` versions used by `validate_gui`; neither the CLI
+package nor a Rust toolchain enters the library output's runtime closure.
+
 Required compile evidence covers native Linux, Linux aarch64, Windows
-x86_64/aarch64, FreeBSD x86_64, and NetBSD x86_64. Rust 1.97 does not publish
+x86_64/aarch64, FreeBSD x86_64, and NetBSD x86_64. Rust 1.97.1 does not publish
 standard-library artifacts for OpenBSD or BSD ARM64, so those combinations are
 named toolchain gaps rather than passing skips. At least one non-x86_64 runtime
 must join the existing cross-architecture payload before the portability claim

@@ -507,7 +507,7 @@ fn betaCurve(
     }
 }
 
-export fn randomz_drbg_init(
+pub export fn randomz_drbg_init(
     state: ?*Drbg,
     seed_material: ?[*]const u8,
 ) callconv(.c) c_int {
@@ -520,7 +520,7 @@ export fn randomz_drbg_init(
     return @intFromEnum(Status.ok);
 }
 
-export fn randomz_drbg_set_state(
+pub export fn randomz_drbg_set_state(
     state: ?*Drbg,
     key: ?[*]const u8,
     position: u64,
@@ -533,7 +533,7 @@ export fn randomz_drbg_set_state(
     return @intFromEnum(Status.ok);
 }
 
-export fn randomz_drbg_get_state(
+pub export fn randomz_drbg_get_state(
     state: ?*const Drbg,
     key: ?[*]u8,
     position: ?*u64,
@@ -546,14 +546,14 @@ export fn randomz_drbg_get_state(
     return @intFromEnum(Status.ok);
 }
 
-export fn randomz_drbg_seek(state: ?*Drbg, position: u64) callconv(.c) c_int {
+pub export fn randomz_drbg_seek(state: ?*Drbg, position: u64) callconv(.c) c_int {
     const target = state orelse return @intFromEnum(Status.invalid_argument);
     if (position > max_exact_position) return @intFromEnum(Status.position_overflow);
     target.position = position;
     return @intFromEnum(Status.ok);
 }
 
-export fn randomz_drbg_fill(
+pub export fn randomz_drbg_fill(
     state: ?*Drbg,
     out: ?[*]u8,
     count: usize,
@@ -565,7 +565,7 @@ export fn randomz_drbg_fill(
     return @intFromEnum(Status.ok);
 }
 
-export fn randomz_drbg_u32(
+pub export fn randomz_drbg_u32(
     state: ?*Drbg,
     out: ?*u32,
 ) callconv(.c) c_int {
@@ -580,7 +580,7 @@ export fn randomz_drbg_u32(
     return @intFromEnum(Status.ok);
 }
 
-export fn randomz_drbg_u64(
+pub export fn randomz_drbg_u64(
     state: ?*Drbg,
     out: ?*u64,
 ) callconv(.c) c_int {
@@ -594,7 +594,7 @@ export fn randomz_drbg_u64(
     return @intFromEnum(Status.ok);
 }
 
-export fn randomz_drbg_zeroize(state: ?*Drbg) callconv(.c) void {
+pub export fn randomz_drbg_zeroize(state: ?*Drbg) callconv(.c) void {
     const target = state orelse return;
     std.crypto.secureZero(u8, @as([*]volatile u8, @ptrCast(target))[0..@sizeOf(Drbg)]);
 }
@@ -603,7 +603,7 @@ fn sourceFrom(fill: ?FillFn, context: ?*anyopaque) RngError!Source {
     return .{ .fill = fill orelse return error.InvalidArgument, .context = context };
 }
 
-export fn randomz_range(
+pub export fn randomz_range(
     fill: ?FillFn,
     context: ?*anyopaque,
     start: i64,
@@ -617,7 +617,7 @@ export fn randomz_range(
     return @intFromEnum(Status.ok);
 }
 
-export fn randomz_uniform(
+pub export fn randomz_uniform(
     fill: ?FillFn,
     context: ?*anyopaque,
     out: ?*Fixed,
@@ -629,7 +629,7 @@ export fn randomz_uniform(
     return @intFromEnum(Status.ok);
 }
 
-export fn randomz_normal_int(
+pub export fn randomz_normal_int(
     fill: ?FillFn,
     context: ?*anyopaque,
     start: i64,
@@ -643,7 +643,7 @@ export fn randomz_normal_int(
     return @intFromEnum(Status.ok);
 }
 
-export fn randomz_normal(
+pub export fn randomz_normal(
     fill: ?FillFn,
     context: ?*anyopaque,
     mean: Fixed,
@@ -665,7 +665,7 @@ export fn randomz_normal(
     return @intFromEnum(Status.ok);
 }
 
-export fn randomz_exponential(
+pub export fn randomz_exponential(
     fill: ?FillFn,
     context: ?*anyopaque,
     rate: Fixed,
@@ -683,7 +683,7 @@ export fn randomz_exponential(
     return @intFromEnum(Status.ok);
 }
 
-export fn randomz_poisson(
+pub export fn randomz_poisson(
     fill: ?FillFn,
     context: ?*anyopaque,
     lambda: Fixed,
@@ -701,7 +701,7 @@ export fn randomz_poisson(
     return @intFromEnum(Status.ok);
 }
 
-export fn randomz_log_normal(
+pub export fn randomz_log_normal(
     fill: ?FillFn,
     context: ?*anyopaque,
     mean: Fixed,
@@ -728,7 +728,7 @@ export fn randomz_log_normal(
     return @intFromEnum(Status.ok);
 }
 
-export fn randomz_beta(
+pub export fn randomz_beta(
     fill: ?FillFn,
     context: ?*anyopaque,
     alpha: Fixed,
@@ -752,7 +752,7 @@ export fn randomz_beta(
     return @intFromEnum(Status.ok);
 }
 
-export fn randomz_distribution_curve(
+pub export fn randomz_distribution_curve(
     distribution_value: c_int,
     first: Fixed,
     second: Fixed,
@@ -820,25 +820,25 @@ export fn randomz_distribution_curve(
     return @intFromEnum(Status.ok);
 }
 
-export fn randomz_fixed_from_int(value: i64) callconv(.c) Fixed {
+pub export fn randomz_fixed_from_int(value: i64) callconv(.c) Fixed {
     return Fixed.fromInternal(fixed.fromInt(value));
 }
 
-export fn randomz_fixed_to_int_trunc(value: Fixed, out: ?*i64) callconv(.c) c_int {
+pub export fn randomz_fixed_to_int_trunc(value: Fixed, out: ?*i64) callconv(.c) c_int {
     if (!validFixed(value)) return @intFromEnum(Status.invalid_argument);
     const output = out orelse return @intFromEnum(Status.invalid_argument);
     output.* = fixed.toIntTrunc(value.internal());
     return @intFromEnum(Status.ok);
 }
 
-export fn randomz_fixed_to_int_round(value: Fixed, out: ?*i64) callconv(.c) c_int {
+pub export fn randomz_fixed_to_int_round(value: Fixed, out: ?*i64) callconv(.c) c_int {
     if (!validFixed(value)) return @intFromEnum(Status.invalid_argument);
     const output = out orelse return @intFromEnum(Status.invalid_argument);
     output.* = roundToInt(value.internal());
     return @intFromEnum(Status.ok);
 }
 
-export fn randomz_fixed_parse(
+pub export fn randomz_fixed_parse(
     text: ?[*]const u8,
     length: usize,
     out: ?*Fixed,
@@ -851,7 +851,7 @@ export fn randomz_fixed_parse(
     return @intFromEnum(Status.ok);
 }
 
-export fn randomz_fixed_parse_int_safe(
+pub export fn randomz_fixed_parse_int_safe(
     text: ?[*]const u8,
     length: usize,
     out: ?*i64,
@@ -863,7 +863,7 @@ export fn randomz_fixed_parse_int_safe(
     return @intFromEnum(Status.ok);
 }
 
-export fn randomz_fixed_format(
+pub export fn randomz_fixed_format(
     value: Fixed,
     decimal_places: usize,
     out: ?[*]u8,

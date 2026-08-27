@@ -57,7 +57,7 @@ pub fn build(b: *std.Build) void {
 
     // Pure RNG/distribution core and its C ABI. Callers own the DRBG state and
     // supply entropy through a callback; this module performs no I/O.
-    const randomz_mod = b.createModule(.{
+    const randomz_mod = b.addModule("randomz", .{
         .root_source_file = b.path("src/randomz.zig"),
         .target = target,
         .optimize = optimize,
@@ -73,8 +73,28 @@ pub fn build(b: *std.Build) void {
         .linkage = .static,
         .root_module = randomz_mod,
     });
-    b.installArtifact(randomz_lib);
-    b.installFile("include/randomz.h", "include/randomz.h");
+    const randomz_shared = b.addLibrary(.{
+        .name = "randomz",
+        .linkage = .dynamic,
+        .root_module = randomz_mod,
+    });
+    const install_randomz_lib = b.addInstallArtifact(randomz_lib, .{});
+    const install_randomz_shared = b.addInstallArtifact(randomz_shared, .{});
+    const install_randomz_header = b.addInstallFileWithDir(
+        b.path("include/randomz.h"),
+        .header,
+        "randomz.h",
+    );
+    b.getInstallStep().dependOn(&install_randomz_lib.step);
+    b.getInstallStep().dependOn(&install_randomz_shared.step);
+    b.getInstallStep().dependOn(&install_randomz_header.step);
+    const library_step = b.step(
+        "library",
+        "Install the Zig module, static/shared C ABI libraries, and header",
+    );
+    library_step.dependOn(&install_randomz_lib.step);
+    library_step.dependOn(&install_randomz_shared.step);
+    library_step.dependOn(&install_randomz_header.step);
     b.installFile("LICENSE", "share/licenses/random/LICENSE");
     b.installFile("tests/random_test", "tests/random_test");
     b.installFile("tests/cli_test_setup.sh", "tests/cli_test_setup.sh");

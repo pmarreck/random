@@ -30,7 +30,25 @@
 - [x] Extend `./crossarch`, update CLI/README/spec documentation, mutation-test
       every new control, run the complete suite, and commit only green units.
 
+## Next
+
+- [ ] Fix and independently gate LuaJIT binary streaming above `2^31` bytes.
+      Rarz observed `random -b -c 2362232012 --seed 0x700A` complete with
+      success but emit zero bytes while `randomz` streamed the identical seeded
+      data. The regression must fail closed on count errors and prove output has
+      begun without writing a multi-GiB fixture to disk. (2026-08-27 EDT)
+- [ ] Profile and repair the Zig/C normalized-binary throughput cliff. Rarz
+      measured uniform output near 400 MB/s while 100 MiB of `drandomz -n -b`
+      did not finish within five minutes. Preserve exact four-way output while
+      testing allocation, FFI-call, and per-sample fixed-transcendental costs.
+      (2026-08-27 EDT)
+
 ## Done
+- [x] Publish and gate CLI-free `random-luajit-lib`, `random-zig-lib`,
+      `random-rust-lib`, and `random-lean-lib` flake packages; prove native
+      downstream imports, direct LuaJIT loading of the shared C ABI without a
+      separately compiled test harness, Cargo graph compatibility with
+      validate_gui's libc/zeroize pins, and Rust 1.97.1. (2026-08-27 EDT)
 - [x] Split Nix distribution outputs by implementation: publish
       `random-luajit`, `random-zig`, `random-rust`, and `random-lean`, retain
       `random-all` as the explicit aggregate and the backwards-compatible
@@ -207,7 +225,7 @@
 - [x] Parameterize one shared CLI and exact-differential harness across LuaJIT,
       Zig/C, and Rust. Require pairwise oracle agreement before accepting Rust,
       then run the statistical, package, cross-target, and non-x86_64 runtime
-      gates. Rust 1.97 publishes BSD target libraries only for FreeBSD x86_64
+      gates. Rust 1.97.1 publishes BSD target libraries only for FreeBSD x86_64
       and NetBSD x86_64; OpenBSD and BSD ARM64 remain named library gaps.
       (2026-08-11 EDT)
 - [x] Compile-gate the pure `randomr` core without default features for

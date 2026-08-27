@@ -132,6 +132,8 @@
         # nixpkgs bump to 0.17 cannot silently change the compiler underneath a
         # port whose entire point is bit-reproducible output.
         zigTools = [ pkgs.zig_0_16 ];
+		randomZigSharedName =
+		  "librandomz${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
 
         rustCargoDeps = pkgs.rustPlatform.importCargoLock {
           lockFile = ./Cargo.lock;
@@ -180,6 +182,65 @@
           };
         };
         randomr = mkRandomr pkgs true;
+		randomRustLib = pkgs.stdenvNoCC.mkDerivation {
+		  pname = "random-rust-lib";
+		  version = "0.3.0";
+		  src = ./.;
+		  strictDeps = true;
+		  dontBuild = true;
+		  installPhase = ''
+			runHook preInstall
+			mkdir -p $out/src/rust $out/share/licenses/random-rust-lib
+			install -Dm644 Cargo.toml Cargo.lock README.md $out/src/
+			cp -R rust/randomr $out/src/rust/randomr
+			chmod -R u+w $out/src
+			substituteInPlace $out/src/Cargo.toml \
+			  --replace-fail \
+			  'members = ["rust/randomr", "rust/randomr-cli"]' \
+			  'members = ["rust/randomr"]'
+			install -Dm644 LICENSE $out/share/licenses/random-rust-lib/LICENSE
+			runHook postInstall
+		  '';
+		  passthru = {
+			cargoPath = "src/rust/randomr";
+			crateName = "randomr";
+		  };
+		  meta = with pkgs.lib; {
+			description = "Cargo-consumable randomr library source without the CLI or Rust toolchain";
+			license = licenses.mit;
+			platforms = platforms.all;
+		  };
+		};
+		randomLeanLib = pkgs.stdenvNoCC.mkDerivation {
+		  pname = "random-lean-lib";
+		  version = "0.3.0";
+		  src = ./.;
+		  strictDeps = true;
+		  nativeBuildInputs = [ pkgs.lean4 ];
+		  buildPhase = ''
+			runHook preBuild
+			export HOME="$TMPDIR/home"
+			export XDG_CACHE_HOME="$HOME/.cache"
+			mkdir -p "$XDG_CACHE_HOME"
+			(cd lean && lake build Randoml)
+			runHook postBuild
+		  '';
+		  installPhase = ''
+			runHook preInstall
+			mkdir -p $out/lib/lean $out/src $out/share/licenses/random-lean-lib
+			cp -R lean/.lake/build/lib/lean/. $out/lib/lean/
+			cp -R lean/Randoml $out/src/Randoml
+			install -Dm644 lean/Randoml.lean lean/lakefile.toml \
+			  lean/lean-toolchain $out/src/
+			install -Dm644 LICENSE $out/share/licenses/random-lean-lib/LICENSE
+			runHook postInstall
+		  '';
+		  meta = with pkgs.lib; {
+			description = "Importable Randoml Lean 4 library, proofs, and compiled modules";
+			license = licenses.mit;
+			platforms = platforms.unix;
+		  };
+		};
 		randoml = pkgs.stdenv.mkDerivation {
 		  pname = "random-lean";
           version = "0.3.0";
@@ -217,6 +278,26 @@
           };
         };
 
+		randomLuaLib = pkgs.stdenvNoCC.mkDerivation {
+		  pname = "random-luajit-lib";
+		  version = "0.3.0";
+		  src = ./.;
+		  strictDeps = true;
+		  dontBuild = true;
+		  installPhase = ''
+			runHook preInstall
+			mkdir -p $out/share/lua/5.1 $out/share/licenses/random-luajit-lib
+			cp lib/*.lua $out/share/lua/5.1/
+			ln -s share/lua/5.1 $out/lib
+			install -Dm644 LICENSE $out/share/licenses/random-luajit-lib/LICENSE
+			runHook postInstall
+		  '';
+		  meta = with pkgs.lib; {
+			description = "Importable LuaJIT numeric, BLAKE3, chart, and state modules";
+			license = licenses.mit;
+			platforms = platforms.unix;
+		  };
+		};
 		randomLuaNativeBuildInputs = [ pkgs.makeWrapper pkgs.bash ];
 		randomLua = pkgs.stdenvNoCC.mkDerivation {
 		  pname = "random-luajit";
@@ -227,9 +308,9 @@
 		  dontBuild = true;
 		  installPhase = ''
 			runHook preInstall
-			mkdir -p $out/bin $out/lib $out/tests $out/share/licenses/random-luajit
+			mkdir -p $out/bin $out/tests $out/share/licenses/random-luajit
 			install -Dm755 bin/random $out/bin/random
-			cp lib/*.lua $out/lib/
+			ln -s ${randomLuaLib}/lib $out/lib
 			install -Dm755 tests/random_test $out/tests/random_test
 			install -Dm644 tests/cli_test_setup.sh $out/tests/cli_test_setup.sh
 			install -Dm644 LICENSE $out/share/licenses/random-luajit/LICENSE
@@ -251,6 +332,37 @@
 		  };
 		};
 
+		randomZigLib = pkgs.stdenvNoCC.mkDerivation {
+		  pname = "random-zig-lib";
+		  version = "0.3.0";
+		  src = ./.;
+		  strictDeps = true;
+		  nativeBuildInputs = [ pkgs.zig_0_16 ];
+		  buildPhase = ''
+			runHook preBuild
+			export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
+			export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-local"
+			mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
+			zig build library -Doptimize=ReleaseFast --prefix zig-lib-out
+			runHook postBuild
+		  '';
+		  installPhase = ''
+			runHook preInstall
+			mkdir -p $out/lib $out/include $out/share/licenses/random-zig-lib
+			install -Dm644 zig-lib-out/lib/librandomz.a $out/lib/librandomz.a
+			install -Dm755 zig-lib-out/lib/${randomZigSharedName} \
+			  $out/lib/${randomZigSharedName}
+			install -Dm644 zig-lib-out/include/randomz.h $out/include/randomz.h
+			ln -s ${./.} $out/src
+			install -Dm644 LICENSE $out/share/licenses/random-zig-lib/LICENSE
+			runHook postInstall
+		  '';
+		  meta = with pkgs.lib; {
+			description = "Zig module source plus static/shared randomz C ABI libraries";
+			license = licenses.mit;
+			platforms = platforms.unix;
+		  };
+		};
 		randomZig = pkgs.stdenv.mkDerivation {
 		  pname = "random-zig";
 		  version = "0.3.0";
@@ -275,6 +387,8 @@
 			ln -s randomz $out/bin/nrandomz
 			ln -s randomz $out/bin/drandomz
 			install -Dm644 zig-out/lib/librandomz.a $out/lib/librandomz.a
+			install -Dm755 zig-out/lib/${randomZigSharedName} \
+			  $out/lib/${randomZigSharedName}
 			install -Dm644 zig-out/bin/randomz-wasi.wasm $out/lib/randomz-wasi.wasm
 			remove-references-to -t ${pkgs.zig_0_16} $out/lib/randomz-wasi.wasm
 			install -Dm644 zig-out/include/randomz.h $out/include/randomz.h
@@ -332,7 +446,7 @@
 		# entire compiler-bootstrap universe rather than model what selecting this
 		# binary-cache output asks a consumer to build.
 		luaDeclaredBuildInputNames = map pkgs.lib.getName
-		  ([ pkgs.stdenvNoCC luajitFixed ] ++ randomLuaNativeBuildInputs
+		  ([ pkgs.stdenvNoCC luajitFixed randomLuaLib ] ++ randomLuaNativeBuildInputs
 		    ++ installedTestTools);
 		luaForbiddenBuildMarkers = [
 		  "random-zig" "random-rust" "random-lean"
@@ -368,6 +482,13 @@
           pkgs.linkFarm "randomr-cross-targets"
             (pkgs.lib.mapAttrsToList (name: path: { inherit name path; })
               randomrCrossPackages);
+		leanLibraryConsumer = pkgs.writeText "randoml-library-consumer.lean"
+		  (builtins.concatStringsSep "\n" [
+			"import Randoml"
+			"#check Randoml.Drbg.init"
+			"#check Randoml.normal"
+			"example : Randoml.maxExactPosition = 9007199254740992 := rfl"
+		  ] + "\n");
       in {
         # The conditional attribute is merged INSIDE `packages`, not by `//`-ing
         # a second `{ packages.crossToolchains = ...; }` onto the outputs set.
@@ -385,6 +506,10 @@
 		  random-zig = randomZig;
 		  random-rust = randomr;
 		  random-lean = randoml;
+		  random-luajit-lib = randomLuaLib;
+		  random-zig-lib = randomZigLib;
+		  random-rust-lib = randomRustLib;
+		  random-lean-lib = randomLeanLib;
 
 		  # Compatibility aliases. Language-named aliases now resolve to their
 		  # minimal package; `random` remains the historical aggregate alias.
@@ -515,6 +640,7 @@
 
 			test -x ${randomZig}/bin/randomz
 			test -s ${randomZig}/lib/librandomz.a
+			test -s ${randomZig}/lib/${randomZigSharedName}
 			test -s ${randomZig}/lib/randomz-wasi.wasm
 			test -s ${randomZig}/include/randomz.h
 			test ! -e ${randomZig}/bin/random
@@ -530,6 +656,20 @@
 			test ! -e ${randoml}/bin/random
 			test ! -e ${randoml}/bin/randomz
 			test ! -e ${randoml}/bin/randomr
+
+			# Library selectors contain native import/link surfaces and no CLI.
+			test -s ${randomLuaLib}/lib/blake3.lua
+			test ! -e ${randomLuaLib}/bin
+			test -s ${randomZigLib}/lib/librandomz.a
+			test -s ${randomZigLib}/lib/${randomZigSharedName}
+			test -s ${randomZigLib}/include/randomz.h
+			test -s ${randomZigLib}/src/build.zig
+			test ! -e ${randomZigLib}/bin
+			test -s ${randomRustLib}/src/rust/randomr/src/lib.rs
+			test ! -e ${randomRustLib}/bin
+			test -s ${randomLeanLib}/lib/lean/Randoml.olean
+			test -s ${randomLeanLib}/src/Randoml.lean
+			test ! -e ${randomLeanLib}/bin
 
 			# The backwards-compatible default is the documented aggregate and
 			# therefore exposes every implementation.
@@ -556,6 +696,78 @@
 				exit 1
 			  fi
 			done
+			touch $out
+		  '';
+
+		checks.library-packages = pkgs.runCommand "random-library-packages"
+		  {
+			nativeBuildInputs = [
+			  luajitFixed pkgs.lean4 pkgs.zig_0_16 pkgs.cargo pkgs.rustc
+			  pkgs.rustPlatform.cargoSetupHook
+			];
+			cargoDeps = rustCargoDeps;
+		  } ''
+			cp ${./Cargo.lock} Cargo.lock
+			cargoSetupPostUnpackHook
+			cargoSetupPostPatchHook
+			export CARGO_HOME="$TMPDIR/cargo-home"
+			mkdir -p "$CARGO_HOME"
+			cp .cargo/config.toml "$CARGO_HOME/config.toml"
+			substituteInPlace "$CARGO_HOME/config.toml" \
+			  --replace-fail 'directory = "cargo-vendor-dir"' \
+			  "directory = \"$PWD/cargo-vendor-dir\""
+			export CARGO_NET_OFFLINE=true
+
+			# Lua modules are directly importable without the CLI package.
+			LUA_PATH='${randomLuaLib}/lib/?.lua;;' luajit -e '
+			  local b3 = require("blake3")
+			  assert(b3.blake3("", nil, 32) ==
+			    "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262")
+			'
+
+			# Load and execute the installed C ABI directly through LuaJIT FFI;
+			# no separately compiled test harness is needed for behavior coverage.
+			luajit -e '
+			  local ffi = require("ffi")
+			  ffi.cdef[[
+			    typedef struct { uint8_t key[32]; uint64_t position; } randomz_drbg;
+			    int randomz_drbg_init(randomz_drbg *, const uint8_t *);
+			    int randomz_drbg_fill(randomz_drbg *, uint8_t *, size_t);
+			  ]]
+			  local rz = ffi.load("${randomZigLib}/lib/${randomZigSharedName}")
+			  local seed = ffi.new("uint8_t[32]")
+			  seed[31] = 42
+			  local state = ffi.new("randomz_drbg[1]")
+			  local output = ffi.new("uint8_t[64]")
+			  assert(rz.randomz_drbg_init(state, seed) == 0)
+			  assert(rz.randomz_drbg_fill(state, output, 64) == 0)
+			  local hex = ffi.string(output, 64):gsub(".", function(byte)
+			    return string.format("%02x", string.byte(byte))
+			  end)
+			  assert(hex == "69dfe2e9b579cf6dfe3d71b11024db6eb49d5b9861505b3ecfc3d379a6dc8f04" ..
+			    "b6900db333d20760661226da010db589c5080aaf5f6068fc0874ce62aca36f60")
+			'
+
+			# A separate Zig package imports the installed package's public module.
+			cp -R ${./tests/fixtures/randomz-consumer} "$TMPDIR/zig-consumer"
+			chmod -R u+w "$TMPDIR/zig-consumer"
+			ln -s ${randomZigLib}/src "$TMPDIR/zig-consumer/random"
+			export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
+			export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-local"
+			mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
+			(cd "$TMPDIR/zig-consumer" && zig build test -Doptimize=ReleaseSafe)
+
+			# The source-only Rust output must resolve beside validate_gui's exact
+			# libc/zeroize versions, while the project's Cargo.lock stays reproducible.
+			cp -R ${./tests/fixtures/randomr-consumer} "$TMPDIR/rust-consumer"
+			chmod -R u+w "$TMPDIR/rust-consumer"
+			substituteInPlace "$TMPDIR/rust-consumer/Cargo.toml" \
+			  --replace-fail '../../../rust/randomr' \
+			  '${randomRustLib}/src/rust/randomr'
+			(cd "$TMPDIR/rust-consumer" && cargo check --offline)
+
+			# The compiled Lean library imports without the CLI derivation or sources.
+			LEAN_PATH=${randomLeanLib}/lib/lean lean ${leanLibraryConsumer}
 			touch $out
 		  '';
 
