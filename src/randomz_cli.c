@@ -2028,8 +2028,8 @@ static int emit_metadata(const options *opts, const randomz_drbg *drbg,
 				if (write_arg_string(stream, &first, "alpha", opts->alpha_text != NULL ? opts->alpha_text : "2") ||
 					write_arg_string(stream, &first, "beta", opts->beta_text != NULL ? opts->beta_text : "2")) return 1;
 			}
-			if (opts->dist == DIST_EXPONENTIAL || opts->dist == DIST_LOG_NORMAL ||
-				opts->dist == DIST_BETA) {
+			if (!opts->binary_output && (opts->dist == DIST_EXPONENTIAL || opts->dist == DIST_LOG_NORMAL ||
+				opts->dist == DIST_BETA)) {
 				snprintf(number, sizeof(number), "%zu", opts->precision);
 				if (write_arg_string(stream, &first, "precision", number)) return 1;
 			}

@@ -356,10 +356,11 @@ fn canonical_args(options: &Options, bounds: Option<(i64, i64, u64)>) -> String 
 		}
 		Mode::Uniform | Mode::Normal => {}
 	}
-	if matches!(
-		options.mode,
-		Mode::Exponential | Mode::LogNormal | Mode::Beta
-	) {
+	if !options.binary
+		&& matches!(
+			options.mode,
+			Mode::Exponential | Mode::LogNormal | Mode::Beta
+		) {
 		push_string(&mut fields, "precision", &options.precision.to_string());
 	}
 	if options.binary {

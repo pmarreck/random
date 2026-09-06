@@ -11,6 +11,7 @@ Unified random number generator
 
 local ffi = require("ffi")
 local bit = require("bit")
+local buffer = require("string.buffer")
 
 local here = (arg[0] or ""):match("^(.*)/[^/]+$") or "."
 package.path = here .. "/../lib/?.lua;" .. here .. "/lib/?.lua;" .. package.path
@@ -25,6 +26,10 @@ local argv = arg or {}
 local VERSION = "0.3.0"
 local DEFAULT_FRACTION_DIGITS = 18
 local MAX_FRACTION_DIGITS = 18
+-- Complete Base64 groups per chunk; memory is independent of --count.
+local BINARY_CHUNK_BYTES = 49152
+-- Expensive distributions should reach the sink without filling a bulk block.
+local SAMPLED_CHUNK_BYTES = 3072
 local notices = {}
 local warnings = {}
 
@@ -138,6 +143,21 @@ local function base64_encode(data)
 		i = i + 3
 	end
 	return table.concat(result)
+end
+
+-- Encode bounded payloads directly into byte storage, avoiding per-byte
+-- strings and the callback overhead of the hash library's gsub conversion.
+local function binary_hex_encode(data)
+	local digits = "0123456789abcdef"
+	local encoded = buffer.new(#data * 2)
+	local ptr = encoded:reserve(#data * 2)
+	for i = 1, #data do
+		local byte = data:byte(i)
+		ptr[2 * i - 2] = digits:byte(bit.rshift(byte, 4) + 1)
+		ptr[2 * i - 1] = digits:byte(bit.band(byte, 15) + 1)
+	end
+	encoded:commit(#data * 2)
+	return encoded:get()
 end
 
 -- ===== Seed parsing and BLAKE3 DRBG =====
@@ -1797,7 +1817,7 @@ local function canonical_args_json(options, start_val, end_val, count)
 		add_string("alpha", options.alpha_text or "2")
 		add_string("beta", options.beta_param_text or "2")
 	end
-	if options.exponential or options.log_normal or options.beta then
+	if not options.binary_output and (options.exponential or options.log_normal or options.beta) then
 		add_string("precision", exact_integer_text(options.precision))
 	end
 	local encoding
@@ -2025,15 +2045,38 @@ local function main()
 	-- (--exponential, --log-normal, --beta) -- the shape distinguishes the
 	-- two cases downstream, so no separate is-integer flag is needed.
 	local values = {}
-	local binary_data = {}
+	local binary_data = options.binary_output and buffer.new(SAMPLED_CHUNK_BYTES)
+	local binary_ptr
+	local binary_length = 0
 	local has_distribution = options.normalized or options.exponential or
 		options.poisson or options.log_normal or options.beta
 	local direct_binary = options.binary_output and not has_distribution and
 		start_val == 0 and end_val == 255
 
+	-- Fail on the first rejected write, before drawing the next chunk. A failed
+	-- stream cannot publish a successful continuation position.
+	local function write_binary_chunk(data)
+		if options.base64_output then data = base64_encode(data)
+		elseif options.hex_output then data = binary_hex_encode(data) end
+		if not io.stdout:write(data) then
+			emit_error_json("stdout write failed", "io")
+			os.exit(1)
+		end
+	end
+
 	if direct_binary then
-		binary_data[1] = options.deterministic and drbg_draw_bytes(count) or
-			entropy_reader(count)
+		-- Retain the old whole-request preflight at the exact-integer cursor cap.
+		if options.deterministic and drbg_pos > MAX_EXACT_INTEGER - count then
+			error("BLAKE3 DRBG byte position exceeds the Lua oracle's exact-integer limit")
+		end
+		local remaining = count
+		while remaining > 0 do
+			local size = math.min(remaining, BINARY_CHUNK_BYTES)
+			write_binary_chunk(options.deterministic and drbg_draw_bytes(size) or entropy_reader(size))
+			remaining = remaining - size
+		end
+	elseif options.binary_output then
+		binary_ptr = binary_data:reserve(SAMPLED_CHUNK_BYTES)
 	end
 
 	for _ = 1, direct_binary and 0 or count do
@@ -2086,7 +2129,14 @@ local function main()
 			else
 				byte_val = value
 			end
-			table.insert(binary_data, string.char(byte_val % 256))
+			binary_ptr[binary_length] = byte_val % 256
+			binary_length = binary_length + 1
+			if binary_length == SAMPLED_CHUNK_BYTES then
+				binary_data:commit(binary_length)
+				write_binary_chunk(binary_data:get())
+				binary_length = 0
+				binary_ptr = binary_data:reserve(SAMPLED_CHUNK_BYTES)
+			end
 		else
 			table.insert(values, value)
 		end
@@ -2094,17 +2144,15 @@ local function main()
 
 	-- Output
 	if options.binary_output then
-		local data = table.concat(binary_data)
-		if options.base64_output then
-			print(base64_encode(data))
-		elseif options.hex_output then
-			local hex = {}
-			for i = 1, #data do
-				hex[i] = string.format("%02x", string.byte(data, i))
+		if binary_length > 0 then
+			binary_data:commit(binary_length)
+			write_binary_chunk(binary_data:get())
+		end
+		if options.base64_output or options.hex_output then
+			if not io.stdout:write("\n") then
+				emit_error_json("stdout write failed", "io")
+				os.exit(1)
 			end
-			print(table.concat(hex))
-		else
-			io.stdout:write(data)
 		end
 	else
 		local output_delimiter = options.delimiter

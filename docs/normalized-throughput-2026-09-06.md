@@ -117,11 +117,127 @@ that the ordinary development shell inherited from the host. The flake now
 declares `jq` for repository tests and `hyperfine` for development benchmarks;
 neither was added to the installed CLI runtime dependencies.
 
-## Separate outstanding defect
+## LuaJIT streaming follow-up
 
 Rarz's large-count LuaJIT probe was
 `timeout 5 random -b -c 2362232012 --seed 0x700A`. Its observed result was
-exit 124 with zero bytes, not successful empty output. LuaJIT currently
-assembles the whole binary request before writing. This pass fixes Zig/Rust
-normalized throughput; LuaJIT bounded-memory streaming remains tracked in
-PLAN. No claim of a `2^31` count-parsing defect follows from that timeout.
+exit 124 with zero bytes, not successful empty output. LuaJIT assembled the
+whole binary request before writing. No claim of a `2^31` count-parsing defect
+follows from that timeout.
+
+The follow-up fixes binary streaming with 49,152-byte direct chunks and
+3,072-byte sampled chunks. Sampled output writes into reserved `string.buffer`
+byte storage. Both sizes are multiples of three, preserving Base64 grouping;
+only the final chunk can contain padding. Raw/hex/Base64 bytes and newlines,
+the order of random draws, and exact continuation positions remain unchanged.
+Known-overlong direct requests still fail before output at the 2^53 cap.
+Writes are checked before drawing another chunk. A later entropy or output
+failure can leave a prefix, but cannot publish successful continuation state.
+This bound applies to binary generation, not buffered text or stdin populations.
+
+`tests/luajit_stream_test` passes 53 controls, including 32 MiB of deterministic
+output under a 16 MiB virtual-memory budget, 128 MiB of explicit entropy input
+under 64 MiB, exact byte counts, chunk boundaries, output errors, and a verified
+prefix of the original multi-GiB request. Payloads use pipes or `/dev/null`.
+The original code failed the new huge-request controls with out-of-memory
+errors before reaching the sink; no timeout was counted as success.
+
+The tests exposed an older four-language defect: fractional binary state
+contained text-only precision and was rejected on resume. All implementations
+now omit that inapplicable field. The shared state suite passes 844 checks,
+including every producer/consumer pairing for those binary distributions.
+Lean also checks `binary_state_needs_no_precision`: the metadata predicate is
+false for binary mode. That narrow theorem uses standard `propext`; it does
+not prove the entire serializer or I/O behavior.
+
+All 26 default suites passed. The fresh-context reviewer found no actionable
+defect and independently passed 497 assertions with system encoding oracles,
+four-language resumption, and cursor/sink boundaries. Further complete raw,
+hex and Base64 entropy streams consumed 48 MiB each under a 24 MiB address-space
+budget. Huge-count failing-sink probes also passed. Review artifacts are
+`/tmp/dispatch-log/random-stream-review-final.md` and the RAM-only probe script;
+the checked-in tests carry the ongoing gate.
+
+On the same host, Hyperfine measured these LuaJIT changes (one warmup; three
+before samples, five after; full-suite work ran concurrently during some
+measurements):
+
+| Workload | Wall time before → after | CPU time before → after |
+| --- | ---: | ---: |
+| 8 MiB raw | 1.795 → 1.446 s | 1.783 → 1.437 s |
+| 1 MiB hex | 246.5 → 189.1 ms | 244.8 → 187.5 ms |
+| 1 MiB Base64 | 245.9 → 230.1 ms | 244.1 → 228.3 ms |
+| 49,153 normalized bytes | 2.030 → 2.167 s | 2.015 → 2.142 s |
+
+The normalized case was about 7% slower in this run, with 122 ms wall-time
+standard deviation after versus 38 ms before; no normalized speedup is claimed
+for LuaJIT. The benefit there is bounded memory and incremental output.
+An intermediate hex implementation regressed to 336 ms and was replaced with
+direct byte-buffer encoding before retention. Raw measurement records are in
+[luajit-streaming-2026-09-06.ndjson](../benchmarks/luajit-streaming-2026-09-06.ndjson).
+
+## Fixed-point SIMD experiments
+
+The subsequent opt-in experiment evaluates four independent fixed-point lanes
+in Zig `@Vector` code and Rust AVX2 intrinsics. Neither prototype is imported
+by a production library or CLI. Each uses four 32-bit partial products per
+lane to recover the exact wide product; scalar 62/63-bit truncation and
+coefficient order are preserved. Logarithm retains scalar initial divisions
+and batches the twenty series steps. Cosine retains scalar quadrant reduction
+and batches the fourteen sine/cosine steps with lane masks. No floating-point
+source arithmetic, new approximation, or random prefetch is involved.
+
+The final reviewed run on the same Threadripper used Zig 0.16.0 ReleaseFast
+and Rust 1.97.1 opt-level 3, both compiled for the native CPU. The runner pins
+the optimization/CPU flags separately for **every** Zig module and builds the
+Rust dependency with matching native target flags. Hyperfine used three warmups
+and five measurements; outputs went to `/dev/null`.
+
+| Operation | Samples per invocation | Zig scalar → vector wall | Rust scalar → vector wall |
+| --- | ---: | ---: | ---: |
+| ln | 1,048,576 | 257.7 → 155.3 ms (1.66×) | 302.7 → 186.5 ms (1.62×) |
+| cosine in turns | 1,048,576 | 196.4 → 112.2 ms (1.75×) | 221.0 → 119.4 ms (1.85×) |
+| multiply | 33,554,432 | 339.1 → 166.1 ms (2.04×) | 345.1 → 244.9 ms (1.41×) |
+
+CPU times track those wall-time gains: ln 255.8 → 153.9 ms (Zig) and
+300.5 → 185.1 ms (Rust); cosine 194.8 → 111.1 and 219.3 → 118.4 ms.
+Multiplication's final run was noisier, especially Zig scalar (35.9 ms wall
+standard deviation); treat its ratio as approximate. The benchmark includes
+input setup, operation dispatch and result accumulation, not only arithmetic.
+The same 8,192 deterministic inputs are reused across iterations in all four
+variants. These are cache-resident kernel workloads, **not measured CLI gains**.
+
+Run `nix develop -c ./bm --simd`, or append `--check` to omit timing. Before
+timing, each variant emits all 8,192 canonical mantissa/exponent results for
+each operation through a validated line-count/format gate and SHA-256. All
+four outputs must agree; empty or incomplete outputs cannot pass. The cheap
+rolling checksum inside timed invocations only prevents dead-code elimination.
+Measured records, including CPU time, samples, toolchains, source digests and
+earlier exploratory runs, are in
+[fixed-simd-2026-09-06.ndjson](../benchmarks/fixed-simd-2026-09-06.ndjson).
+The final twelve records describe the reviewed run in the table.
+
+Exact-pair tests cover mixed signs, zeros, cancellation, exponent gaps and
+quadrants. Zig's initially stubbed operations failed these controls before
+implementation. ReleaseSafe tests pass for native AVX2, baseline x86_64 and
+ARM64 under QEMU; ARM emulation is a correctness check, not a performance
+measurement. The Rust AVX2 tests check CPU support before entering unsafe
+code; their target-feature module remains outside the safe production core.
+The benchmark artifacts are host-specific and do not provide portable dispatch.
+
+The independent reviewer passed 135,200 add/multiply pair comparisons per
+language over full-limb boundary/carry inputs, plus arbitrary-mantissa logs
+and quadrant cases. It found one shared prototype defect: a sufficiently tiny
+negative turn can round to quadrant 4 during the scalar wrap. Both prototypes
+had chosen cosine there, while the scalar default selects sine. New persistent
+regressions failed in both languages; corrected masks now match the scalar
+fallback, and the reviewer's original and expanded controls pass. The scalar
+result itself is mathematically surprising, but lies outside the sampler's
+nonnegative `[0,1)` domain. PLAN records that separate four-oracle question.
+No unresolved actionable review finding remains.
+
+Production promotion still needs a bounded batch API, supported-domain/error
+handling, tail lanes, portable CPU selection/fallback, and tests that preserve
+the sequential sampler's rejection and byte-consumption order. It also needs
+end-to-end normalized-output measurements. These empirical controls do not
+constitute a proof over every mantissa/exponent or of compiler correctness.

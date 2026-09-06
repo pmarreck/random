@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+# Bounded-memory CLI output, checked against the independent Zig implementation.
+# Payloads go through digest pipes or /dev/null; state remains in shell memory.
+set -u
+set -o pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+lua_cli="${STREAM_TEST_LUA_CLI:-$root/bin/random}"
+zig_cli="${STREAM_TEST_ZIG_CLI:-$root/zig-out/bin/randomz}"
+if [ -z "${STREAM_TEST_ZIG_CLI:-}" ]; then
+	(cd "$root" && zig build -Doptimize=ReleaseFast) || exit 1
+fi
+fails=0
+checks=0
+fail() { echo "LuaJIT streaming FAILED: $*" >&2; fails=$((fails + 1)); }
+
+# A kernel-enforced address-space budget is independent of the implementation.
+# /dev/full also proves huge requests reach the sink and stop on its error;
+# OOM, a timeout, or successful metadata are all failures, not substitutes.
+if [ "$(uname -s)" = Linux ]; then
+	for encoding in raw hex base64; do
+		flags=()
+		[ "$encoding" = raw ] || flags+=("--$encoding")
+		for mode in direct ranged normal; do
+			mode_flags=()
+			case "$mode" in ranged) mode_flags+=(64..192);; normal) mode_flags+=(-n);; esac
+			err=$( (ulimit -v 65536; "$lua_cli" --seed 0x700A -b -c 2362232012 \
+				"${flags[@]}" "${mode_flags[@]}" 2>&1 >/dev/full))
+			rc=$?
+			checks=$((checks + 1))
+			if [ "$rc" -eq 0 ] || ! jq -e 'select(.error.code == "io" and .next_pos == null)' \
+				<<<"$err" >/dev/null 2>&1; then
+				fail "$mode/$encoding huge request must stop on stdout failure, status=$rc: $err"
+			fi
+		done
+	done
+	# Complete an output twice the memory budget, using both real generation
+	# and an explicit entropy device. This catches retaining already-sent chunks.
+	for mode in deterministic entropy; do
+		flags=(--seed 0x700A)
+		budget=16384
+		count=33554432
+		if [ "$mode" = entropy ]; then
+			flags=(--true-random --random-source /dev/zero)
+			budget=65536
+			count=134217728
+		fi
+		actual=$( (ulimit -v "$budget"; "$lua_cli" -b -c "$count" "${flags[@]}" 2>/dev/null) | wc -c)
+		rc=$?
+		checks=$((checks + 1))
+		if [ "$rc" -ne 0 ] || [ "$actual" -ne "$count" ]; then
+			fail "$mode $count bytes under $budget KiB budget, status=$rc, bytes=$actual"
+		fi
+	done
+	checks=$((checks + 1))
+	actual=$( (ulimit -v 65536; "$lua_cli" --seed 0x700A -b -c 2362232012 2>/dev/null) |
+		head -c 65536 | sha256sum)
+	rc=$?
+	expected=$("$zig_cli" --seed 0x700A -b -c 65536 2>/dev/null | sha256sum)
+	if [ "$?" -ne 0 ] || [ "$actual" != "$expected" ] ||
+		{ [ "$rc" -ne 1 ] && [ "$rc" -ne 141 ]; }; then
+		fail "huge request prefix must match Zig before downstream closes, status=$rc"
+	fi
+
+	checks=$((checks + 1))
+	err=$(head -c 49152 /dev/zero | "$lua_cli" --true-random --random-source /dev/stdin \
+		-b -c 49153 2>&1 >/dev/null)
+	rc=$?
+	if [ "$rc" -eq 0 ] || ! jq -e 'select(.error.message | contains("EOF"))' \
+		<<<"$err" >/dev/null 2>&1; then
+		fail "entropy EOF after one chunk must fail closed: $err"
+	fi
+fi
+
+# A known-overlong direct request must fail before sending even a prefix.
+state=$("$lua_cli" --seed 42 -b -c 0 2>&1 >/dev/null |
+	jq '.next_pos = "9007199254691840"')
+checks=$((checks + 1))
+actual=$("$lua_cli" --state "$state" -c 49153 2>/dev/null | wc -c)
+rc=$?
+if [ "$rc" -eq 0 ] || [ "$actual" -ne 0 ]; then
+	fail "direct request crossing 2^53 must fail before output, status=$rc bytes=$actual"
+fi
+
+check_parity() {
+	local count="$1" label="$2" actual expected actual_state expected_state resumed oracle rc expected_rc
+	shift 2
+	checks=$((checks + 1))
+	actual=$("$lua_cli" --seed 0x700A -b -c "$count" "$@" 2>/dev/null | sha256sum)
+	rc=$?
+	expected=$("$zig_cli" --seed 0x700A -b -c "$count" "$@" 2>/dev/null | sha256sum)
+	expected_rc=$?
+	if [ "$rc" -ne 0 ] || [ "$expected_rc" -ne 0 ] || [ "$actual" != "$expected" ]; then
+		fail "$label/$count output digest differs from Zig"
+	fi
+	actual_state=$("$lua_cli" --seed 0x700A -b -c "$count" "$@" 2>&1 >/dev/null)
+	rc=$?
+	expected_state=$("$zig_cli" --seed 0x700A -b -c "$count" "$@" 2>&1 >/dev/null)
+	expected_rc=$?
+	if [ "$rc" -ne 0 ] || [ "$expected_rc" -ne 0 ] || [ "$actual_state" != "$expected_state" ]; then
+		fail "$label/$count continuation state differs from Zig"
+		return
+	fi
+	# Feed the actual state across the language boundary in both directions.
+	resumed=$("$zig_cli" --state "$actual_state" -c 17 2>/dev/null | sha256sum)
+	rc=$?
+	oracle=$("$lua_cli" --state "$expected_state" -c 17 2>/dev/null | sha256sum)
+	expected_rc=$?
+	if [ "$rc" -ne 0 ] || [ "$expected_rc" -ne 0 ] || [ "$resumed" != "$oracle" ]; then
+		fail "$label/$count cross-language continuation differs"
+	fi
+}
+
+for count in 0 1 2 3 49151 49152 49153 98305; do
+	check_parity "$count" raw
+	check_parity "$count" hex --hex
+	check_parity "$count" base64 --base64
+done
+for mode in ranged normal exponential poisson log-normal beta; do
+	flags=()
+	case "$mode" in ranged) flags+=(64..192);; normal) flags+=(-n);; *) flags+=("--$mode");; esac
+	check_parity 3073 "$mode/raw" "${flags[@]}"
+	check_parity 3073 "$mode/base64" "${flags[@]}" --base64
+done
+for count in 3071 3072 6145; do
+	check_parity "$count" sampled/hex 64..192 --hex
+done
+
+echo "LuaJIT streaming: $checks checks, $fails failures"
+exit "$fails"

@@ -640,6 +640,15 @@ def stdinOperation (options : Options) (initialSource : CliSource.Source) :
 def pushStringField (fields : Array String) (key value : String) : Array String :=
   fields.push (jsonQuote key ++ ":" ++ jsonQuote value)
 
+/-- Continuation metadata carries decimal precision only for textual fractions. -/
+def stateNeedsPrecision (options : Options) : Bool :=
+  !options.binary &&
+    (options.mode == .exponential || options.mode == .logNormal || options.mode == .beta)
+
+theorem binary_state_needs_no_precision (options : Options) (h : options.binary = true) :
+    stateNeedsPrecision options = false := by
+  simp [stateNeedsPrecision, h]
+
 def canonicalArgs (options : Options) (bounds : Option (Int × Int × Nat)) :
     Except String String := do
   let delimiter ← match String.fromUTF8? options.delimiter with
@@ -678,7 +687,7 @@ def canonicalArgs (options : Options) (bounds : Option (Int × Int × Nat)) :
       fields := pushStringField fields "alpha" (options.alpha.map (·.text) |>.getD "2")
       fields := pushStringField fields "beta" (options.beta.map (·.text) |>.getD "2")
   | .uniform => pure ()
-  if options.mode == .exponential ∨ options.mode == .logNormal ∨ options.mode == .beta then
+  if stateNeedsPrecision options then
     fields := pushStringField fields "precision" (toString options.precision)
   if options.binary then fields := fields.push "\"binary\":true"
   let encoding := if options.binary then

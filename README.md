@@ -216,6 +216,14 @@ Fractional distributions print 18 deterministic decimal places by default.
 Use `--precision N` or its `--truncate N` alias to truncate (never round) to
 0–18 places; integer and binary stream semantics are unchanged.
 
+Binary output streams in bounded chunks, including `--hex`, `--base64`,
+and distribution-based bytes. LuaJIT uses at most 48 KiB of raw payload per
+bulk chunk and 3 KiB per sampled chunk; memory does not grow with `--count`.
+Base64 padding and the encoded-output newline appear only at the end.
+A failed stream can leave an already-written prefix, but does not emit
+successful continuation metadata. Text-number batches and stdin population
+operations are separate paths and do not inherit this binary-memory bound.
+
 Distribution-qualified help is order-independent: for example,
 `random --normalized --help` and `random --help --normalized` show the normal
 curve. The CLI sends its embedded PNG directly through the Kitty graphics
@@ -444,7 +452,7 @@ direnv allow      # or: nix develop
 ./test            # FAST mode (quick, quiet on success)
 FAST= ./test      # full statistical run
 ./stats           # separate, deeper sanity analysis of all four command families
-nix flake check   # hermetic CI check (runs all 25 suites, but FORCES FAST=1 --
+nix flake check   # hermetic CI check (runs all 26 suites, but FORCES FAST=1 --
                    # kernel_jit_diff's 60000-iteration deep JIT differential
                    # is deep-mode-only by design and is SKIPPED here, not run;
                    # run `FAST= ./test` locally for the full non-FAST suite)
@@ -495,6 +503,15 @@ are loud, and surprising speedups are flagged in case work disappeared. Use
 The Lean row measures the independent compiled Lean implementation. Its native
 code handles only the approved byte/I/O boundary; timed DRBG, arithmetic, and
 distribution work is Lean-owned.
+
+`nix develop -c ./bm --simd` runs the separate x86_64 Zig/Rust fixed-point AVX2
+experiments. Add `--check` to run their exact-pair controls and cross-language
+SHA-256 comparison without timings. The runner builds every module in release
+mode, records wall/CPU samples in `benchmarks/fixed-simd.ndjson` (override with
+`BM_SIMD_RESULTS_FILE`), and retains compiler artifacts under `$TMPDIR` for
+inspection. These host-native prototypes are not linked into the shipped
+libraries or CLIs. Results and integration limits are recorded in the
+[throughput report](docs/normalized-throughput-2026-09-06.md#fixed-point-simd-experiments).
 
 Lean CLI parity is currently executed on x86_64 Linux. The repository's
 multi-architecture contract is independently measured by the established

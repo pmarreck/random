@@ -32,7 +32,7 @@
 
 ## Next
 
-- [ ] Fix and independently gate LuaJIT binary streaming for large requests.
+- [x] Fix and independently gate LuaJIT binary streaming for large requests.
       Rarz's exact probe was `timeout 5 random -b -c 2362232012 --seed 0x700A`.
       The original transcript reports exit 124 with zero bytes, correcting
       the earlier unsupported claim of a successful empty result. LuaJIT
@@ -40,10 +40,31 @@
       alone does not establish a `2^31` parsing bug. Gate bounded-memory
       streaming and count/encoding/continuation parity without multi-GiB
       fixtures or timing thresholds in correctness tests.
-- [ ] If pursuing further SIMD work, prototype lane-parallel fixed-point
-      logarithm/trig evaluation with exact rounding and byte-consumption
-      controls. The current profile makes this a more relevant experiment
-      than vectorizing BLAKE3 alone. No custom SIMD speedup is claimed.
+      Implemented 48-KiB bulk/3-KiB sampled chunks, checked writes, exact cap
+      preflight, 53 streaming controls, and a fresh independent review with
+      497 assertions. All 26 default suites pass. (2026-09-06 EDT)
+- [x] Repair a continuation defect exposed by the streaming tests: binary
+      exponential/log-normal/beta metadata includes text-only precision, then
+      the CLI rejects its own emitted state. Gate resumption across all four
+      implementations before completing the streaming work. Binary metadata
+      now omits precision; all 844 shared state checks pass. (2026-09-06 EDT)
+- [x] Run the requested fixed-point SIMD experiments after the LuaJIT fix.
+      Exact four-lane Zig/Rust prototypes and `./bm --simd` now exist, separate
+      from production and RNG consumption. Final ln/cos wall-time gains on
+      this x86_64 host are 1.66×/1.75× (Zig) and 1.62×/1.85× (Rust). Full
+      canonical-output SHA-256 checks precede timing; independent review found
+      and then verified the repair of a tiny-negative cosine fallback mismatch.
+      Zig also passes controls on baseline x86_64 and emulated ARM64.
+      (2026-09-06 EDT)
+- [ ] Evaluate production opt-in fixed-point batching, with portable CPU
+      dispatch/fallback, tail handling, error equivalence and unchanged RNG
+      rejection/consumption ordering. Measure end-to-end normalized output;
+      the current SIMD numbers are kernel experiments only, not CLI speedups.
+- [ ] Review the shared scalar cosine's negative-turn defense: sufficiently
+      tiny negative inputs round their wrap to exactly one turn (quadrant 4),
+      selecting sine and returning zero. This lies outside the sampler's
+      nonnegative input domain. SIMD experiments preserve the oracle's current
+      behavior; changing that behavior needs coordinated four-language tests.
 
 ## Done
 - [x] Optimize Zig/Rust normalized output without changing output quality:

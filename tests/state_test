@@ -209,6 +209,9 @@ resume_case "log-normal" text 4 11 --log-normal --mean -0.25 --stddev 1.75
 resume_case "beta" text 4 11 --beta 0.75 --alpha 0.5
 resume_case "direct binary" hex 67 173 --binaryoutput --hex
 resume_case "sampled binary" hex 17 41 --binaryoutput --hex 64..192
+resume_case "exponential binary" hex 4 11 --binaryoutput --hex --exponential --rate 2.5
+resume_case "log-normal binary" hex 4 11 --binaryoutput --hex --log-normal --mean -0.25 --stddev 1.75
+resume_case "beta binary" hex 4 11 --binaryoutput --hex --beta 0.75 --alpha 0.5
 
 echo "Testing stdin state forms, --resume aliases, and stdin-operation conflicts..."
 for producer_index in "${!clis[@]}"; do
