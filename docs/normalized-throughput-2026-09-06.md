@@ -112,6 +112,11 @@ behavior, then passing; a subsequent real-Hyperfine smoke run produced exactly
 negative, or nonnumeric timing fields; those corruption cases were seen red
 before the added validation made them pass.
 
+A clean dev-shell check subsequently exposed an undeclared `jq` dependency
+that the ordinary development shell inherited from the host. The flake now
+declares `jq` for repository tests and `hyperfine` for development benchmarks;
+neither was added to the installed CLI runtime dependencies.
+
 ## Separate outstanding defect
 
 Rarz's large-count LuaJIT probe was

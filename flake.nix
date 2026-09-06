@@ -115,7 +115,7 @@
         # External tools the executable shells out to / the test suite needs.
         testTools = with pkgs; [
           bashInteractive coreutils gnugrep ripgrep gawk bc xxd binutils gnutar
-          stdenv.cc libsixel imagemagick nodejs wasm-tools
+          stdenv.cc libsixel imagemagick nodejs wasm-tools jq
         ];
         # The installed 80-case CLI self-test needs ordinary shell utilities,
         # not the compilers, cross toolchains, image decoders, Node, or WASM
@@ -906,7 +906,7 @@
 
         devShells.default = pkgs.mkShell {
           packages = runtimeTools ++ testTools ++ zigTools ++ leanTools ++
-            [ pkgs.cargo pkgs.clippy pkgs.rustc pkgs.rustfmt pkgs.openssh pkgs.rsync ];
+            [ pkgs.cargo pkgs.clippy pkgs.rustc pkgs.rustfmt pkgs.openssh pkgs.rsync pkgs.hyperfine ];
         };
       });
 }

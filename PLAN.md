@@ -59,6 +59,9 @@
       `docs/normalized-throughput-2026-09-06.md`, with versioned benchmark logs.
       Release build, all 25 default suites, cross-architecture comparisons,
       and expanded C-header/export controls pass locally. (2026-09-06 EDT)
+- [x] Declare the benchmark parser's jq test dependency and Hyperfine dev-shell
+      dependency explicitly after a clean-shell run caught host PATH leakage.
+      Keep both out of the installed CLI runtime tool list. (2026-09-06 EDT)
 - [x] Publish and gate CLI-free `random-luajit-lib`, `random-zig-lib`,
       `random-rust-lib`, and `random-lean-lib` flake packages; prove native
       downstream imports, direct LuaJIT loading of the shared C ABI without a
