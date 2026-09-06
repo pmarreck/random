@@ -303,28 +303,11 @@ pub fn frac(x: Fixed) Fixed {
     return sub(x, fromInt(ip));
 }
 
-/// Bit-serial magnitude division: floor((a/b) · 2^62) for normalized u64
-/// magnitudes. Mirrors `lib/fixed.lua`'s `divmag` exactly: one integer
-/// quotient bit (a/b lies in [1/2, 2) for normalized operands, so q0 is 0 or
-/// 1), then 62 restoring-division rounds producing one fraction bit each.
-/// The magnitude is FLOORED here; the caller reapplies the sign afterwards,
-/// which makes the overall rounding truncation toward zero.
-///
-/// No step can overflow u64: rem < b < 2^63 so rem*2 < 2^64, frac gains at
-/// most one bit per round for 62 rounds, and q0·2^62 + frac < 2^63.
+/// Exact floor((a/b) * 2^62), replacing the oracle's 62 bit-serial rounds.
+/// Normalized a,b lie in [2^62,2^63): the numerator fits in 125 bits and
+/// the quotient in 63. Reapplying the sign still truncates toward zero.
 fn divmag(a: u64, b: u64) u64 {
-    const q0 = a / b;
-    var rem = a % b;
-    var fbits: u64 = 0;
-    for (0..62) |_| {
-        rem *= 2;
-        fbits *= 2;
-        if (rem >= b) {
-            rem -= b;
-            fbits += 1;
-        }
-    }
-    return q0 * TWO62 + fbits;
+    return @intCast((@as(u128, a) << 62) / b);
 }
 
 /// Divides two normalized soft-floats, truncating toward zero. Mirrors

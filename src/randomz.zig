@@ -29,6 +29,15 @@ pub const Drbg = extern struct {
     position: u64,
 };
 
+/// Optional small-draw cache; the original 40-byte Drbg ABI is unchanged.
+/// Use buffered setters to invalidate prefetched bytes when seeking or rekeying.
+pub const BufferedDrbg = extern struct {
+    state: Drbg,
+    cache: [1024]u8,
+    cache_start: u64,
+    cache_len: u64,
+};
+
 pub const FillFn = *const fn (
     context: ?*anyopaque,
     out: [*]u8,
@@ -125,6 +134,7 @@ fn drbgFill(state: *Drbg, out: []u8) RngError!void {
     }
 
     var hasher = Blake3.init(.{ .key = state.key });
+    defer std.crypto.secureZero(u8, std.mem.asBytes(&hasher));
     hasher.finalizeSeek(state.position, out);
     state.position += count;
 }
@@ -514,6 +524,7 @@ pub export fn randomz_drbg_init(
     const target = state orelse return @intFromEnum(Status.invalid_argument);
     const seed = seed_material orelse return @intFromEnum(Status.invalid_argument);
     var kdf = Blake3.initKdf(kdf_context, .{});
+    defer std.crypto.secureZero(u8, std.mem.asBytes(&kdf));
     kdf.update(seed[0..32]);
     kdf.final(&target.key);
     target.position = 0;
@@ -597,6 +608,78 @@ pub export fn randomz_drbg_u64(
 pub export fn randomz_drbg_zeroize(state: ?*Drbg) callconv(.c) void {
     const target = state orelse return;
     std.crypto.secureZero(u8, @as([*]volatile u8, @ptrCast(target))[0..@sizeOf(Drbg)]);
+}
+
+fn invalidateCache(target: *BufferedDrbg) void {
+    std.crypto.secureZero(u8, &target.cache);
+    target.cache_start = 0;
+    target.cache_len = 0;
+}
+
+pub export fn randomz_buffered_drbg_init(state: ?*BufferedDrbg, seed: ?[*]const u8) callconv(.c) c_int {
+    const target = state orelse return errorStatus(error.InvalidArgument);
+    const status = randomz_drbg_init(&target.state, seed);
+    if (status == 0) invalidateCache(target);
+    return status;
+}
+
+pub export fn randomz_buffered_drbg_set_state(state: ?*BufferedDrbg, key: ?[*]const u8, position: u64) callconv(.c) c_int {
+    const target = state orelse return errorStatus(error.InvalidArgument);
+    const status = randomz_drbg_set_state(&target.state, key, position);
+    if (status == 0) invalidateCache(target);
+    return status;
+}
+
+pub export fn randomz_buffered_drbg_get_state(state: ?*const BufferedDrbg, key: ?[*]u8, position: ?*u64) callconv(.c) c_int {
+    const target = state orelse return errorStatus(error.InvalidArgument);
+    return randomz_drbg_get_state(&target.state, key, position);
+}
+
+pub export fn randomz_buffered_drbg_seek(state: ?*BufferedDrbg, position: u64) callconv(.c) c_int {
+    const target = state orelse return errorStatus(error.InvalidArgument);
+    const status = randomz_drbg_seek(&target.state, position);
+    if (status == 0) invalidateCache(target);
+    return status;
+}
+
+/// Amortize small deterministic draws while advancing only the logical cursor.
+/// Bulk requests bypass the cache. Validate the complete request before writes.
+pub export fn randomz_buffered_drbg_fill(state: ?*BufferedDrbg, out: ?[*]u8, count: usize) callconv(.c) c_int {
+    const target = state orelse return errorStatus(error.InvalidArgument);
+    if (count == 0) return 0;
+    const output = out orelse return errorStatus(error.InvalidArgument);
+    if (target.state.position > max_exact_position or count > max_exact_position - target.state.position)
+        return errorStatus(error.PositionOverflow);
+    if (count >= target.cache.len) {
+        drbgFill(&target.state, output[0..count]) catch |err| return errorStatus(err);
+        invalidateCache(target);
+        return 0;
+    }
+    if (target.cache_len > target.cache.len) return errorStatus(error.InvalidArgument);
+    var written: usize = 0;
+    while (written < count) {
+        if (target.cache_len == 0 or target.state.position < target.cache_start or
+            target.state.position - target.cache_start >= target.cache_len)
+        {
+            invalidateCache(target);
+            target.cache_start = target.state.position / target.cache.len * target.cache.len;
+            target.cache_len = @min(target.cache.len, max_exact_position - target.cache_start);
+            var hasher = Blake3.init(.{ .key = target.state.key });
+            defer std.crypto.secureZero(u8, std.mem.asBytes(&hasher));
+            hasher.finalizeSeek(target.cache_start, target.cache[0..@intCast(target.cache_len)]);
+        }
+        const offset: usize = @intCast(target.state.position - target.cache_start);
+        const take = @min(count - written, @as(usize, @intCast(target.cache_len)) - offset);
+        @memcpy(output[written..][0..take], target.cache[offset..][0..take]);
+        written += take;
+        target.state.position += take;
+    }
+    return 0;
+}
+
+pub export fn randomz_buffered_drbg_zeroize(state: ?*BufferedDrbg) callconv(.c) void {
+    const target = state orelse return;
+    std.crypto.secureZero(u8, @as([*]volatile u8, @ptrCast(target))[0..@sizeOf(BufferedDrbg)]);
 }
 
 fn sourceFrom(fill: ?FillFn, context: ?*anyopaque) RngError!Source {
@@ -884,6 +967,51 @@ pub export fn randomz_fixed_format(
     };
     output_length.* = rendered.len;
     return @intFromEnum(Status.ok);
+}
+
+test "buffered DRBG preserves XOF bytes, logical position, seeks, and wiping" {
+    var buffered: BufferedDrbg = undefined;
+    const seed = [_]u8{0x39} ** 32;
+    try std.testing.expectEqual(@as(c_int, 0), randomz_buffered_drbg_init(&buffered, &seed));
+    var plain: Drbg = undefined;
+    try std.testing.expectEqual(@as(c_int, 0), randomz_drbg_init(&plain, &seed));
+    const starts = [_]u64{ 0, 1, 63, 64, 1023, 1024, 1025, max_exact_position - 5000 };
+    const counts = [_]usize{ 0, 1, 4, 8, 63, 64, 1023, 1024, 2049 };
+    for (starts) |start| {
+        try std.testing.expectEqual(@as(c_int, 0), randomz_buffered_drbg_seek(&buffered, start));
+        try std.testing.expectEqual(@as(c_int, 0), randomz_drbg_seek(&plain, start));
+        for (counts) |count| {
+            var expected: [2049]u8 = undefined;
+            var actual: [2049]u8 = undefined;
+            try std.testing.expectEqual(@as(c_int, 0), randomz_drbg_fill(&plain, &expected, count));
+            try std.testing.expectEqual(@as(c_int, 0), randomz_buffered_drbg_fill(&buffered, &actual, count));
+            try std.testing.expectEqualSlices(u8, expected[0..count], actual[0..count]);
+            try std.testing.expectEqual(plain.position, buffered.state.position);
+        }
+    }
+    try std.testing.expectEqual(@as(c_int, 0), randomz_buffered_drbg_seek(&buffered, 0));
+    var byte: [1]u8 = undefined;
+    try std.testing.expectEqual(@as(c_int, 0), randomz_buffered_drbg_fill(&buffered, &byte, 1));
+    try std.testing.expectEqual(@as(u64, 1), buffered.state.position);
+    try std.testing.expectEqual(@as(u64, 1024), buffered.cache_len);
+    var key: [32]u8 = undefined;
+    var position: u64 = 0;
+    try std.testing.expectEqual(@as(c_int, 0), randomz_buffered_drbg_get_state(&buffered, &key, &position));
+    try std.testing.expectEqual(@as(u64, 1), position);
+    try std.testing.expectEqual(@as(c_int, 0), randomz_buffered_drbg_set_state(&buffered, &key, 0));
+    try std.testing.expectEqual(@as(u64, 0), buffered.cache_len);
+    for (buffered.cache) |b| try std.testing.expectEqual(@as(u8, 0), b);
+    try std.testing.expectEqual(@as(c_int, 0), randomz_buffered_drbg_seek(&buffered, max_exact_position - 1));
+    var untouched = [_]u8{0xa5} ** 2;
+    try std.testing.expectEqual(@as(c_int, 3), randomz_buffered_drbg_fill(&buffered, &untouched, 2));
+    try std.testing.expectEqualSlices(u8, &.{ 0xa5, 0xa5 }, &untouched);
+    try std.testing.expectEqual(max_exact_position - 1, buffered.state.position);
+    try std.testing.expectEqual(@as(c_int, 0), randomz_buffered_drbg_fill(&buffered, &byte, 1));
+    try std.testing.expectEqual(max_exact_position, buffered.state.position);
+    try std.testing.expectEqual(@as(c_int, 0), randomz_buffered_drbg_fill(&buffered, null, 0));
+    try std.testing.expectEqual(@as(c_int, 3), randomz_buffered_drbg_fill(&buffered, &byte, 1));
+    randomz_buffered_drbg_zeroize(&buffered);
+    for (std.mem.asBytes(&buffered)) |b| try std.testing.expectEqual(@as(u8, 0), b);
 }
 
 test "distribution curves are normalized, parameter-aware, and bounded" {

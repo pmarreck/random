@@ -11,4 +11,9 @@ compiler="${CC:-cc}"
 "$compiler" -std=c11 -Wall -Wextra -Werror -I"$root/include" \
 	"$root/tests/randomz_abi_test.c" "$root/zig-out/lib/librandomz.a" \
 	-o "$tmp/randomz-abi-test" || exit 1
-"$tmp/randomz-abi-test"
+"$tmp/randomz-abi-test" || exit 1
+case "$(uname -s)" in
+	Darwin) shared="$root/zig-out/lib/librandomz.dylib" ;;
+	*) shared="$root/zig-out/lib/librandomz.so" ;;
+esac
+luajit "$root/tests/buffered_drbg.lua" "$shared"

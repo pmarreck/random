@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Hyperfine pipe exports contain cumulative snapshots, not just one result.
+set -u
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+expected='["luajit","zig","rust","lean"]'
+with_timings() {
+	jq -c '.results |= map(. + {mean:1, median:1, user:0.5, system:0.5, stddev:null})'
+}
+final=$(with_timings <<< '{"results":[{"command":"luajit"},{"command":"zig"},{"command":"rust"},{"command":"lean"}]}')
+progressive="$(jq -c '.results |= .[:1]' <<< "$final")"$'\n'
+progressive+="$(jq -c '.results |= .[:2]' <<< "$final")"$'\n'
+fails=0
+for input in "$final" "$progressive$final"; do
+	actual=$(jq -cse --argjson expected "$expected" -f "$root/tools/hyperfine_results.jq" <<< "$input")
+	status=$?
+	count=$(wc -l <<< "$actual")
+	if [ "$status" -ne 0 ] || [ "$count" -ne 4 ]; then
+		echo "benchmark export FAILED: expected exactly four final results, got $count (exit=$status)" >&2
+		fails=$((fails + 1))
+	fi
+done
+# Classification over malformed result sets: missing, duplicate, foreign,
+# empty, and malformed JSON must all fail rather than recording false history.
+for input in "$progressive" \
+	'{"results":[{"command":"luajit"},{"command":"zig"},{"command":"rust"},{"command":"rust"}]}' \
+	'{"results":[{"command":"luajit"},{"command":"zig"},{"command":"rust"},{"command":"other"}]}' \
+	'{"results":[]}' '{}' ''; do
+	# Give malformed name sets valid measurements to isolate the set check.
+	if [[ "$input" == *'"results":['* ]]; then
+		input=$(with_timings <<< "$input")
+	fi
+	jq -cse --argjson expected "$expected" -f "$root/tools/hyperfine_results.jq" <<< "$input" >/dev/null 2>&1
+	if [ "$?" -eq 0 ]; then
+		echo "benchmark export FAILED: accepted incomplete or invalid result set" >&2
+		fails=$((fails + 1))
+	fi
+done
+for mutation in 'del(.results[0].mean)' '.results[0].median = "1"' \
+	'.results[0].user = null' '.results[0].system = -1' '.results[0].stddev = -1'; do
+	input=$(jq -c "$mutation" <<< "$final")
+	jq -cse --argjson expected "$expected" -f "$root/tools/hyperfine_results.jq" <<< "$input" >/dev/null 2>&1
+	if [ "$?" -eq 0 ]; then
+		echo 'benchmark export FAILED: accepted missing or invalid timing' >&2
+		fails=$((fails + 1))
+	fi
+done
+if [ "$fails" -ne 0 ]; then exit 1; fi
+echo 'Benchmark export PASSED: final snapshot only, exact implementation set, malformed input rejected'

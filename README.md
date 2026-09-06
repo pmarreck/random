@@ -419,6 +419,22 @@ Compile an installed static library with
 example, including state replay, fixed-format parameters, every sampler, and
 error handling. Windows builds produce `randomz.lib`.
 
+For frequent small draws, opt into `randomz_buffered_drbg` and the matching
+`randomz_buffered_drbg_*` functions. Its 1-KiB byte cache amortizes BLAKE3 setup;
+requests of 1 KiB or more still use direct bulk generation. The context is
+1,080 bytes on the supported ABIs, versus 40 bytes for the unchanged
+`randomz_drbg`. To use it with a sampler, provide a `randomz_fill_fn` adapter
+that calls `randomz_buffered_drbg_fill(context, out, count)`. The Zig/C CLI
+uses this buffered API; Rust's `Drbg` uses the same private cache automatically.
+
+Prefetching never advances the logical byte position. Both APIs export only
+the key and the consumed-byte cursor, so existing continuation states and
+cross-language replay remain identical. Use the buffered setters for seeking
+or rekeying; do not modify the nested unbuffered state directly. Treat the
+cache as sensitive, do not serialize it, and call
+`randomz_buffered_drbg_zeroize` before releasing its storage. Rust wipes its
+key and cached bytes on drop. Neither implementation starts a worker thread.
+
 ## Development
 
 A dev shell with LuaJIT and the test tooling is provided:
@@ -428,7 +444,7 @@ direnv allow      # or: nix develop
 ./test            # FAST mode (quick, quiet on success)
 FAST= ./test      # full statistical run
 ./stats           # separate, deeper sanity analysis of all four command families
-nix flake check   # hermetic CI check (runs all 24 suites, but FORCES FAST=1 --
+nix flake check   # hermetic CI check (runs all 25 suites, but FORCES FAST=1 --
                    # kernel_jit_diff's 60000-iteration deep JIT differential
                    # is deep-mode-only by design and is SKIPPED here, not run;
                    # run `FAST= ./test` locally for the full non-FAST suite)

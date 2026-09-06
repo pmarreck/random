@@ -14,6 +14,11 @@ _Static_assert(offsetof(randomz_fixed, m) == 0, "randomz_fixed.m ABI drift");
 _Static_assert(offsetof(randomz_fixed, e) == 8, "randomz_fixed.e ABI drift");
 _Static_assert(sizeof(randomz_drbg) == 40, "randomz_drbg ABI drift");
 _Static_assert(offsetof(randomz_drbg, position) == 32, "randomz_drbg.position ABI drift");
+_Static_assert(sizeof(randomz_buffered_drbg) == 1080, "buffered DRBG ABI drift");
+_Static_assert(offsetof(randomz_buffered_drbg, state) == 0, "buffered state ABI drift");
+_Static_assert(offsetof(randomz_buffered_drbg, cache) == 40, "buffered cache ABI drift");
+_Static_assert(offsetof(randomz_buffered_drbg, cache_start) == 1064, "buffered start ABI drift");
+_Static_assert(offsetof(randomz_buffered_drbg, cache_len) == 1072, "buffered length ABI drift");
 
 #define CHECK(condition) do { \
 	if (!(condition)) { \
@@ -71,6 +76,24 @@ int main(void)
 	CHECK(randomz_drbg_fill(&resumed, NULL, 0) == RANDOMZ_OK);
 	CHECK(randomz_drbg_init(NULL, seed) == RANDOMZ_INVALID_ARGUMENT);
 	CHECK(randomz_drbg_get_state(&state, NULL, &position) == RANDOMZ_INVALID_ARGUMENT);
+
+	/* Include the real public header: LuaJIT's cdefs alone cannot detect drift
+	 * in these declarations. Reuse frozen vectors, not generated expectations. */
+	randomz_buffered_drbg buffered;
+	CHECK(randomz_buffered_drbg_init(&buffered, seed) == RANDOMZ_OK);
+	CHECK(randomz_buffered_drbg_fill(&buffered, bytes, sizeof(bytes)) == RANDOMZ_OK);
+	CHECK(memcmp(bytes, expected_prefix, sizeof(bytes)) == 0);
+	CHECK(randomz_buffered_drbg_get_state(&buffered, key, &position) == RANDOMZ_OK);
+	CHECK(position == 8);
+	CHECK(randomz_buffered_drbg_set_state(&buffered, key, position) == RANDOMZ_OK);
+	CHECK(randomz_buffered_drbg_fill(&buffered, bytes, sizeof(bytes)) == RANDOMZ_OK);
+	CHECK(memcmp(bytes, expected_second, sizeof(bytes)) == 0);
+	CHECK(randomz_buffered_drbg_seek(&buffered, 0) == RANDOMZ_OK);
+	CHECK(randomz_buffered_drbg_fill(&buffered, bytes, sizeof(bytes)) == RANDOMZ_OK);
+	CHECK(memcmp(bytes, expected_prefix, sizeof(bytes)) == 0);
+	randomz_buffered_drbg_zeroize(&buffered);
+	for (size_t i = 0; i < sizeof(buffered); ++i)
+		CHECK(((const unsigned char *)&buffered)[i] == 0);
 
 	CHECK(randomz_drbg_init(&state, seed) == RANDOMZ_OK);
 	uint32_t u32 = 0;

@@ -32,18 +32,33 @@
 
 ## Next
 
-- [ ] Fix and independently gate LuaJIT binary streaming above `2^31` bytes.
-      Rarz observed `random -b -c 2362232012 --seed 0x700A` complete with
-      success but emit zero bytes while `randomz` streamed the identical seeded
-      data. The regression must fail closed on count errors and prove output has
-      begun without writing a multi-GiB fixture to disk. (2026-08-27 EDT)
-- [ ] Profile and repair the Zig/C normalized-binary throughput cliff. Rarz
-      measured uniform output near 400 MB/s while 100 MiB of `drandomz -n -b`
-      did not finish within five minutes. Preserve exact four-way output while
-      testing allocation, FFI-call, and per-sample fixed-transcendental costs.
-      (2026-08-27 EDT)
+- [ ] Fix and independently gate LuaJIT binary streaming for large requests.
+      Rarz's exact probe was `timeout 5 random -b -c 2362232012 --seed 0x700A`.
+      The original transcript reports exit 124 with zero bytes, correcting
+      the earlier unsupported claim of a successful empty result. LuaJIT
+      assembles the whole binary request before writing; the observation
+      alone does not establish a `2^31` parsing bug. Gate bounded-memory
+      streaming and count/encoding/continuation parity without multi-GiB
+      fixtures or timing thresholds in correctness tests.
+- [ ] If pursuing further SIMD work, prototype lane-parallel fixed-point
+      logarithm/trig evaluation with exact rounding and byte-consumption
+      controls. The current profile makes this a more relevant experiment
+      than vectorizing BLAKE3 alone. No custom SIMD speedup is claimed.
 
 ## Done
+- [x] Optimize Zig/Rust normalized output without changing output quality:
+      exact u128 division, bounded 1-KiB deterministic draw caches, an additive
+      Zig C ABI, and measured Rust inlining. Fresh 1-MiB pre/post benchmarks
+      improved Zig 2.421 → 0.719 s (3.37×), Rust 2.882 → 0.877 s (3.29×).
+      Zig's original 100-MiB workload completed in 70.684 s with an independent
+      exact byte-count check. Uniform bulk performance stayed close to its
+      baseline. Four-way ./bm covered all 11 workloads; a fresh-context review
+      found no blocking defect and its header-coverage recommendation was
+      incorporated. Fix cumulative Hyperfine pipe-export history duplication
+      and reject malformed measurement sets. Evidence and residual limitations:
+      `docs/normalized-throughput-2026-09-06.md`, with versioned benchmark logs.
+      Release build, all 25 default suites, cross-architecture comparisons,
+      and expanded C-header/export controls pass locally. (2026-09-06 EDT)
 - [x] Publish and gate CLI-free `random-luajit-lib`, `random-zig-lib`,
       `random-rust-lib`, and `random-lean-lib` flake packages; prove native
       downstream imports, direct LuaJIT loading of the shared C ABI without a

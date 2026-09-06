@@ -1507,7 +1507,14 @@ static int entropy_fill(void *context, uint8_t *out, size_t count)
 
 static int drbg_fill_callback(void *context, uint8_t *out, size_t count)
 {
-	return randomz_drbg_fill(context, out, count);
+	return randomz_buffered_drbg_fill(context, out, count);
+}
+
+/* Process-owned resource: scrub both the key and prefetched bytes on exit. */
+static randomz_buffered_drbg deterministic_state;
+static void cleanup_deterministic_state(void)
+{
+	randomz_buffered_drbg_zeroize(&deterministic_state);
 }
 
 static int entropy_rng_fill(void *context, uint8_t *out, size_t count)
@@ -2167,11 +2174,15 @@ int main(int argc, char **argv)
 	if (opts.view) return print_distribution_view(argc, argv, &opts);
 
 	entropy_source entropy = {0};
-	randomz_drbg drbg;
+	randomz_drbg *drbg = &deterministic_state.state;
 	rng_source source;
 	active_entropy = NULL;
 
 	if (opts.deterministic) {
+		if (atexit(cleanup_deterministic_state) != 0) {
+			print_error("could not register deterministic state cleanup");
+			return 1;
+		}
 		uint8_t seed[32];
 		if (opts.seed_set) {
 			memcpy(seed, opts.seed, 32);
@@ -2197,16 +2208,16 @@ int main(int argc, char **argv)
 		}
 		memcpy(opts.seed, seed, 32);
 		opts.seed_set = true;
-		if (randomz_drbg_init(&drbg, seed) != RANDOMZ_OK) {
+		if (randomz_buffered_drbg_init(&deterministic_state, seed) != RANDOMZ_OK) {
 			print_error("could not initialize BLAKE3 DRBG");
 			return 1;
 		}
-		if (opts.state_set && randomz_drbg_seek(&drbg, opts.state_position) != RANDOMZ_OK) {
+		if (opts.state_set && randomz_buffered_drbg_seek(&deterministic_state, opts.state_position) != RANDOMZ_OK) {
 			print_error("state next_pos exceeds the supported position");
 			return 1;
 		}
 		source.fill = drbg_fill_callback;
-		source.context = &drbg;
+		source.context = &deterministic_state;
 	} else {
 		if (entropy_open(&entropy, opts.random_source, opts.no_wait) != 0) {
 			print_errorf("entropy %s", entropy.error);
@@ -2220,7 +2231,7 @@ int main(int argc, char **argv)
 	if (opts.choose || opts.shuffle || opts.weighted) {
 		int result = handle_stdin_operation(&opts, &source);
 		if (result == 0) result = emit_metadata(&opts,
-			opts.deterministic ? &drbg : NULL, 0, 0, 0, false);
+			opts.deterministic ? drbg : NULL, 0, 0, 0, false);
 		return result;
 	}
 
@@ -2272,7 +2283,7 @@ int main(int argc, char **argv)
 		result = emit_text(&opts, &source, start, end, count);
 	}
 	if (result == 0) result = emit_metadata(&opts,
-		opts.deterministic ? &drbg : NULL, start, end, count, true);
+		opts.deterministic ? drbg : NULL, start, end, count, true);
 	if (entropy.file != NULL) fclose(entropy.file);
 	state_json_free(opts.state_root);
 	free(opts.state_owned_text);

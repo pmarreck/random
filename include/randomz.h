@@ -64,6 +64,26 @@ int randomz_drbg_u32(randomz_drbg *state, uint32_t *out);
 int randomz_drbg_u64(randomz_drbg *state, uint64_t *out);
 void randomz_drbg_zeroize(randomz_drbg *state);
 
+/* Optional small-draw acceleration. Storage is caller-owned and sensitive.
+ * Treat fields as private: use buffered setters, not the unbuffered setters
+ * on state. Serialize only get_state's key/position; cached bytes are derived.
+ * A copied context clones the future stream. Zeroize the whole context. */
+typedef struct randomz_buffered_drbg {
+	randomz_drbg state;
+	uint8_t cache[1024];
+	uint64_t cache_start;
+	uint64_t cache_len;
+} randomz_buffered_drbg;
+int randomz_buffered_drbg_init(randomz_buffered_drbg *state,
+	const uint8_t seed_material[RANDOMZ_DRBG_KEY_BYTES]);
+int randomz_buffered_drbg_set_state(randomz_buffered_drbg *state,
+	const uint8_t key[RANDOMZ_DRBG_KEY_BYTES], uint64_t position);
+int randomz_buffered_drbg_get_state(const randomz_buffered_drbg *state,
+	uint8_t key[RANDOMZ_DRBG_KEY_BYTES], uint64_t *position);
+int randomz_buffered_drbg_seek(randomz_buffered_drbg *state, uint64_t position);
+int randomz_buffered_drbg_fill(randomz_buffered_drbg *state, uint8_t *out, size_t count);
+void randomz_buffered_drbg_zeroize(randomz_buffered_drbg *state);
+
 /* Pure samplers. The callback is the only byte source and must fill exactly. */
 int randomz_range(randomz_fill_fn fill, void *context,
 	int64_t start, int64_t end, int64_t *out);

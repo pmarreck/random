@@ -93,6 +93,7 @@ fi
 
 case_names=(
 	raw_bytes
+	normalized_bytes
 	hex_bytes
 	base64_bytes
 	uniform_small
@@ -105,6 +106,7 @@ case_names=(
 )
 case_arguments=(
 	"-d --seed 42 --binaryoutput --count $raw_bytes"
+	"-d --seed 42 --binaryoutput --normalized --count $count"
 	"-d --seed 42 --binaryoutput --hex --count $raw_bytes"
 	"-d --seed 42 --binaryoutput --base64 --count $raw_bytes"
 	"-d --seed 42 --count $count 0..99"
@@ -237,6 +239,11 @@ for case_index in "${!case_names[@]}"; do
 	# through fd 3 into this in-memory text string. No temporary result
 	# file is created.
 	result_json="$(hyperfine "${hyperfine_args[@]}" 3>&1 1>&2)" || exit 1
+	# /dev/fd/3 is a pipe: successive exports append cumulative snapshots.
+	# Parse and validate before the loop so a failed jq cannot silently pass.
+	expected_results="$(printf '%s\n' "${implementations[@]}" | jq -Rsc 'split("\n")[:-1]')" || exit 1
+	parsed_results="$(jq -cse --argjson expected "$expected_results" \
+		-f "$here/tools/hyperfine_results.jq" <<<"$result_json")" || exit 1
 
 	while IFS= read -r result; do
 		implementation="$(jq -r '.command' <<<"$result")"
@@ -309,7 +316,7 @@ for case_index in "${!case_names[@]}"; do
 			  rust_version: $rust_version, lean_version: $lean_version,
 			  hyperfine_version: $hyperfine_version}' \
 			>>"$history_file" || exit 1
-	done < <(jq -c '.results[]' <<<"$result_json")
+	done <<<"$parsed_results"
 done
 
 echo

@@ -43,7 +43,7 @@ const NEG_HALF_LN2: Fixed = Fixed {
 	e: LN2.e - 1,
 };
 // Coefficient construction is compile-time work. `reciprocal` deliberately
-// uses the same bit-serial magnitude kernel as runtime division; unit tests
+// uses the same exact integer quotient as runtime division; unit tests
 // regenerate every entry through `Fixed::div` and separately count runtime
 // divisions so neither a wrong table nor per-sample recomputation can hide.
 const ODD_RECIP: [Fixed; ATANH_TERMS] = odd_reciprocals();
@@ -70,6 +70,7 @@ impl Fixed {
 
 	#[must_use]
 	/// Convert an integer exactly into the canonical representation.
+	#[inline]
 	pub fn from_i64(value: i64) -> Self {
 		if value == 0 {
 			Self::ZERO
@@ -122,6 +123,7 @@ impl Fixed {
 	}
 
 	/// Multiply and normalize, returning [`Error::Numeric`] on overflow.
+	#[inline]
 	pub fn mul(self, other: Self) -> Result<Self, Error> {
 		if self.m == 0 || other.m == 0 {
 			return Ok(Self::ZERO);
@@ -148,6 +150,7 @@ impl Fixed {
 	}
 
 	/// Add and normalize, returning [`Error::Numeric`] on overflow.
+	#[inline]
 	pub fn add(self, other: Self) -> Result<Self, Error> {
 		if self.m == 0 {
 			require_valid(other)?;
@@ -220,6 +223,7 @@ impl Fixed {
 	}
 
 	/// Divide and normalize; a zero divisor is [`Error::InvalidArgument`].
+	#[inline]
 	pub fn div(self, other: Self) -> Result<Self, Error> {
 		if other.m == 0 {
 			return Err(Error::InvalidArgument);
@@ -418,6 +422,7 @@ fn magnitude(value: i64) -> u64 {
 	}
 }
 
+#[inline]
 fn norm(mantissa: i64, exponent: i64) -> Result<Fixed, Error> {
 	if mantissa == 0 {
 		return Ok(Fixed::ZERO);
@@ -453,21 +458,12 @@ fn div_magnitude(a: u64, b: u64) -> u64 {
 	div_magnitude_const(a, b)
 }
 
+/// Exact fixed-point magnitude division without 62 bit-serial rounds.
+/// Normalized operands lie in [2^62, 2^63), so the shifted numerator fits
+/// in 125 bits and the floored quotient fits in 63 bits. Sign restoration
+/// in `Fixed::div` preserves truncation toward zero. No floating point.
 const fn div_magnitude_const(a: u64, b: u64) -> u64 {
-	let quotient = a / b;
-	let mut remainder = a % b;
-	let mut fraction = 0_u64;
-	let mut bit = 0;
-	while bit < 62 {
-		remainder *= 2;
-		fraction *= 2;
-		if remainder >= b {
-			remainder -= b;
-			fraction += 1;
-		}
-		bit += 1;
-	}
-	quotient * TWO62 + fraction
+	(((a as u128) << 62) / b as u128) as u64
 }
 
 const fn positive_integer(value: u64) -> Fixed {
@@ -578,6 +574,42 @@ mod tests {
 
 	fn division_count() -> usize {
 		DIV_MAGNITUDE_CALLS.with(std::cell::Cell::get)
+	}
+
+	#[test]
+	fn magnitude_division_is_the_exact_floor() {
+		// The quotient is uniquely characterized by these inequalities. Check
+		// normalized endpoints, exact quotients, and deterministic interior pairs.
+		let check = |a: u64, b: u64| {
+			let numerator = (a as u128) << 62;
+			let q = div_magnitude_const(a, b) as u128;
+			assert!(q < (1_u128 << 63));
+			assert!(q * b as u128 <= numerator, "quotient too large: {a}/{b}");
+			assert!(
+				(q + 1) * b as u128 > numerator,
+				"quotient too small: {a}/{b}"
+			);
+		};
+		let edges = [
+			TWO62,
+			TWO62 + 1,
+			TWO62 + 2,
+			(1_u64 << 63) - 2,
+			(1_u64 << 63) - 1,
+		];
+		for a in edges {
+			for b in edges {
+				check(a, b);
+			}
+		}
+		let mut state = 0x700a_u64;
+		for _ in 0..4096 {
+			state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+			let a = TWO62 | (state & (TWO62 - 1));
+			state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+			let b = TWO62 | (state & (TWO62 - 1));
+			check(a, b);
+		}
 	}
 
 	#[test]
