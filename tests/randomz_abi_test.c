@@ -159,6 +159,11 @@ int main(void)
 	CHECK(randomz_drbg_init(&state, seed) == RANDOMZ_OK);
 	CHECK(randomz_uniform(drbg_fill, &state, &sampled) == RANDOMZ_OK);
 	CHECK(randomz_normal_int(drbg_fill, &state, -18, 0, &integer) == RANDOMZ_OK);
+	int64_t normal_batch[5];
+	CHECK(randomz_normal_int_batch(drbg_fill, &state, -18, 0,
+		normal_batch, 5, &written, RANDOMZ_BATCH_AUTO) == RANDOMZ_OK && written == 5);
+	CHECK(randomz_normal_int_batch(drbg_fill, &state, -18, 0,
+		normal_batch, 5, &written, RANDOMZ_BATCH_SCALAR) == RANDOMZ_OK && written == 5);
 	CHECK(randomz_normal(drbg_fill, &state, zero, one, &sampled) == RANDOMZ_OK);
 	CHECK(randomz_exponential(drbg_fill, &state, one, &sampled) == RANDOMZ_OK);
 	CHECK(randomz_poisson(drbg_fill, &state, two, &integer) == RANDOMZ_OK);

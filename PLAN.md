@@ -56,15 +56,32 @@
       and then verified the repair of a tiny-negative cosine fallback mismatch.
       Zig also passes controls on baseline x86_64 and emulated ARM64.
       (2026-09-06 EDT)
-- [ ] Evaluate production opt-in fixed-point batching, with portable CPU
-      dispatch/fallback, tail handling, error equivalence and unchanged RNG
-      rejection/consumption ordering. Measure end-to-end normalized output;
-      the current SIMD numbers are kernel experiments only, not CLI speedups.
+- [x] Promote fixed-point batching to production in Zig/C and Rust (Peter,
+      2026-09-09). Preserve all seeded outputs and continuation state.
+      - [x] Freeze release CLI baselines and add failing batch API controls.
+      - [x] Add caller-buffer batch APIs with explicit completed-prefix errors,
+            bounded workspace, scalar fallback, and safe CPU selection.
+      - [x] Integrate exact SIMD ln/cos into deterministic normalized sampling;
+            preserve range and outer rejection order, tail lanes, and failure
+            cursors. Zig preserves callback read order without replay; Rust
+            accelerates its DRBG and uses scalar for external entropy. New
+            APIs reject bounds outside ±2^53 before source/sample mutation.
+      - [x] Dogfood through Zig's C ABI and the Rust CLI; compare all encodings,
+            chunk sizes and cross-language continuation against LuaJIT/Lean.
+      - [x] Measure pre/post normalized end-to-end throughput and scaling,
+            review independently, and run the full default suite (26 green).
+            Normal raw: 1.36× Zig / 1.73× Rust on the measured AVX2 host.
+            Shipment remains gated on exact-commit CI after push.
 - [ ] Review the shared scalar cosine's negative-turn defense: sufficiently
       tiny negative inputs round their wrap to exactly one turn (quadrant 4),
       selecting sine and returning zero. This lies outside the sampler's
       nonnegative input domain. SIMD experiments preserve the oracle's current
       behavior; changing that behavior needs coordinated four-language tests.
+- [ ] Align legacy scalar normalized-integer library domains with the ±2^53
+      exact-integer contract. Independent production-batch review found that
+      some narrow ranges near i64 extrema can reject indefinitely. New batch
+      APIs reject out-of-domain bounds before any source/output mutation;
+      existing scalar APIs remain unchanged pending coordinated tests.
 
 ## Done
 - [x] Optimize Zig/Rust normalized output without changing output quality:

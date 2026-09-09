@@ -202,6 +202,8 @@ resume_case "uniform die" text 5 14 d20
 resume_case "singleton uniform range" text 5 14 5..5
 resume_case "rejection-sampled wide range" text 5 14 0..2147483648
 resume_case "normal" text 3 9 --normalized -18...19
+resume_case "normal batch boundary" text 255 513 --normalized -18...19
+resume_case "normal binary batch boundary" hex 257 519 --normalized --binaryoutput --hex
 resume_case "custom normal" text 3 9 --normalized --mean -3.25 --stddev 1.75
 resume_case "exponential" text 4 11 --exponential --rate 2.5
 resume_case "poisson" text 4 11 --poisson --lambda 5.5
@@ -212,6 +214,33 @@ resume_case "sampled binary" hex 17 41 --binaryoutput --hex 64..192
 resume_case "exponential binary" hex 4 11 --binaryoutput --hex --exponential --rate 2.5
 resume_case "log-normal binary" hex 4 11 --binaryoutput --hex --log-normal --mean -0.25 --stddev 1.75
 resume_case "beta binary" hex 4 11 --binaryoutput --hex --beta 0.75 --alpha 0.5
+
+echo "Testing normalized batch tails across output encodings..."
+for batch_count in 0 1 3 4 5 255 256 257 1025; do
+	for encoding in raw hex base64 text; do
+		case "$encoding" in
+			raw) batch_flags=(--binaryoutput) ;;
+			hex) batch_flags=(--binaryoutput --hex) ;;
+			base64) batch_flags=(--binaryoutput --base64) ;;
+			text) batch_flags=(--delimiter ',') ;;
+		esac
+		canonical_digest=""
+		for implementation in "${!clis[@]}"; do
+			# pipefail makes a failed producer fail even if sha256sum succeeds.
+			digest=$("${clis[implementation]}" --seed 42 --normalized \
+				--count "$batch_count" "${batch_flags[@]}" 2>/dev/null | sha256sum)
+			status=$?
+			checks=$((checks + 1))
+			if [ "$status" -ne 0 ]; then
+				fail "${labels[implementation]} $encoding batch $batch_count failed"
+			elif [ -z "$canonical_digest" ]; then
+				canonical_digest="$digest"
+			elif [ "$digest" != "$canonical_digest" ]; then
+				fail "${labels[implementation]} $encoding batch $batch_count differs"
+			fi
+		done
+	done
+done
 
 echo "Testing stdin state forms, --resume aliases, and stdin-operation conflicts..."
 for producer_index in "${!clis[@]}"; do

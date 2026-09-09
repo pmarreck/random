@@ -236,8 +236,124 @@ result itself is mathematically surprising, but lies outside the sampler's
 nonnegative `[0,1)` domain. PLAN records that separate four-oracle question.
 No unresolved actionable review finding remains.
 
-Production promotion still needs a bounded batch API, supported-domain/error
-handling, tail lanes, portable CPU selection/fallback, and tests that preserve
-the sequential sampler's rejection and byte-consumption order. It also needs
-end-to-end normalized-output measurements. These empirical controls do not
-constitute a proof over every mantissa/exponent or of compiler correctness.
+At the experiment milestone, production promotion still required a bounded
+batch API, supported-domain/error handling, tails, portable CPU dispatch,
+sequential rejection/consumption controls, and end-to-end measurements.
+The follow-up below addresses that work. Empirical controls do not constitute
+a proof over every mantissa/exponent or of compiler correctness.
+
+## Production promotion (2026-09-09)
+
+Range-scaled normal integer batches now have public caller-buffer APIs in
+Zig/C and Rust, dogfooded by their CLIs. Each computes at most four candidates
+when at least four output slots remain, accepts them in stream order, and
+handles the final short tail scalarly. Scratch space is independent of count.
+The CLIs use 256-value staging buffers; output encodings and continuation JSON
+are unchanged. Explicit mean/stddev normal and other distributions remain
+scalar. No distribution coefficients, fixed-point rounding, seed derivation,
+or scalar oracle algorithms changed.
+
+Zig's generic callback batch completes any previously gathered candidates
+before propagating a later read error. It never gathers more candidates than
+remaining output slots. SIMD is restricted to bounds within ±2^53 and the
+bounded positive uniform inputs used by this sampler, so no intervening math
+error can be overtaken by a later read failure. `written` reports the completed
+output prefix, leaving the suffix
+untouched. An explicit scalar mode provides a caller-controlled reference path.
+
+Rust accelerates only its seekable `Drbg`. On a read or numeric failure, it
+rewinds the uncommitted four-candidate group and replays scalar calls to retain
+the original failure, output prefix, and byte cursor. Its generic `ByteSource`
+batch API remains scalar, including for partially consuming entropy failures.
+Neither implementation retains candidate values between calls.
+
+Zig builds the dispatcher/scalar core for a baseline CPU by default and isolates
+AVX2 in non-inline functions in a separately targeted module. CPUID and XCR0
+checks require CPU support and OS XMM/YMM state saving. Rust uses its standard
+runtime feature check and a private target-feature module; the rest of the
+core retains its unsafe-code prohibition. Existing I/O bans also apply inside
+the SIMD module, with new mutation controls proving that this narrow exception
+does not permit I/O there or unsafe code elsewhere. Non-x86 targets, no_std
+Rust, and x86 CPUs without AVX2 use scalar fallback.
+
+### End-to-end results
+
+Paired release measurements on an AMD Ryzen Threadripper 3990X, Linux x86_64,
+used the previous release commit `74d91d3` and the final production batch
+implementation. Each command had three warmups and five measured runs.
+All four before/after/language outputs matched by SHA256 before timing; output
+went through digest pipes for comparison and to `/dev/null` during timing.
+No random payload files were written.
+
+| Workload | Zig before → after | Rust before → after |
+| --- | ---: | ---: |
+| Normal raw, 1,048,576 values | 696.7 → 514.1 ms (1.36×) | 882.5 → 509.6 ms (1.73×) |
+| Normal hex, 1,048,576 values | 699.0 → 519.0 ms (1.35×) | 888.3 → 517.1 ms (1.72×) |
+| Normal base64, 1,048,576 values | 701.3 → 518.4 ms (1.35×) | 897.4 → 513.8 ms (1.75×) |
+| Normal text, 131,072 values | 98.6 → 73.3 ms (1.34×) | 154.3 → 103.3 ms (1.49×) |
+| Uniform raw, 4,194,304 values | 8.75 → 9.21 ms | 5.17 → 5.21 ms |
+
+These are mean wall times, including process startup, generation, rejection,
+formatting and output. Normal-raw mean CPU time (user + system) fell from
+691.8 to 510.4 ms for Zig and from 876.5 to 506.2 ms for Rust. The host was
+shared with other builds/tests, not isolated benchmark hardware. The short
+uniform measurements are startup/noise-sensitive; they do not establish a
+uniform-path speedup. Measurements are AVX2-host results, not performance
+claims for fallback CPUs or other distributions.
+
+Doubling normal-raw counts from 65,536 through 524,288 gave median CPU-time
+ratios of approximately 1.98 for Zig and 1.97 for Rust, consistent with linear
+work. No measured doubling exceeded 2.8. This is a recorded experiment, not a
+new timing-sensitive CI gate. The Zig executable grew from 618,816 to 638,304
+bytes (+3.15%); Rust grew from 1,015,840 to 1,044,912 bytes (+2.86%).
+
+The [machine-readable measurements](../benchmarks/normalized-batch-2026-09-09.ndjson)
+record individual runs, CPU times, exact executable hashes, output digests,
+toolchains and the implementation-source fingerprint. The source fingerprint
+is SHA256 of the `sha256sum` listing, in this order: `build.zig`,
+`src/randomz.zig`, `src/fixed.zig`, `src/fixed_simd.zig`,
+`src/fixed_simd_dispatch.zig`, `src/randomz_cli.c`, `include/randomz.h`,
+`rust/randomr/src/batch.rs`, `rust/randomr/src/batch_avx2.rs`,
+`rust/randomr/src/distribution.rs`, `rust/randomr/src/fixed.rs`,
+`rust/randomr/src/lib.rs`, `rust/randomr-cli/src/main.rs`, `Cargo.lock`.
+
+### Correctness and review
+
+The final release build, all 26 default `./test` suites, the complete
+cross-architecture gate, and `./bm --check` passed. `./bm --quick` also measured
+all eleven workloads across four implementations. The default test run uses
+FAST mode; its deep-only LuaJIT kernel-JIT sweep is explicitly skipped. The
+default Zig/LuaJIT arithmetic differential covered 264,327 bit-identical cases.
+An earlier full run collided with a concurrent build replacing the Lean CLI
+while its entropy test was stripping it. The entropy test and then the entire
+suite passed when rerun without that competing artifact writer. No Lean or
+entropy implementation change was needed.
+
+Persistent direct LuaJIT-FFI controls pass 80,229 exact scalar/batch comparisons,
+including tail lanes, both rejection stages, partial source failures, cursor
+positions and untouched output suffixes. The shared continuation/encoding
+suite has 1,060 checks, including resumption across all four implementations.
+Rust's purity mutation controls reject both unsafe code outside the narrow
+SIMD boundary and I/O inside it.
+
+A [fresh-context reviewer](reports/2026-09-09-production-batch-review.md)
+wrote independent controls against the unchanged
+scalar APIs: 109,440 C ABI cases and 47,210 Rust cases passed after the domain
+fix below. The reviewer found no remaining actionable defect. It also executed
+the dispatcher under emulated no-AVX and XSAVE-disabled CPUs. The durable
+cross-architecture gate now compares native and no-AVX execution of the same
+Zig and Rust binaries across raw/hex/base64 tails and continuation metadata;
+the complete gate passed, including ARM64 comparisons. Emulation checks
+instruction selection and results, not native hardware speed. These finite
+controls and source review are not a formal proof or a cryptographic audit.
+
+The independent review identified an inherited domain hazard: very narrow
+scalar ranges near i64 extrema can reject indefinitely after fixed rounding.
+The new batch APIs therefore reject bounds outside ±2^53, before source or
+output mutation even for empty buffers. The same rule applies to AUTO/scalar,
+Rust's generic/DRBG entries, and all CPU targets. Endpoint and immediately
+outside-domain tests failed against the initial wide-acceptance implementation
+before the restriction was added. Existing scalar APIs are unchanged; their
+domain inconsistency is tracked separately. Rejection sampling still cannot
+promise termination for an adversarial source that keeps supplying rejected
+draws, even within supported bounds.

@@ -443,6 +443,50 @@ cache as sensitive, do not serialize it, and call
 `randomz_buffered_drbg_zeroize` before releasing its storage. Rust wipes its
 key and cached bytes on drop. Neither implementation starts a worker thread.
 
+### Batched normalized sampling
+
+The Zig/C and Rust CLIs automatically batch range-scaled normal integers
+(`--normalized`, including binary output). On supported x86_64 CPUs, exact
+AVX2 logarithm/cosine kernels accelerate the existing sampler. Other CPUs
+use scalar arithmetic. No new CLI switch, seed, or continuation schema is
+needed; single-value calls and every batch partition preserve the sequence.
+Custom `--mean`/`--stddev` and other distributions retain their scalar paths.
+
+Library users opt in with their own output buffer:
+
+```c
+int64_t values[256];
+size_t written;
+int status = randomz_normal_int_batch(fill, context, 1, 20,
+    values, 256, &written, RANDOMZ_BATCH_AUTO);
+/* On error, values[0..written) is the completed prefix; the suffix is untouched. */
+```
+
+Use `RANDOMZ_BATCH_SCALAR` to select the original arithmetic explicitly.
+Both batch APIs require `-2^53 <= start <= end <= 2^53`. Within that domain,
+the callback observes the same ordered read requests as repeated scalar calls,
+including requests that fail. Wider bounds fail before consuming bytes or
+changing output. The older scalar APIs' wider acceptance is not a guarantee
+that their rejection loops terminate near `i64` extrema.
+
+```rust
+let mut values = [0_i64; 256];
+drbg.normal_int_batch(1, 20, &mut values)?;
+```
+
+Rust's method selects AVX2 at runtime on std-enabled x86_64 builds; its free
+`randomr::normal_int_batch(&mut source, 1, 20, &mut values)` function is the
+scalar option and works with any `ByteSource`. `BatchError` supplies `written`
+and the underlying error. Rust replays a failing speculative DRBG group
+scalarly to preserve the exact failure cursor; external entropy sources use
+the non-speculative scalar entry.
+
+Both APIs use constant scratch space, retain no samples between calls, and
+start no threads. Callers may use any buffer length, including zero. Invalid
+bounds are rejected even for empty buffers. See the
+[production measurements and validation](docs/normalized-throughput-2026-09-06.md#production-promotion-2026-09-09)
+for results and scope.
+
 ## Development
 
 A dev shell with LuaJIT and the test tooling is provided:

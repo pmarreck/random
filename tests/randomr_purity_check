@@ -12,14 +12,35 @@ if [ ! -d "$core/src" ] || [ ! -f "$core/Cargo.toml" ]; then
 fi
 
 # entropy.rs is the one reviewed adapter allowed to touch ambient state, OS
-# APIs, or unsafe FFI. Feature gates do not exempt any deterministic module.
+# APIs, or unsafe FFI. The exact private AVX2 module may use unsafe integer
+# intrinsics, but remains subject to every I/O ban below.
 if rg -n \
 	--glob '*.rs' \
 	--glob '!entropy.rs' \
-	'(^|[^[:alnum:]_])(getrandom|libc)([^[:alnum:]_]|$)|extern[[:space:]]+"C"|unsafe[[:space:]]*\{|std::(env|fs|io|net|path|process|time)|(^|[^[:alnum:]_])(print|println|eprint|eprintln)!' \
+	'(^|[^[:alnum:]_])(getrandom|libc)([^[:alnum:]_]|$)|extern[[:space:]]+"C"|std::(env|fs|io|net|path|process|time)|(^|[^[:alnum:]_])(print|println|eprint|eprintln)!' \
 	"$core/src"; then
 	echo "randomr purity FAILED: deterministic core contains forbidden I/O or FFI" >&2
 	exit 1
+fi
+
+while IFS= read -r -d '' module; do
+	if [ "$module" = "$core/src/entropy.rs" ] || [ "$module" = "$core/src/batch_avx2.rs" ]; then
+		continue
+	fi
+	if rg -n 'unsafe[[:space:]]*(\{|fn)|allow\(unsafe_code\)' "$module"; then
+		echo "randomr purity FAILED: unsafe outside reviewed adapters" >&2
+		exit 1
+	fi
+done < <(rg --files -0 --glob '*.rs' "$core/src")
+
+if [ -f "$core/src/batch_avx2.rs" ]; then
+	if ! rg -U -q '#\[cfg\(all\(feature = "std", target_arch = "x86_64"\)\)\]\nmod batch_avx2;' "$core/src/lib.rs" ||
+		! rg -q '^#!\[allow\(unsafe_code\)\]' "$core/src/batch_avx2.rs" ||
+		! rg -q 'is_x86_feature_detected!\("avx2"\)' "$core/src/batch_avx2.rs" ||
+		! rg -q 'SAFETY: AVX2 was detected' "$core/src/batch_avx2.rs"; then
+		echo "randomr purity FAILED: private SIMD gate or safety contract is absent" >&2
+		exit 1
+	fi
 fi
 
 if rg -n 'feature = "entropy"' "$core/src" \

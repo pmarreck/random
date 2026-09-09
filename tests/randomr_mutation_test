@@ -81,6 +81,21 @@ if ! grep -q 'deterministic core contains forbidden I/O or FFI' \
 fi
 
 mkdir -p "$mutant_root/source"
+for mutation in unsafe-core simd-io; do
+	mkdir -p "$mutant_root/$mutation/rust"
+	cp -R "$root/rust/randomr" "$mutant_root/$mutation/rust/"
+	if [ "$mutation" = unsafe-core ]; then
+		printf '\nfn mutant_unsafe() { unsafe { core::hint::unreachable_unchecked() } }\n' >>"$mutant_root/$mutation/rust/randomr/src/drbg.rs"
+	else
+		printf '\nfn mutant_simd_io() { let _ = std::io::stdout(); }\n' >>"$mutant_root/$mutation/rust/randomr/src/batch_avx2.rs"
+	fi
+	expect_red "$mutation" "$root/tests/randomr_purity_check" "$mutant_root/$mutation"
+	if ! grep -q 'randomr purity FAILED' "$mutant_root/$mutation.log"; then
+		echo "randomr mutation FAILED: $mutation did not reach the purity control" >&2
+		fails=$((fails + 1))
+	fi
+done
+
 cp "$root/Cargo.toml" "$root/Cargo.lock" "$mutant_root/source/"
 cp -R "$root/rust" "$mutant_root/source/"
 sed -i \

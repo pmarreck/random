@@ -1837,9 +1837,31 @@ typedef struct sampled_binary {
 	int64_t end;
 } sampled_binary;
 
+#define NORMAL_BATCH_VALUES 256
+
+static bool uses_range_normal(const options *opts)
+{
+	return opts->dist == DIST_NORMAL && !opts->mean_set && !opts->stddev_set;
+}
+
 static int sampled_binary_fill(void *context, uint8_t *out, size_t count)
 {
 	sampled_binary *sampled = context;
+	if (uses_range_normal(sampled->opts)) {
+		int64_t values[NORMAL_BATCH_VALUES];
+		for (size_t i = 0; i < count;) {
+			size_t take = count - i;
+			if (take > NORMAL_BATCH_VALUES) take = NORMAL_BATCH_VALUES;
+			size_t written = 0;
+			int status = randomz_normal_int_batch(sampled->source->fill,
+				sampled->source->context, sampled->start, sampled->end,
+				values, take, &written, RANDOMZ_BATCH_AUTO);
+			if (status != RANDOMZ_OK) return status;
+			for (size_t j = 0; j < written; ++j) out[i+j] = (uint8_t)values[j];
+			i += written;
+		}
+		return RANDOMZ_OK;
+	}
 	for (size_t i = 0; i < count; ++i) {
 		generated_value value;
 		int status = generate_value(sampled->opts, sampled->source,
@@ -1938,9 +1960,27 @@ static int emit_text(const options *opts, rng_source *source,
 	int64_t start, int64_t end, uint64_t count)
 {
 	char formatted[RANDOMZ_FIXED_STRING_BYTES];
+	int64_t batch[NORMAL_BATCH_VALUES];
+	size_t batch_count = 0, batch_index = 0;
+	int batch_status = RANDOMZ_OK;
 	for (uint64_t i = 0; i < count; ++i) {
 		generated_value value;
-		int status = generate_value(opts, source, start, end, &value);
+		int status;
+		if (uses_range_normal(opts)) {
+			if (batch_index == batch_count) {
+				if (batch_status != RANDOMZ_OK) return rng_failure(batch_status);
+				size_t take = count - i > NORMAL_BATCH_VALUES ? NORMAL_BATCH_VALUES : (size_t)(count - i);
+				batch_status = randomz_normal_int_batch(source->fill, source->context,
+					start, end, batch, take, &batch_count, RANDOMZ_BATCH_AUTO);
+				batch_index = 0;
+				if (batch_count == 0 && batch_status != RANDOMZ_OK) return rng_failure(batch_status);
+			}
+			value.is_fixed = false;
+			value.integer = batch[batch_index++];
+			status = RANDOMZ_OK;
+		} else {
+			status = generate_value(opts, source, start, end, &value);
+		}
 		if (status != RANDOMZ_OK) return rng_failure(status);
 		if (i > 0 && strcmp(opts->delimiter, "\n") != 0) fputs(opts->delimiter, stdout);
 		if (opts->hex_output && !value.is_fixed) {

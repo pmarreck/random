@@ -475,6 +475,49 @@ if [ "$randomr_fail" -eq 0 ]; then
 	ok "$payload_cases invocations: Lua oracle == ${#RUST_LEG_NAMES[@]} Rust targets"
 fi
 
+# Runtime fallback must work in the SAME portable executable used natively.
+# Nehalem predates AVX. Keep all payloads in pipes, and propagate producer
+# failures so two empty digests cannot masquerade as equality.
+fallback_digest() {
+	(set -o pipefail; "$@" 2>/dev/null | sha256sum)
+}
+note "Checking normalized batches with AVX disabled under CPU emulation..."
+if [ ! -x "$tc/bin/qemu-x86_64" ] || [ ! -x "$tc/bin/randomr-unwrapped-x86_64" ]; then
+	bad "required no-AVX runtime toolchain inputs missing"
+else
+	for fallback_cli in "$tmp/zig-x86_64-musl/bin/randomz" "$tc/bin/randomr-unwrapped-x86_64"; do
+		for fallback_count in 1 4 5 257 1025; do
+			for encoding in raw hex base64; do
+				case "$encoding" in
+					raw) flags=(--binaryoutput) ;;
+					hex) flags=(--binaryoutput --hex) ;;
+					base64) flags=(--binaryoutput --base64) ;;
+				esac
+				native_digest=$(fallback_digest "$fallback_cli" --seed 42 --normalized \
+					--count "$fallback_count" "${flags[@]}")
+				native_status=$?
+				fallback_result=$(fallback_digest "$tc/bin/qemu-x86_64" -cpu Nehalem \
+					"$fallback_cli" --seed 42 --normalized --count "$fallback_count" "${flags[@]}")
+				fallback_status=$?
+				if [ "$native_status" -ne 0 ] || [ "$fallback_status" -ne 0 ] || \
+					[ "$native_digest" != "$fallback_result" ] || \
+					[[ "$native_digest" == e3b0c44298fc1c149afbf4c8996fb924* ]]; then
+					bad "no-AVX $fallback_cli $encoding count=$fallback_count failed/differed"
+				fi
+			done
+		done
+		native_state=$("$fallback_cli" --seed 42 -n -c 257 2>&1 >/dev/null)
+		native_status=$?
+		fallback_state=$("$tc/bin/qemu-x86_64" -cpu Nehalem "$fallback_cli" \
+			--seed 42 -n -c 257 2>&1 >/dev/null)
+		fallback_status=$?
+		if [ "$native_status" -ne 0 ] || [ "$fallback_status" -ne 0 ] || \
+			[ -z "$native_state" ] || [ "$native_state" != "$fallback_state" ]; then
+			bad "no-AVX $fallback_cli continuation state differed"
+		fi
+	done
+fi
+
 # =============================================================================
 # OPTIONAL NATIVE-HARDWARE LEG
 # =============================================================================

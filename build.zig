@@ -11,9 +11,9 @@ pub fn build(b: *std.Build) void {
     // SDK happens to sit on the build host. Only used when no -Dtarget was
     // given; explicit cross targets (incl. aarch64-macos) set their own.
     const default_target: std.Target.Query = if (@import("builtin").target.os.tag == .macos)
-        .{ .os_version_min = .{ .semver = .{ .major = 14, .minor = 0, .patch = 0 } } }
+        .{ .cpu_model = .baseline, .os_version_min = .{ .semver = .{ .major = 14, .minor = 0, .patch = 0 } } }
     else
-        .{};
+        .{ .cpu_model = .baseline };
     const target = b.standardTargetOptions(.{ .default_target = default_target });
 
     // NOT b.standardOptimizeOption(.{}) -- that defaults to Debug, and a debug
@@ -54,6 +54,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const fixed_simd_mod = addFixedSimd(b, target, optimize, fixed_mod);
 
     // Pure RNG/distribution core and its C ABI. Callers own the DRBG state and
     // supply entropy through a callback; this module performs no I/O.
@@ -66,6 +67,7 @@ pub fn build(b: *std.Build) void {
         .pic = true,
         .imports = &.{
             .{ .name = "fixed", .module = fixed_mod },
+            .{ .name = "fixed_simd", .module = fixed_simd_mod },
         },
     });
     const randomz_lib = b.addLibrary(.{
@@ -179,6 +181,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "fixed", .module = wasi_fixed_mod },
+            .{ .name = "fixed_simd", .module = addFixedSimd(b, wasi_target, optimize, wasi_fixed_mod) },
         },
     });
     const wasi_adapter_mod = b.createModule(.{
@@ -219,11 +222,52 @@ pub fn build(b: *std.Build) void {
             .optimize = test_optimize,
             .imports = &.{
                 .{ .name = "fixed", .module = fixed_test_mod },
+                .{ .name = "fixed_simd", .module = addFixedSimd(b, target, test_optimize, fixed_test_mod) },
             },
         }),
     });
     const run_randomz_unit_tests = b.addRunArtifact(randomz_unit_tests);
     const test_step = b.step("test", "Run Zig unit tests (ReleaseSafe)");
+    const simd_unit_tests = b.addTest(.{
+        .root_module = addFixedSimd(b, target, test_optimize, fixed_test_mod),
+    });
+    test_step.dependOn(&b.addRunArtifact(simd_unit_tests).step);
     test_step.dependOn(&run_unit_tests.step);
     test_step.dependOn(&run_randomz_unit_tests.step);
+}
+
+// Target only the non-inline vector functions at AVX2. The dispatcher and
+// shared scalar Fixed module retain the consumer's portable target. This
+// also keeps the Fixed type identical across scalar and SIMD call sites.
+fn addFixedSimd(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    fixed: *std.Build.Module,
+) *std.Build.Module {
+    var vector_target = target;
+    if (target.result.cpu.arch == .x86_64) {
+        var query = target.query;
+        query.cpu_model = .baseline;
+        query.cpu_features_add = std.Target.x86.featureSet(&.{.avx2});
+        query.cpu_features_sub = .empty;
+        vector_target = b.resolveTargetQuery(query);
+    }
+    const vector = b.createModule(.{
+        .root_source_file = b.path("src/fixed_simd.zig"),
+        .target = vector_target,
+        .optimize = optimize,
+        .pic = true,
+        .imports = &.{.{ .name = "fixed", .module = fixed }},
+    });
+    return b.createModule(.{
+        .root_source_file = b.path("src/fixed_simd_dispatch.zig"),
+        .target = target,
+        .optimize = optimize,
+        .pic = true,
+        .imports = &.{
+            .{ .name = "fixed", .module = fixed },
+            .{ .name = "fixed_vector", .module = vector },
+        },
+    });
 }

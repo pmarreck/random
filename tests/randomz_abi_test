@@ -16,4 +16,5 @@ case "$(uname -s)" in
 	Darwin) shared="$root/zig-out/lib/librandomz.dylib" ;;
 	*) shared="$root/zig-out/lib/librandomz.so" ;;
 esac
-luajit "$root/tests/buffered_drbg.lua" "$shared"
+luajit "$root/tests/buffered_drbg.lua" "$shared" || exit 1
+luajit "$root/tests/batch_drbg.lua" "$shared"

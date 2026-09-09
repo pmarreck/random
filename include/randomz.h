@@ -11,6 +11,7 @@ extern "C" {
 #define RANDOMZ_VERSION "0.3.0"
 #define RANDOMZ_DRBG_KEY_BYTES 32
 #define RANDOMZ_MAX_EXACT_POSITION UINT64_C(9007199254740992)
+#define RANDOMZ_MAX_EXACT_INTEGER INT64_C(9007199254740992)
 #define RANDOMZ_FIXED_STRING_BYTES 4096
 #define RANDOMZ_CURVE_MAX_SAMPLES 4096
 
@@ -90,6 +91,25 @@ int randomz_range(randomz_fill_fn fill, void *context,
 int randomz_uniform(randomz_fill_fn fill, void *context, randomz_fixed *out);
 int randomz_normal_int(randomz_fill_fn fill, void *context,
 	int64_t start, int64_t end, int64_t *out);
+/* Caller-buffer batching; O(count) expected work and O(1) workspace.
+ * AUTO selects a supported accelerated kernel, SCALAR keeps single-call math.
+ * Bounds must satisfy -2^53 <= start <= end <= 2^53, unlike the legacy scalar
+ * entry's wider acceptance. Within this supported domain, values and callback
+ * request order match repeated randomz_normal_int calls.
+ * On failure, *written names the completed prefix; the suffix is untouched.
+ * The source includes consumption by the failing sample, as in scalar calls.
+ * Invalid bounds/backend fail before source reads or sample writes, setting
+ * *written to zero, including for count=0;
+ * out may be NULL only for count=0.
+ * written is required. All writable storage must be disjoint from the source.
+ * No internal threads, allocation, retained samples, or extra entropy reads. */
+typedef enum randomz_batch_mode {
+	RANDOMZ_BATCH_AUTO = 0,
+	RANDOMZ_BATCH_SCALAR = 1
+} randomz_batch_mode;
+int randomz_normal_int_batch(randomz_fill_fn fill, void *context,
+	int64_t start, int64_t end, int64_t *out, size_t count,
+	size_t *written, randomz_batch_mode mode);
 int randomz_normal(randomz_fill_fn fill, void *context,
 	randomz_fixed mean, randomz_fixed stddev, randomz_fixed *out);
 int randomz_exponential(randomz_fill_fn fill, void *context,

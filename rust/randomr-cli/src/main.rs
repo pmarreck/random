@@ -42,6 +42,20 @@ impl ByteSource for Source {
 	}
 }
 
+impl Source {
+	fn normal_int_batch(
+		&mut self,
+		start: i64,
+		end: i64,
+		out: &mut [i64],
+	) -> Result<(), randomr::BatchError> {
+		match self {
+			Self::Drbg(source) => source.normal_int_batch(start, end, out),
+			_ => randomr::normal_int_batch(self, start, end, out),
+		}
+	}
+}
+
 enum Value {
 	Integer(i64),
 	Fixed(Fixed),
@@ -522,13 +536,40 @@ fn emit_text(
 ) -> Result<(), String> {
 	let stdout = io::stdout();
 	let mut output = stdout.lock();
+	let mut normal_values = [0_i64; 256];
+	let mut normal_failure = None;
+	let mut normal_len = 0;
+	let batched_normal = matches!(source, Source::Drbg(_))
+		&& options.mode == Mode::Normal
+		&& options.mean.is_none()
+		&& options.stddev.is_none();
 	for index in 0..count {
 		if index > 0 && options.delimiter != "\n" {
 			output
 				.write_all(options.delimiter.as_bytes())
 				.map_err(|_| "stdout write failed".to_owned())?;
 		}
-		let value = generate(options, source, start, end)?;
+		let value = if batched_normal {
+			let lane = index as usize % normal_values.len();
+			if lane == 0 {
+				let take = (count - index).min(normal_values.len() as u64) as usize;
+				normal_len = take;
+				if let Err(failure) =
+					source.normal_int_batch(start, end, &mut normal_values[..take])
+				{
+					normal_len = failure.written;
+					normal_failure = Some(failure.error);
+				}
+			}
+			if lane >= normal_len {
+				return Err(core_error(
+					normal_failure.expect("short batch has a failure"),
+				));
+			}
+			Value::Integer(normal_values[lane])
+		} else {
+			generate(options, source, start, end)?
+		};
 		let text = match value {
 			Value::Integer(integer) if options.hex => format!("{integer:x}"),
 			Value::Integer(integer) => integer.to_string(),
@@ -567,12 +608,23 @@ fn emit_binary(
 	let mut carry = [0_u8; 2];
 	let mut carry_len = 0_usize;
 	let mut remaining = count;
+	let mut normal_values = [0_i64; 256];
 	while remaining > 0 {
 		let chunk = usize::try_from(remaining.min(STREAM_CHUNK as u64))
 			.map_err(|_| "output count is too large".to_owned())?;
 		let bytes = &mut bytes[..chunk];
 		if options.mode == Mode::Uniform && start == 0 && end == 255 {
 			source.fill_exact(bytes).map_err(entropy_error)?;
+		} else if options.mode == Mode::Normal && options.mean.is_none() && options.stddev.is_none()
+		{
+			for block in bytes.chunks_mut(normal_values.len()) {
+				source
+					.normal_int_batch(start, end, &mut normal_values[..block.len()])
+					.map_err(|failure| core_error(failure.error))?;
+				for (byte, &value) in block.iter_mut().zip(&normal_values) {
+					*byte = value.rem_euclid(256) as u8;
+				}
+			}
 		} else {
 			for byte in &mut *bytes {
 				*byte = value_byte(generate(options, source, start, end)?);

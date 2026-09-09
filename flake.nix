@@ -105,8 +105,10 @@
           ln -s ${pinLuajit pkgs.pkgsCross.aarch64-multiplatform.luajit}/bin/luajit \
                 $out/bin/luajit-aarch64-glibc
           ln -s ${pkgs.qemu-user}/bin/qemu-aarch64 $out/bin/qemu-aarch64
+          ln -s ${pkgs.qemu-user}/bin/qemu-x86_64 $out/bin/qemu-x86_64
           ln -s ${pkgs.zig_0_16}/bin/zig $out/bin/zig
           ln -s ${randomr}/bin/randomr $out/bin/randomr-x86_64-glibc
+          ln -s ${randomr}/libexec/randomr $out/bin/randomr-unwrapped-x86_64
           ln -s ${randomrCrossAarch64}/bin/randomr $out/bin/randomr-aarch64-glibc
         '';
 

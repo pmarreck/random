@@ -5,6 +5,7 @@
 
 const std = @import("std");
 const fixed = @import("fixed");
+const fixed_simd = @import("fixed_simd");
 
 const Blake3 = std.crypto.hash.Blake3;
 const kdf_context = "random drbg 2026-08-04 v1";
@@ -724,6 +725,82 @@ pub export fn randomz_normal_int(
     output.* = normalInt(source, start, end) catch |err|
         return errorStatus(err);
     return @intFromEnum(Status.ok);
+}
+
+/// Fill caller-owned storage with the scalar sampler's exact prefix semantics.
+/// Complexity: O(count) expected work, O(1) auxiliary storage; no prefetch reads.
+pub export fn randomz_normal_int_batch(
+    fill: ?FillFn,
+    context: ?*anyopaque,
+    start: i64,
+    end: i64,
+    out: ?[*]i64,
+    count: usize,
+    written: ?*usize,
+    mode: c_int,
+) callconv(.c) c_int {
+    const completed = written orelse return errorStatus(error.InvalidArgument);
+    completed.* = 0;
+    const source = sourceFrom(fill, context) catch |err| return errorStatus(err);
+    if (mode < 0 or mode > 1 or start > end or
+        start < -@as(i64, @intCast(max_exact_position)) or end > max_exact_position)
+        return errorStatus(error.InvalidArgument);
+    if (count == 0) return 0;
+    const output = out orelse return errorStatus(error.InvalidArgument);
+    // Within the public exact-integer domain, the bounded positive uniforms
+    // below cannot fail ln/sqrt, and rounded results stay far below
+    // i64 overflow. No later read failure can overtake a numeric failure.
+    const accelerated = mode == 0 and fixed_simd.isAccelerated();
+    if (accelerated) {
+        const c = constants();
+        const width = fixed.fromInt(@intCast(@as(i128, end) - start));
+        const sixth = fixed.div(width, c.six);
+        const half_width = fixed.div(width, c.two);
+        const start_fixed = fixed.fromInt(start);
+        const million = fixed.fromInt(1_000_000);
+        while (count - completed.* >= 4) {
+            var xs: fixed_simd.Batch = @splat(c.one);
+            var ys: fixed_simd.Batch = @splat(c.one);
+            var lanes: usize = 0;
+            var read_error: ?RngError = null;
+            while (lanes < 4) : (lanes += 1) {
+                const n1 = range(source, 1, 1_000_000) catch |err| {
+                    read_error = err;
+                    break;
+                };
+                const n2 = range(source, 1, 1_000_000) catch |err| {
+                    read_error = err;
+                    break;
+                };
+                xs[lanes] = fixed.div(fixed.fromInt(n1), million);
+                ys[lanes] = fixed.div(fixed.fromInt(n2), million);
+            }
+            // Never gather more candidates than remaining output slots.
+            // Finish the complete prefix before propagating a later read
+            // failure; discarded candidates still consume their original
+            // bytes. Inactive lanes contain one, never an invalid logarithm.
+            if (lanes != 0) {
+                const math = fixed_simd.lnCos4(xs, ys) catch
+                    return errorStatus(error.NumericError);
+                for (0..lanes) |lane| {
+                    const radius = fixed.sqrt(fixed.mul(c.neg_two, math.ln[lane]));
+                    const z = fixed.mul(radius, math.cos[lane]);
+                    const value = fixed.add(fixed.add(fixed.mul(z, sixth), half_width), start_fixed);
+                    const result = roundToInt(value);
+                    if (result >= start and result <= end) {
+                        output[completed.*] = result;
+                        completed.* += 1;
+                    }
+                }
+            }
+            if (read_error) |err| return errorStatus(err);
+        }
+    }
+    while (completed.* < count) {
+        output[completed.*] = normalInt(source, start, end) catch |err| return errorStatus(err);
+        completed.* += 1;
+    }
+    return 0;
 }
 
 pub export fn randomz_normal(

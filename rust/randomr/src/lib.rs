@@ -21,6 +21,9 @@
 
 extern crate alloc;
 
+mod batch;
+#[cfg(all(feature = "std", target_arch = "x86_64"))]
+mod batch_avx2;
 mod curve;
 mod distribution;
 mod drbg;
@@ -30,6 +33,7 @@ mod fixed;
 #[cfg(feature = "entropy")]
 pub mod entropy;
 
+pub use batch::{BatchError, normal_int_batch};
 pub use curve::{Curve, Distribution};
 pub use distribution::{
 	beta, exponential, log_normal, normal, normal_int, poisson, range, uniform,
