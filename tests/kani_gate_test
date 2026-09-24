@@ -7,7 +7,7 @@ failed=0
 fixture=$(jq -n '{verification_results:{summary:{total_harnesses:1,executed:1,status:"completed",successful:1,failed:0},results:[{harness_id:"kani_proofs::fixed_parts_contract",status:"Success",checks:([{status:"Success",category:"assertion",function:"kani_proofs::fixed_parts_contract",description:"\"canonical acceptance contract\""}]+(["canonical zero reachable","negative canonical endpoint reachable","positive canonical endpoint reachable","rejected minimum mantissa reachable","noncanonical zero reachable"]|map({status:"Satisfied",category:"cover",description:.})))}]}}') || exit 1
 expect() {
 	local name="$1" want="$2" mode="$3" input="$4" actual
-	"$check" "$mode" <<<"$input" >/dev/null 2>&1
+	bash "$check" "$mode" <<<"$input" >/dev/null 2>&1
 	actual=$?
 	if [ "$actual" -ne "$want" ]; then
 		printf 'FAIL Kani gate: %s (expected %s, got %s)\n' "$name" "$want" "$actual" >&2
