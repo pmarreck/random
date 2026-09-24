@@ -1,0 +1,1169 @@
+{
+  "base_revision": "436f512eebf2ae705f852c9edeceb68e1d495519",
+  "source_hashes": [
+    "aaa033398da5f72821cbb57f6124f3c4595b998e23665047f41146becae0aca2  flake.nix",
+    "3280935d860f95bb5c43038ed9b273958524e2a035c2e0b14ca0bb96c5fa0df0  flake.lock",
+    "5d3186f2312da8f21965933192ecd8d3a34b26b558444e200c757f8e4f2d73ca  Cargo.toml",
+    "519bd8a69813633686197833179c4bb576246f9543e119a9d503226227a486d4  Cargo.lock",
+    "a11e3e38a5588583592f408e201c142ef7462e0260e83925d2c4b0c9e9acd845  rust/randomr/Cargo.toml",
+    "832c40a163b2815c6e6b3a464b5d40306171af70919b94600db12990d7a1c860  rust/randomr/src/lib.rs",
+    "44becee74256d04a8b89d3c341395eb20cf9951849413af89e28c752e2759236  rust/randomr/src/fixed.rs",
+    "7fe04e340725d69ae0b7135e1599140fc5ac0e063b57c6e60702d97f2671bc8f  rust/randomr/src/error.rs",
+    "389c66ea9af23db1edfedceed9e357585a4f8fd5d9d7faf0237e9cd250f2a5a1  rust/randomr/src/kani_proofs.rs",
+    "b44f579033edb1f440c3e947a39769a5f450ce34f60fece29745dc3fe8f972e9  nix/kani.nix",
+    "5ae1515a1cb886d70c32ae3b79e4e65d12c5823ad531e8b5e56967efb183a159  verification/kani/check-result",
+    "b5f702195e80f7bd44de0756ea3512d46356312c4d4e8b1cc4a6c6697dad8be1  verify-kani"
+  ],
+  "runs": {
+    "negative": {
+      "tools": {
+        "kani": "0.68.0",
+        "rustc": "rustc 1.100.0-nightly (8925ea358 2026-08-20)",
+        "cbmc": "6.11.0 (cbmc-6.11.0)",
+        "goto_cc": "gcc (goto-cc 6.11.0 (cbmc-6.11.0)) 15.3.0",
+        "goto_instrument": "6.11.0 (cbmc-6.11.0)",
+        "solvers": [
+          {
+            "name": "minisat",
+            "version": null
+          }
+        ]
+      },
+      "summary": {
+        "total_harnesses": 1,
+        "executed": 1,
+        "status": "completed",
+        "successful": 0,
+        "failed": 1,
+        "duration_ms": 470
+      },
+      "checks": [
+        {
+          "category": "assertion",
+          "description": "attempt to shift right with overflow",
+          "status": "Success"
+        },
+        {
+          "category": "assertion",
+          "description": "attempt to subtract with overflow",
+          "status": "Success"
+        },
+        {
+          "category": "assertion",
+          "description": "attempt to shift left with overflow",
+          "status": "Success"
+        },
+        {
+          "category": "unreachable",
+          "description": "unreachable code",
+          "status": "Success"
+        },
+        {
+          "category": "assertion",
+          "description": "attempt to negate with overflow",
+          "status": "Success"
+        },
+        {
+          "category": "unreachable",
+          "description": "unreachable code",
+          "status": "Success"
+        },
+        {
+          "category": "unreachable",
+          "description": "unreachable code",
+          "status": "Success"
+        },
+        {
+          "category": "unreachable",
+          "description": "unreachable code",
+          "status": "Success"
+        },
+        {
+          "category": "unreachable",
+          "description": "unreachable code",
+          "status": "Success"
+        },
+        {
+          "category": "unreachable",
+          "description": "unreachable code",
+          "status": "Success"
+        },
+        {
+          "category": "unreachable",
+          "description": "unreachable code",
+          "status": "Success"
+        },
+        {
+          "category": "unreachable",
+          "description": "unreachable code",
+          "status": "Success"
+        },
+        {
+          "category": "unreachable",
+          "description": "unreachable code",
+          "status": "Success"
+        },
+        {
+          "category": "assertion",
+          "description": "attempt to shift left with overflow",
+          "status": "Success"
+        },
+        {
+          "category": "assertion",
+          "description": "attempt to shift left with overflow",
+          "status": "Success"
+        },
+        {
+          "category": "assertion",
+          "description": "\"canonical acceptance contract\"",
+          "status": "Failure"
+        },
+        {
+          "category": "unreachable",
+          "description": "unreachable code",
+          "status": "Success"
+        },
+        {
+          "category": "assertion",
+          "description": "\"accepted parts preserved\"",
+          "status": "Success"
+        },
+        {
+          "category": "assertion",
+          "description": "\"accepted value canonical\"",
+          "status": "Success"
+        },
+        {
+          "category": "cover",
+          "description": "canonical zero reachable",
+          "status": "Satisfied"
+        },
+        {
+          "category": "assertion",
+          "description": "attempt to shift left with overflow",
+          "status": "Success"
+        },
+        {
+          "category": "assertion",
+          "description": "attempt to negate with overflow",
+          "status": "Success"
+        },
+        {
+          "category": "cover",
+          "description": "negative canonical endpoint reachable",
+          "status": "Satisfied"
+        },
+        {
+          "category": "cover",
+          "description": "positive canonical endpoint reachable",
+          "status": "Satisfied"
+        },
+        {
+          "category": "cover",
+          "description": "rejected minimum mantissa reachable",
+          "status": "Unsatisfiable"
+        },
+        {
+          "category": "cover",
+          "description": "noncanonical zero reachable",
+          "status": "Satisfied"
+        },
+        {
+          "category": "unreachable",
+          "description": "unreachable code",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        }
+      ],
+      "cbmc": [
+        {
+          "harness_id": "kani_proofs::fixed_parts_contract",
+          "cbmc_metadata": {
+            "version": "6.11.0",
+            "os_info": "x86_64 linux unix"
+          },
+          "configuration": {
+            "object_bits": 16,
+            "solver": "minisat"
+          },
+          "cbmc_stats": {
+            "runtime_symex_s": 0.127626,
+            "size_program_expression": 5884,
+            "slicing_removed_assignments": 4554,
+            "vccs_generated": 135,
+            "vccs_remaining": 40,
+            "runtime_postprocess_equation_s": 0.00158019,
+            "runtime_convert_ssa_s": 0.024375,
+            "runtime_post_process_s": 0.000006743,
+            "runtime_solver_s": 0.00172275,
+            "runtime_decision_procedure_s": 0.00175048
+          }
+        }
+      ]
+    },
+    "positive": {
+      "tools": {
+        "kani": "0.68.0",
+        "rustc": "rustc 1.100.0-nightly (8925ea358 2026-08-20)",
+        "cbmc": "6.11.0 (cbmc-6.11.0)",
+        "goto_cc": "gcc (goto-cc 6.11.0 (cbmc-6.11.0)) 15.3.0",
+        "goto_instrument": "6.11.0 (cbmc-6.11.0)",
+        "solvers": [
+          {
+            "name": "minisat",
+            "version": null
+          }
+        ]
+      },
+      "summary": {
+        "total_harnesses": 1,
+        "executed": 1,
+        "status": "completed",
+        "successful": 1,
+        "failed": 0,
+        "duration_ms": 520
+      },
+      "checks": [
+        {
+          "category": "assertion",
+          "description": "attempt to shift right with overflow",
+          "status": "Success"
+        },
+        {
+          "category": "assertion",
+          "description": "attempt to subtract with overflow",
+          "status": "Success"
+        },
+        {
+          "category": "assertion",
+          "description": "attempt to shift left with overflow",
+          "status": "Success"
+        },
+        {
+          "category": "unreachable",
+          "description": "unreachable code",
+          "status": "Success"
+        },
+        {
+          "category": "assertion",
+          "description": "attempt to negate with overflow",
+          "status": "Success"
+        },
+        {
+          "category": "unreachable",
+          "description": "unreachable code",
+          "status": "Success"
+        },
+        {
+          "category": "unreachable",
+          "description": "unreachable code",
+          "status": "Success"
+        },
+        {
+          "category": "unreachable",
+          "description": "unreachable code",
+          "status": "Success"
+        },
+        {
+          "category": "unreachable",
+          "description": "unreachable code",
+          "status": "Success"
+        },
+        {
+          "category": "unreachable",
+          "description": "unreachable code",
+          "status": "Success"
+        },
+        {
+          "category": "unreachable",
+          "description": "unreachable code",
+          "status": "Success"
+        },
+        {
+          "category": "unreachable",
+          "description": "unreachable code",
+          "status": "Success"
+        },
+        {
+          "category": "unreachable",
+          "description": "unreachable code",
+          "status": "Success"
+        },
+        {
+          "category": "assertion",
+          "description": "attempt to shift left with overflow",
+          "status": "Success"
+        },
+        {
+          "category": "assertion",
+          "description": "attempt to shift left with overflow",
+          "status": "Success"
+        },
+        {
+          "category": "assertion",
+          "description": "\"canonical acceptance contract\"",
+          "status": "Success"
+        },
+        {
+          "category": "unreachable",
+          "description": "unreachable code",
+          "status": "Success"
+        },
+        {
+          "category": "assertion",
+          "description": "\"accepted parts preserved\"",
+          "status": "Success"
+        },
+        {
+          "category": "assertion",
+          "description": "\"accepted value canonical\"",
+          "status": "Success"
+        },
+        {
+          "category": "cover",
+          "description": "canonical zero reachable",
+          "status": "Satisfied"
+        },
+        {
+          "category": "assertion",
+          "description": "attempt to shift left with overflow",
+          "status": "Success"
+        },
+        {
+          "category": "assertion",
+          "description": "attempt to negate with overflow",
+          "status": "Success"
+        },
+        {
+          "category": "cover",
+          "description": "negative canonical endpoint reachable",
+          "status": "Satisfied"
+        },
+        {
+          "category": "cover",
+          "description": "positive canonical endpoint reachable",
+          "status": "Satisfied"
+        },
+        {
+          "category": "cover",
+          "description": "rejected minimum mantissa reachable",
+          "status": "Satisfied"
+        },
+        {
+          "category": "cover",
+          "description": "noncanonical zero reachable",
+          "status": "Satisfied"
+        },
+        {
+          "category": "unreachable",
+          "description": "unreachable code",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer NULL",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer invalid",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: deallocated dynamic object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: dead object",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: pointer outside object bounds",
+          "status": "Success"
+        },
+        {
+          "category": "pointer_dereference",
+          "description": "dereference failure: invalid integer address",
+          "status": "Success"
+        }
+      ],
+      "cbmc": [
+        {
+          "harness_id": "kani_proofs::fixed_parts_contract",
+          "cbmc_metadata": {
+            "version": "6.11.0",
+            "os_info": "x86_64 linux unix"
+          },
+          "configuration": {
+            "object_bits": 16,
+            "solver": "minisat"
+          },
+          "cbmc_stats": {
+            "runtime_symex_s": 0.129054,
+            "size_program_expression": 5884,
+            "slicing_removed_assignments": 4554,
+            "vccs_generated": 135,
+            "vccs_remaining": 40,
+            "runtime_postprocess_equation_s": 0.00153938,
+            "runtime_convert_ssa_s": 0.0212258,
+            "runtime_post_process_s": 0.000006443,
+            "runtime_solver_s": 0.00341059,
+            "runtime_decision_procedure_s": 0.00344426
+          }
+        }
+      ]
+    }
+  }
+}

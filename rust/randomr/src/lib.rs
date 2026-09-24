@@ -30,6 +30,9 @@ mod drbg;
 mod error;
 mod fixed;
 
+#[cfg(kani)]
+mod kani_proofs;
+
 #[cfg(feature = "entropy")]
 pub mod entropy;
 

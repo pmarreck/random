@@ -7,6 +7,9 @@ rust-version.workspace = true
 repository.workspace = true
 description = "Cross-platform-identical BLAKE3 CSPRNG and integer-only distributions"
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)', 'cfg(kani_negative)'] }
+
 [features]
 default = ["std", "entropy"]
 std = ["blake3/std"]

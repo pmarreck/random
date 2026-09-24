@@ -17,6 +17,7 @@
     ] (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        kaniVerifier = pkgs.callPackage ./nix/kani.nix { };
 
         # LuaJIT/LuaJIT#1499 (https://github.com/LuaJIT/LuaJIT/issues/1499):
         # nixpkgs-unstable's own pkgs.luajit still pins a pre-fix commit
@@ -537,6 +538,7 @@
           crossToolchains = crossToolchains;
           randomrAarch64 = randomrCrossAarch64;
           randomrCrossTargets = randomrCrossTargets;
+          kani = kaniVerifier;
         };
 
         apps.randomz = {
@@ -906,9 +908,21 @@
             ''
           else pkgs.runCommand "random-windows-x64-smoke-not-applicable" { } "touch $out";
 
-        devShells.default = pkgs.mkShell {
-          packages = runtimeTools ++ testTools ++ zigTools ++ leanTools ++
-            [ pkgs.cargo pkgs.clippy pkgs.rustc pkgs.rustfmt pkgs.openssh pkgs.rsync pkgs.hyperfine ];
+        devShells = {
+          default = pkgs.mkShell {
+            packages = runtimeTools ++ testTools ++ zigTools ++ leanTools ++
+              [ pkgs.cargo pkgs.clippy pkgs.rustc pkgs.rustfmt pkgs.openssh pkgs.rsync pkgs.hyperfine ];
+          };
+        } // nixpkgs.lib.optionalAttrs crossSupported {
+          kani = pkgs.mkShell {
+            packages = [ kaniVerifier pkgs.time pkgs.jq pkgs.coreutils ];
+            RANDOM_KANI_CARGO_CONFIG = pkgs.writeText "random-kani-cargo-config.toml" ''
+              [source.crates-io]
+              replace-with = "kani-vendor"
+              [source.kani-vendor]
+              directory = "${rustCargoDeps}"
+            '';
+          };
         };
       });
 }

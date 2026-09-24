@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Reject incomplete, unknown, vacuous or wrongly failing Kani JSON evidence.
+set -u
+mode="${1:-}"
+case "$mode" in positive|negative) ;; *) exit 1 ;; esac
+jq -e --arg mode "$mode" '
+ .verification_results as $v |
+ ($v.summary.total_harnesses == 1 and $v.summary.executed == 1 and
+  $v.summary.status == "completed" and ($v.results | length) == 1) and
+ ($v.results[0] as $r | $r.checks as $c |
+  $r.harness_id == "kani_proofs::fixed_parts_contract" and
+  ([$c[] | select(.category == "assertion" and .function == "kani_proofs::fixed_parts_contract") |
+    .description | select(. == "\"canonical acceptance contract\"" or
+      . == "\"accepted parts preserved\"" or . == "\"accepted value canonical\"")] | sort) ==
+  (["\"canonical acceptance contract\"", "\"accepted parts preserved\"", "\"accepted value canonical\""] | sort) and
+  ([$c[] | select(.category == "assertion" and
+    .description == "\"canonical acceptance contract\"")] | length) == 1 and
+  if $mode == "positive" then
+   $v.summary.successful == 1 and $v.summary.failed == 0 and $r.status == "Success" and
+   all($c[]; (.category == "cover" and .status == "Satisfied") or
+              (.category != "cover" and .status == "Success")) and
+   ([$c[] | select(.category == "cover") | .description] | sort) ==
+   (["canonical zero reachable", "negative canonical endpoint reachable",
+     "positive canonical endpoint reachable", "rejected minimum mantissa reachable",
+     "noncanonical zero reachable"] | sort)
+  else
+   $v.summary.successful == 0 and $v.summary.failed == 1 and $r.status == "Failure" and
+   all($c[]; .status == "Success" or .status == "Failure" or
+      (.category == "cover" and (.status == "Satisfied" or .status == "Unsatisfiable"))) and
+   ([$c[] | select(.status == "Failure")] as $failed |
+    ($failed | length) == 1 and $failed[0].category == "assertion" and
+    $failed[0].function == "kani_proofs::fixed_parts_contract" and
+    $failed[0].description == "\"canonical acceptance contract\"")
+  end)
+' >/dev/null 2>&1
+status=$?
+[ "$status" -eq 0 ] || exit 1

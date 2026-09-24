@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Opt-in bounded proof POC. Never changes the normal Rust environment.
+set -u
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ "${1:-}" != --inside ]; then
+	if [ "$#" -ne 0 ]; then echo 'Usage: ./verify-kani' >&2; exit 2; fi
+	results=$(mktemp -d "${TMPDIR:-/tmp}/random-kani.XXXXXX") || exit 1
+	exec nix develop "$root#kani" -c bash "$root/verify-kani" --inside "$results"
+fi
+if [ "$#" -ne 2 ] || [ ! -d "$2" ]; then exit 2; fi
+results=$2
+cd "$root" || exit 1
+printf 'Kani evidence directory: %s\n' "$results"
+# One compiler worker and one sequential solver; 4 GiB virtual memory per process.
+ulimit -v 4194304 || exit 1
+export CARGO_BUILD_JOBS=1 CARGO_NET_OFFLINE=true
+unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
+export CARGO_HOME="$results/cargo-home"
+mkdir -p "$CARGO_HOME" || exit 1
+ln -s "$RANDOM_KANI_CARGO_CONFIG" "$CARGO_HOME/config.toml" || exit 1
+git rev-parse HEAD > "$results/revision.txt" || exit 1
+sha256sum flake.nix flake.lock Cargo.toml Cargo.lock rust/randomr/Cargo.toml rust/randomr/src/lib.rs \
+	rust/randomr/src/fixed.rs rust/randomr/src/error.rs rust/randomr/src/kani_proofs.rs \
+	nix/kani.nix verification/kani/check-result verify-kani > "$results/sources.sha256" || exit 1
+for phase in negative positive; do
+	if [ "$phase" = negative ]; then export RUSTFLAGS='--cfg kani_negative'; else unset RUSTFLAGS; fi
+	command time -v -o "$results/$phase.time" timeout --kill-after=5 240 cargo-kani kani \
+		--package randomr --lib --no-default-features \
+		--target-dir "$results/$phase-target" --harness kani_proofs::fixed_parts_contract --exact \
+		--solver minisat -Z unstable-options --export-json "$results/$phase.json" \
+		> "$results/$phase.log" 2>&1
+	status=$?
+	if [ "$phase" = negative ]; then expected=1; else expected=0; fi
+	if [ "$status" -ne "$expected" ] || ! "$root/verification/kani/check-result" "$phase" < "$results/$phase.json"; then
+		printf 'Kani %s gate FAILED (exit %s); inspect %s\n' "$phase" "$status" "$results" >&2
+		exit 1
+	fi
+	printf 'Kani %s evidence accepted\n' "$phase"
+done
+echo 'Kani POC PASSED: expected false-contract failure, corrected contract and five reachable covers'

@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Classification controls for Kani evidence; no solver/toolchain download.
+set -u
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+check="$root/verification/kani/check-result"
+failed=0
+fixture=$(jq -n '{verification_results:{summary:{total_harnesses:1,executed:1,status:"completed",successful:1,failed:0},results:[{harness_id:"kani_proofs::fixed_parts_contract",status:"Success",checks:([{status:"Success",category:"assertion",function:"kani_proofs::fixed_parts_contract",description:"\"canonical acceptance contract\""}]+(["canonical zero reachable","negative canonical endpoint reachable","positive canonical endpoint reachable","rejected minimum mantissa reachable","noncanonical zero reachable"]|map({status:"Satisfied",category:"cover",description:.})))}]}}') || exit 1
+expect() {
+	local name="$1" want="$2" mode="$3" input="$4" actual
+	"$check" "$mode" <<<"$input" >/dev/null 2>&1
+	actual=$?
+	if [ "$actual" -ne "$want" ]; then
+		printf 'FAIL Kani gate: %s (expected %s, got %s)\n' "$name" "$want" "$actual" >&2
+		failed=$((failed+1))
+	fi
+}
+fixture=$(jq '.verification_results.results[0].checks += (["\"accepted parts preserved\"", "\"accepted value canonical\""] | map({status:"Success",category:"assertion",function:"kani_proofs::fixed_parts_contract",description:.}))' <<<"$fixture") || exit 1
+expect 'known-good positive' 0 positive "$fixture"
+expect 'positive is not a negative control' 1 negative "$fixture"
+for status in Failure Undetermined Timeout Unsupported Unreachable; do
+	mutated=$(jq --arg status "$status" '.verification_results.results[0].checks[0].status=$status' <<<"$fixture") || exit 1
+	expect "reject $status despite green summary" 1 positive "$mutated"
+done
+mutated=$(jq '.verification_results.results[0].checks[1].status="Unsatisfiable"' <<<"$fixture") || exit 1
+expect 'unreachable cover' 1 positive "$mutated"
+mutated=$(jq '.verification_results.results[0].checks=[]' <<<"$fixture") || exit 1
+expect 'empty checks' 1 positive "$mutated"
+mutated=$(jq 'del(.verification_results.results[0].checks[-1])' <<<"$fixture") || exit 1
+expect 'missing canonical-result assertion' 1 positive "$mutated"
+mutated=$(jq '.verification_results.summary.total_harnesses=0 | .verification_results.results=[]' <<<"$fixture") || exit 1
+expect 'no harness' 1 positive "$mutated"
+expect 'malformed JSON' 1 positive '{'
+expect 'empty JSON' 1 positive '{}'
+negative=$(jq '.verification_results.summary.successful=0 | .verification_results.summary.failed=1 | .verification_results.results[0].status="Failure" | .verification_results.results[0].checks[0].status="Failure"' <<<"$fixture") || exit 1
+expect 'intended negative control' 0 negative "$negative"
+mutated=$(jq '.verification_results.results[0].checks[0].description="unwinding assertion"' <<<"$negative") || exit 1
+expect 'unwind failure is not intended failure' 1 negative "$mutated"
+mutated=$(jq '.verification_results.results[0].checks += [{status:"Failure",category:"assertion",description:"other failure"}]' <<<"$negative") || exit 1
+expect 'additional failure is not accepted' 1 negative "$mutated"
+[ "$failed" -eq 0 ] || exit 1
+echo 'Kani gate PASSED: positive/negative evidence and malformed/unknown/vacuous cases'

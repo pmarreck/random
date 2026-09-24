@@ -496,7 +496,7 @@ direnv allow      # or: nix develop
 ./test            # FAST mode (quick, quiet on success)
 FAST= ./test      # full statistical run
 ./stats           # separate, deeper sanity analysis of all four command families
-nix flake check   # hermetic CI check (runs all 26 suites, but FORCES FAST=1 --
+nix flake check   # hermetic CI check (runs all 27 suites, but FORCES FAST=1 --
                    # kernel_jit_diff's 60000-iteration deep JIT differential
                    # is deep-mode-only by design and is SKIPPED here, not run;
                    # run `FAST= ./test` locally for the full non-FAST suite)
@@ -517,6 +517,12 @@ run `tests/random_test` or `tests/drbg_test` against another compatible binary.
 The suites are hermetic and concurrency-safe.
 Cold `./test` and Nix runs are dominated by ReleaseFast compilation and the
 multi-target artifact gates, not by the pure arithmetic checks themselves.
+
+On x86_64 Linux, `TMPDIR=/dev/shm ./verify-kani` runs the optional, pinned
+Kani fixed-point constructor proof and its deliberately failing control.
+It uses a separate Nix toolchain; ordinary builds and tests do not require Kani.
+See the [bounded proof report](docs/reports/2026-09-24-kani-poc.md) for the
+exact claims, resource measurements, and limitations.
 
 `./stats` is intentionally separate from the correctness suite. It streams raw
 bytes and distribution samples without writing them to disk, checks obvious
