@@ -1,37 +1,67 @@
 #!/usr/bin/env bash
 # Reject incomplete, unknown, vacuous or wrongly failing Kani JSON evidence.
 set -u
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mode="${1:-}"
-case "$mode" in positive|negative) ;; *) exit 1 ;; esac
-jq -e --arg mode "$mode" '
- .verification_results as $v |
- ($v.summary.total_harnesses == 1 and $v.summary.executed == 1 and
-  $v.summary.status == "completed" and ($v.results | length) == 1) and
- ($v.results[0] as $r | $r.checks as $c |
-  $r.harness_id == "kani_proofs::fixed_parts_contract" and
-  ([$c[] | select(.category == "assertion" and .function == "kani_proofs::fixed_parts_contract") |
-    .description | select(. == "\"canonical acceptance contract\"" or
-      . == "\"accepted parts preserved\"" or . == "\"accepted value canonical\"")] | sort) ==
-  (["\"canonical acceptance contract\"", "\"accepted parts preserved\"", "\"accepted value canonical\""] | sort) and
-  ([$c[] | select(.category == "assertion" and
-    .description == "\"canonical acceptance contract\"")] | length) == 1 and
-  if $mode == "positive" then
-   $v.summary.successful == 1 and $v.summary.failed == 0 and $r.status == "Success" and
-   all($c[]; (.category == "cover" and .status == "Satisfied") or
-              (.category != "cover" and .status == "Success")) and
-   ([$c[] | select(.category == "cover") | .description] | sort) ==
-   (["canonical zero reachable", "negative canonical endpoint reachable",
-     "positive canonical endpoint reachable", "rejected minimum mantissa reachable",
-     "noncanonical zero reachable"] | sort)
-  else
-   $v.summary.successful == 0 and $v.summary.failed == 1 and $r.status == "Failure" and
-   all($c[]; .status == "Success" or .status == "Failure" or
+id="${2:-kani_proofs::fixed_parts_contract}"
+[ "$#" -le 2 ] || exit 1
+case "$mode" in positive|negative|discovery) ;; *) exit 1 ;; esac
+jq -es -L "$root" --slurpfile manifest "$root/contracts.json" --arg mode "$mode" --arg id "$id" '
+ include "contracts";
+ length == 1 and (.[0] |
+ [contracts($manifest[0])] as $contracts |
+ if $mode == "discovery" then
+  . as $metadata |
+  (map(.pretty_name) | unique | sort) == ($contracts | map(.id) | sort) and
+  all($contracts[]; . as $h |
+   [$metadata[] | select(.pretty_name == $h.id)] as $found |
+   ($found | length) >= 1 and
+   all($found[]; .crate_name == "randomr" and .attributes.unwind_value == $h.unwind and
+    (.attributes.stubs | normalized_stubs) == ($h.stubs | normalized_stubs) and
+    .attributes.verified_stubs == []))
+ else
+  [$contracts[] | select(.id == $id)] as $selected |
+  ($selected | length) == 1 and
+  ($selected[0] as $h | .verification_results as $v |
+   $v.summary.total_harnesses == 1 and $v.summary.executed == 1 and
+   $v.summary.status == "completed" and ($v.results | length) == 1 and
+   ($v.results[0] as $r | $r.checks as $c |
+    $r.harness_id == $id and ($c | length) > 0 and
+    all($c[]; (.category | type) == "string" and (.function | type) == "string" and
+     (.description | type) == "string" and (.status | type) == "string") and
+    all($c[]; .category as $category |
+     (["assertion","cover","arithmetic_overflow","array_bounds","division-by-zero",
+       "pointer","pointer_dereference","precondition","precondition_instance",
+       "safety_check","unreachable","unsupported_construct","unwind","assume"] | index($category)) != null) and
+    # Pin authored assertions and their provenance. Only compiler checks and
+    # separately pinned forbidden-path guards may be unreachable when green.
+    ([$c[] | select(.category == "assertion" and (.description | startswith("\""))) |
+      {function,description}] | sort_by(.function,.description)) ==
+    (([$h.assertions[] | {function:$h.function,description:("\""+.+"\"")}]
+      + [$h.guards[] | {function,description:("\""+.description+"\"")}]) | sort_by(.function,.description)) and
+    ([$c[] | select(.category == "cover") | {function,description}] | sort_by(.function,.description)) ==
+    ([($h.covers + $h.unreachable_covers)[] | {function:$h.function,description:.}] | sort_by(.function,.description)) and
+    all($c[] | select(.category == "cover"); . as $cover |
+     if ($h.unreachable_covers | index($cover.description)) != null then .status == "Unreachable"
+     elif $mode == "positive" then .status == "Satisfied"
+     else .status == "Satisfied" or .status == "Unsatisfiable" end) and
+    all($h.guards[]; . as $guard |
+     all($c[] | select(.function == $guard.function and .description == ("\""+$guard.description+"\"")); .status == "Unreachable")) and
+    if $mode == "positive" then
+     $v.summary.successful == 1 and $v.summary.failed == 0 and $r.status == "Success" and
+     all($c[];
+      if .category == "cover" then .status == "Satisfied" or .status == "Unreachable"
+      elif .category == "assertion" and .function == $h.function and (.description | startswith("\"")) then .status == "Success"
+      else .status == "Success" or .status == "Unreachable" end)
+    else
+     $v.summary.successful == 0 and $v.summary.failed == 1 and $r.status == "Failure" and
+     all($c[]; .status == "Success" or .status == "Unreachable" or .status == "Failure" or
       (.category == "cover" and (.status == "Satisfied" or .status == "Unsatisfiable"))) and
-   ([$c[] | select(.status == "Failure")] as $failed |
-    ($failed | length) == 1 and $failed[0].category == "assertion" and
-    $failed[0].function == "kani_proofs::fixed_parts_contract" and
-    $failed[0].description == "\"canonical acceptance contract\"")
-  end)
+     ([$c[] | select(.status == "Failure")] as $failed |
+      ($failed | length) == 1 and $failed[0].category == "assertion" and
+      $failed[0].function == $h.function and $failed[0].description == ("\""+$h.negative+"\""))
+    end))
+ end)
 ' >/dev/null 2>&1
 status=$?
 [ "$status" -eq 0 ] || exit 1

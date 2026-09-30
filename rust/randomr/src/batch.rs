@@ -1,5 +1,9 @@
 use crate::{ByteSource, Drbg, Error, Fixed, normal_int};
 
+#[cfg(kani)]
+#[path = "kani_batch.rs"]
+mod kani_contracts;
+
 /// Failure after a successfully written prefix of a batch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BatchError {

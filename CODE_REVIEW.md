@@ -834,3 +834,32 @@ A five-run release-CLI smoke comparison found no meaningful extraction slowdown:
 20,000 d20 draws measured 49.4 ms before and 49.7 ms after; 2,000 normal integers
 measured 230.7 ms before and 230.2 ms after. Hyperfine discarded output; no random
 payload files were written. Measurement variance was larger than these changes.
+
+The `ai_edu` agent acknowledged consuming the pinned `random-luajit-lib` output
+at `d2dd7e7` and reported 112 passing specs plus its own `nix flake check`.
+This is downstream-reported integration evidence, not a test run by this agent.
+
+## 2026-09-30: bounded Kani core contracts
+
+The independent reviewer froze obligations before implementation inspection and
+granted acceptance after replaying all 42 actual exports (21 false controls and
+21 positive contracts). It independently regenerated the complete 24-file
+fingerprint set and discovery from all four compiled targets. All 89 mandatory
+positive assertions and 79 required covers passed. Four constant-disabled covers
+and four forbidden-call guards retain separately pinned Unreachable statuses.
+
+Review tightened negation against a no-op implementation, replaced collusive
+canonicality checks with a mathematical predicate, required exact assertion and
+cover provenance, rejected multiple top-level JSON documents, and exposed why
+filtered-only discovery can conceal an omitted proof. Six additional mutations
+of actual exports/discovery were independently rejected. Production-module
+changes are only cfg(kani) registrations; algorithms and production toolchain
+are unchanged. The [report](docs/reports/2026-09-30-kani-contracts.md) and
+[replayable acceptance summary](verification/kani/2026-09-30-evidence.json)
+state each bounded domain, model, exclusion, resource cost and source identity.
+
+MAX/general multiplication remains unproved after solver timeouts. A rejected
+SMT diagnostic's four exported witnesses pass native execution under both the
+production and exact verification-nightly compilers; no faulty component or
+production defect was established. These are open follow-ups, not exceptions
+to the acceptance gate or a whole-library/security correctness claim.

@@ -159,6 +159,10 @@ impl ByteSource for Drbg {
 	}
 }
 
+#[cfg(kani)]
+#[path = "kani_drbg.rs"]
+mod kani_contracts;
+
 #[cfg(test)]
 mod tests {
 	use super::*;

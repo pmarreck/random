@@ -1,5 +1,9 @@
 use crate::{ByteSource, Error, Fixed, MAX_EXACT_POSITION};
 
+#[cfg(kani)]
+#[path = "kani_range.rs"]
+mod kani_contracts;
+
 /// Draw an unbiased integer from the inclusive range `start..=end`.
 pub fn range(source: &mut impl ByteSource, start: i64, end: i64) -> Result<i64, Error> {
 	if start > end {

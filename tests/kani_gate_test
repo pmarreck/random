@@ -4,10 +4,10 @@ set -u
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 check="$root/verification/kani/check-result"
 failed=0
-fixture=$(jq -n '{verification_results:{summary:{total_harnesses:1,executed:1,status:"completed",successful:1,failed:0},results:[{harness_id:"kani_proofs::fixed_parts_contract",status:"Success",checks:([{status:"Success",category:"assertion",function:"kani_proofs::fixed_parts_contract",description:"\"canonical acceptance contract\""}]+(["canonical zero reachable","negative canonical endpoint reachable","positive canonical endpoint reachable","rejected minimum mantissa reachable","noncanonical zero reachable"]|map({status:"Satisfied",category:"cover",description:.})))}]}}') || exit 1
+fixture=$(jq -n '{verification_results:{summary:{total_harnesses:1,executed:1,status:"completed",successful:1,failed:0},results:[{harness_id:"kani_proofs::fixed_parts_contract",status:"Success",checks:([{status:"Success",category:"assertion",function:"kani_proofs::fixed_parts_contract",description:"\"canonical acceptance contract\""}]+(["canonical zero reachable","negative canonical endpoint reachable","positive canonical endpoint reachable","rejected minimum mantissa reachable","noncanonical zero reachable"]|map({status:"Satisfied",category:"cover",function:"kani_proofs::fixed_parts_contract",description:.})))}]}}') || exit 1
 expect() {
-	local name="$1" want="$2" mode="$3" input="$4" actual
-	bash "$check" "$mode" <<<"$input" >/dev/null 2>&1
+	local name="$1" want="$2" mode="$3" input="$4" actual id="${5:-kani_proofs::fixed_parts_contract}"
+	bash "$check" "$mode" "$id" <<<"$input" >/dev/null 2>&1
 	actual=$?
 	if [ "$actual" -ne "$want" ]; then
 		printf 'FAIL Kani gate: %s (expected %s, got %s)\n' "$name" "$want" "$actual" >&2
@@ -31,11 +31,53 @@ mutated=$(jq '.verification_results.summary.total_harnesses=0 | .verification_re
 expect 'no harness' 1 positive "$mutated"
 expect 'malformed JSON' 1 positive '{'
 expect 'empty JSON' 1 positive '{}'
+expect 'extra top-level JSON prefix' 1 positive "{}$fixture"
+expect 'extra top-level JSON suffix' 1 positive "$fixture{}"
+mutated=$(jq '(.verification_results.results[0].checks[]|select(.category=="cover")).function="another::function"' <<<"$fixture") || exit 1
+expect 'wrong cover provenance' 1 positive "$mutated"
 negative=$(jq '.verification_results.summary.successful=0 | .verification_results.summary.failed=1 | .verification_results.results[0].status="Failure" | .verification_results.results[0].checks[0].status="Failure"' <<<"$fixture") || exit 1
 expect 'intended negative control' 0 negative "$negative"
 mutated=$(jq '.verification_results.results[0].checks[0].description="unwinding assertion"' <<<"$negative") || exit 1
 expect 'unwind failure is not intended failure' 1 negative "$mutated"
 mutated=$(jq '.verification_results.results[0].checks += [{status:"Failure",category:"assertion",description:"other failure"}]' <<<"$negative") || exit 1
 expect 'additional failure is not accepted' 1 negative "$mutated"
+mutated=$(jq '.verification_results.results[0].checks += [{category:"assume",function:"core::slice",description:"Rust intrinsic assumption failed",status:"Success"}]' <<<"$fixture") || exit 1
+expect 'compiler intrinsic assumption safety check' 0 positive "$mutated"
+mutated=$(jq '.verification_results.results[0].checks[-1].status="Undetermined"' <<<"$mutated") || exit 1
+expect 'undetermined intrinsic assumption rejected' 1 positive "$mutated"
+manifest=$(jq -L "$root/verification/kani" 'include "contracts"; [contracts(.)]' "$root/verification/kani/contracts.json") || exit 1
+for id in $(jq -r '.[].id' <<<"$manifest"); do
+	contract=$(jq --arg id "$id" '.[]|select(.id==$id)' <<<"$manifest") || exit 1
+	good=$(jq -n --argjson h "$contract" '{verification_results:{summary:{total_harnesses:1,executed:1,status:"completed",successful:1,failed:0},results:[{harness_id:$h.id,status:"Success",checks:(($h.assertions|map({category:"assertion",function:$h.function,description:("\""+.+"\""),status:"Success"}))+($h.covers|map({category:"cover",function:$h.function,description:.,status:"Satisfied"}))+($h.unreachable_covers|map({category:"cover",function:$h.function,description:.,status:"Unreachable"}))+($h.guards|map({category:"assertion",function:.function,description:("\""+.description+"\""),status:"Unreachable"}))+[{category:"array_bounds",function:"core::slice",description:"compiler unreachable path",status:"Unreachable"}])}]}}') || exit 1
+	expect "manifest positive $id" 0 positive "$good" "$id"
+	bad=$(jq --argjson h "$contract" '.verification_results.summary.successful=0 | .verification_results.summary.failed=1 | .verification_results.results[0].status="Failure" | (.verification_results.results[0].checks[]|select(.description==("\""+$h.negative+"\""))).status="Failure"' <<<"$good") || exit 1
+	expect "manifest negative $id" 0 negative "$bad" "$id"
+	missing=$(jq 'del(.verification_results.results[0].checks[0])' <<<"$good") || exit 1
+	expect "missing contract assertion $id" 1 positive "$missing" "$id"
+	unreachable=$(jq '.verification_results.results[0].checks[0].status="Unreachable"' <<<"$good") || exit 1
+	expect "vacuous required assertion $id" 1 positive "$unreachable" "$id"
+	wrong=$(jq '.verification_results.results[0].checks[0].function="another::function"' <<<"$good") || exit 1
+	expect "wrong assertion provenance $id" 1 positive "$wrong" "$id"
+	wrong=$(jq '.verification_results.results[0].checks += [{category:"assertion",function:"core::slice",description:"unexpected unwind",status:"Failure"}]' <<<"$bad") || exit 1
+	expect "negative additional failure $id" 1 negative "$wrong" "$id"
+	wrong=$(jq '.verification_results.results[0].checks += [{category:"invented_category",function:"core::slice",description:"unknown verifier construct",status:"Success"}]' <<<"$good") || exit 1
+	expect "unknown check category $id" 1 positive "$wrong" "$id"
+	for status in Error Undetermined Timeout Unsupported; do
+		wrong=$(jq --arg status "$status" '.verification_results.results[0].checks[-1].status=$status' <<<"$bad") || exit 1
+		expect "negative unknown check $status $id" 1 negative "$wrong" "$id"
+	done
+done
+expect 'unknown harness selector' 1 positive "$fixture" unknown::contract
+metadata=$(jq '[.[]|{pretty_name:.id,crate_name:"randomr",attributes:{unwind_value:.unwind,stubs:.stubs,verified_stubs:[]}}]' <<<"$manifest") || exit 1
+expect 'complete discovered manifest' 0 discovery "$metadata"
+expect 'multiple top-level discovery documents' 1 discovery "[]$metadata"
+mutated=$(jq '.[0].attributes.unwind_value+=1' <<<"$metadata") || exit 1
+expect 'changed compiler unwind metadata' 1 discovery "$mutated"
+mutated=$(jq '.[0].attributes.stubs=[{original:"some::function",replacement:"unreviewed_stub"}]' <<<"$metadata") || exit 1
+expect 'unreviewed stub metadata' 1 discovery "$mutated"
+mutated=$(jq 'del(.[0])' <<<"$metadata") || exit 1
+expect 'omitted discovered proof' 1 discovery "$mutated"
+mutated=$(jq '. += [{pretty_name:"unexpected::proof",crate_name:"randomr",attributes:{unwind_value:2,stubs:[],verified_stubs:[]}}]' <<<"$metadata") || exit 1
+expect 'extra discovered proof' 1 discovery "$mutated"
 [ "$failed" -eq 0 ] || exit 1
 echo 'Kani gate PASSED: positive/negative evidence and malformed/unknown/vacuous cases'

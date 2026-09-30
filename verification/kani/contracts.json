@@ -1,0 +1,118 @@
+{
+	"templates": {
+		"range": {
+			"unwind": 3,
+			"assertions": ["range exact reduction", "range rejection consumption", "range output bounded", "range equal preimage certificate"],
+			"negative": "range exact reduction",
+			"covers": ["range zero accepted reachable", "range cutoff endpoint reachable", "range last residue reachable"],
+			"scope": "All words and valid i64 start offsets at one named cardinality; at most one rejection then an accepted zero word. Word-interface abstraction; no BLAKE3/byte-endian/source-error proof. Equal-preimage certificate assumes a uniform primitive word."
+		},
+		"division": {
+			"unwind": 2,
+			"assertions": ["division exponent acceptance", "division result canonical", "division sign restored", "division exponent restored", "division normalization even", "division quotient certificate", "division overflow typed"],
+			"negative": "division quotient certificate",
+			"covers": ["division minimum numerator reachable", "division maximum numerator reachable", "division positive success reachable", "division negative success reachable", "division overflow reachable"],
+			"scope": "Every canonical nonzero numerator, both signs and all i32 exponents; one named nonzero normalized divisor magnitude. Independent widened quotient certificate; not all denominator magnitudes."
+		}
+	},
+	"harnesses": [
+		{
+			"id": "kani_proofs::fixed_parts_contract", "function": "kani_proofs::fixed_parts_contract", "unwind": 2,
+			"assertions": ["canonical acceptance contract", "accepted parts preserved", "accepted value canonical"],
+			"negative": "canonical acceptance contract",
+			"covers": ["canonical zero reachable", "negative canonical endpoint reachable", "positive canonical endpoint reachable", "rejected minimum mantissa reachable", "noncanonical zero reachable"],
+			"scope": "All i64 mantissas and i32 exponents; no assumptions/stubs."
+		},
+		{
+			"id": "kani_proofs::negation_contract", "function": "kani_proofs::negation_contract", "unwind": 2,
+			"assertions": ["negation stays canonical", "negation reverses sign exactly", "negation preserves exponent", "double negation identity"],
+			"negative": "double negation identity",
+			"covers": ["negation zero reachable", "negation negative endpoint reachable", "negation positive endpoint reachable"],
+			"scope": "All canonical values, including zero and all i32 exponents."
+		},
+		{
+			"id": "kani_proofs::addition_subtraction_closure_contract", "function": "kani_proofs::addition_subtraction_closure_contract", "unwind": 2,
+			"assertions": ["add subtract result canonical", "add subtract overflow typed", "add subtract safe exponents succeed", "addition zero identity"],
+			"negative": "addition zero identity",
+			"covers": ["subtraction cancellation reachable", "addition overflow reachable", "addition subtraction safe success reachable"],
+			"scope": "All canonical operand pairs and all i32 exponents; successful outputs satisfy an independent canonical predicate. Success required for exponents [-1000,1000]. Does not claim exact real addition."
+		},
+		{
+			"id": "kani_proofs::multiplication_unit_mantissa_contract", "function": "kani_proofs::multiplication_named::<4611686018427387904>", "unwind": 2,
+			"assertions": ["multiply exponent acceptance", "multiply overflow typed", "multiply result canonical", "multiply exponent restored", "multiply sign restored", "multiply exact mantissa"],
+			"negative": "multiply exact mantissa",
+			"covers": ["multiply zero reachable", "multiply low normalization reachable", "multiply overflow reachable"],
+			"unreachable_covers": ["multiply high normalization reachable"],
+			"scope": "First magnitude 2^62, both signs, every canonical second operand and all i32 exponents; exact truncated product. Not all first magnitudes."
+		},
+		{
+			"id": "kani_proofs::multiplication_incremented_unit_contract", "function": "kani_proofs::multiplication_named::<4611686018427387905>", "unwind": 2,
+			"assertions": ["multiply exponent acceptance", "multiply overflow typed", "multiply result canonical", "multiply exponent restored", "multiply sign restored", "multiply exact mantissa"],
+			"negative": "multiply exact mantissa",
+			"covers": ["multiply zero reachable", "multiply high normalization reachable", "multiply low normalization reachable", "multiply overflow reachable"],
+			"scope": "First magnitude 2^62+1, both signs, every canonical second operand and all i32 exponents; exact truncated product. High branch occurs only at second magnitude i64::MAX. Other first magnitudes, including i64::MAX, remain unproved."
+		},
+		{
+			"id": "kani_proofs::division_pow2_contract", "function": "kani_proofs::division_named::<4611686018427387904>", "template": "division", "divisor": "4611686018427387904", "unreachable_covers": ["division normalization shift reachable"]
+		},
+		{
+			"id": "kani_proofs::division_pow2_plus_one_contract", "function": "kani_proofs::division_named::<4611686018427387905>", "template": "division", "divisor": "4611686018427387905", "covers_extra": ["division normalization shift reachable"]
+		},
+		{
+			"id": "kani_proofs::division_zero_contract", "function": "kani_proofs::division_zero_contract", "unwind": 2,
+			"assertions": ["division zero contract"], "negative": "division zero contract",
+			"covers": ["division zero over zero reachable", "division nonzero over zero reachable", "division zero over negative reachable"],
+			"scope": "Canonical operands with at least one zero; all i32 exponents."
+		},
+		{
+			"id": "drbg::kani_contracts::restore_contract", "function": "drbg::kani_contracts::restore_contract", "unwind": 33,
+			"assertions": ["restore cap acceptance", "restore starts with empty cache", "restore error typed", "restore exported state exact"], "negative": "restore exported state exact",
+			"covers": ["restore zero reachable", "restore cap reachable", "restore cap plus one rejected reachable", "restore maximum rejected reachable"],
+			"stubs": [{"original": "zeroize::optimization_barrier", "replacement": "compiler_barrier"}],
+			"scope": "Every key and u64 position. Barrier has no modeled program-memory effects; actual volatile writes retained. Drop-time/compiled erasure excluded."
+		},
+		{
+			"id": "drbg::kani_contracts::seek_contract", "function": "drbg::kani_contracts::seek_contract", "unwind": 1025, "timeout_seconds": 360,
+			"assertions": ["seek cap acceptance", "seek preserves key", "seek requested position", "seek wipes cache", "seek error typed", "seek failure state unchanged"], "negative": "seek error typed",
+			"covers": ["seek zero reachable", "seek cap reachable", "seek error reachable", "seek first cache byte reachable", "seek last cache byte reachable", "seek nonzero cache byte reachable"],
+			"stubs": [{"original": "zeroize::optimization_barrier", "replacement": "compiler_barrier"}],
+			"scope": "Every key/cache/cache metadata, valid initial cursor and requested u64 cursor. Symbolic byte index quantifies over every cache byte. Actual cache erasure writes retained; compiler retention/drop-time erasure excluded."
+		},
+		{
+			"id": "drbg::kani_contracts::fill_error_contract", "function": "drbg::kani_contracts::fill_error_contract", "unwind": 9,
+			"assertions": ["read error typed", "read error state unchanged", "read error destination unchanged"], "negative": "read error destination unchanged",
+			"covers": ["read at cap error reachable", "read crossing cap error reachable"],
+			"stubs": [{"original": "zeroize::optimization_barrier", "replacement": "compiler_barrier"}, {"original": "super::fill_xof", "replacement": "forbidden_xof"}, {"original": "<[u8;1024]aszeroize::Zeroize>::zeroize", "replacement": "forbidden_array_erasure"}],
+			"guards": [{"function": "drbg::fill_xof", "description": "XOF unreachable on preflight error"}, {"function": "<[u8; 1024] as zeroize::Zeroize>::zeroize", "description": "cache erasure unreachable on read contract"}],
+			"scope": "Read lengths 1..8 crossing the cap, every valid initial cursor and arbitrary backing state; symbolic byte indices quantify unchanged key/cache. XOF and cache erasure replaced by forbidden-call assertions, which must be unreachable."
+		},
+		{
+			"id": "drbg::kani_contracts::cached_read_8_contract", "function": "drbg::kani_contracts::cached_read_8_contract", "unwind": 9,
+			"assertions": ["cached read success", "cached read immutable backing state", "cached read exact cursor", "cached read exact bytes untouched tail"], "negative": "cached read exact bytes untouched tail",
+			"covers": ["cached empty read at cap reachable", "cached last eight bytes reachable", "cached first byte reachable"],
+			"stubs": [{"original": "zeroize::optimization_barrier", "replacement": "compiler_barrier"}, {"original": "super::fill_xof", "replacement": "forbidden_xof"}, {"original": "<[u8;1024]aszeroize::Zeroize>::zeroize", "replacement": "forbidden_array_erasure"}],
+			"guards": [{"function": "drbg::fill_xof", "description": "XOF unreachable on preflight error"}, {"function": "<[u8; 1024] as zeroize::Zeroize>::zeroize", "description": "cache erasure unreachable on read contract"}],
+			"scope": "Read lengths 0..8 wholly inside coherent cached spans; symbolic backing bytes, no cache-content/BLAKE3 correctness claim. Refills and erasure must be unreachable."
+		},
+		{
+			"id": "batch::kani_contracts::portable_wrapper_contract", "function": "batch::kani_contracts::portable_wrapper_contract", "unwind": 33,
+			"assertions": ["batch typed prefix result", "batch scalar source consumption", "batch initialized prefix untouched tail"], "negative": "batch initialized prefix untouched tail",
+			"covers": ["batch empty reachable", "batch four successes reachable", "batch partial failure reachable", "batch immediate failure reachable"],
+			"stubs": [{"original": "crate::distribution::normal_int", "replacement": "modeled_scalar"}],
+			"scope": "0..4 output lanes and arbitrary scalar results/first-error positions, range 0..20. Production portable wrapper and parameter kernel; scalar sampler replaced by explicit one-word/error model. No nonlinear/AVX2 equivalence claim."
+		},
+		{
+			"id": "batch::kani_contracts::portable_source_error_contract", "function": "batch::kani_contracts::portable_source_error_contract", "unwind": 33,
+			"assertions": ["batch actual scalar source error typed", "batch actual scalar source error consumption", "batch actual source error destination unchanged"], "negative": "batch actual source error destination unchanged",
+			"covers": ["batch actual empty success reachable", "batch actual first error reachable"],
+			"scope": "0..4 lanes, range 0..20 and immediate EndOfSource; actual scalar sampler, no stubs. No successful nonlinear/AVX2 proof."
+		},
+		{"id": "distribution::kani_contracts::span_3_contract", "function": "distribution::kani_contracts::named::<3>", "template": "range", "cardinality": "3", "covers_extra": ["range rejection reachable"]},
+		{"id": "distribution::kani_contracts::span_257_contract", "function": "distribution::kani_contracts::named::<257>", "template": "range", "cardinality": "257", "covers_extra": ["range rejection reachable"]},
+		{"id": "distribution::kani_contracts::span_u32_max_contract", "function": "distribution::kani_contracts::named::<4294967295>", "template": "range", "cardinality": "4294967295", "covers_extra": ["range rejection reachable"]},
+		{"id": "distribution::kani_contracts::span_u32_universe_contract", "function": "distribution::kani_contracts::named::<4294967296>", "template": "range", "cardinality": "4294967296", "unreachable_covers": ["range rejection reachable"]},
+		{"id": "distribution::kani_contracts::span_u32_plus_one_contract", "function": "distribution::kani_contracts::named::<4294967297>", "template": "range", "cardinality": "4294967297", "covers_extra": ["range rejection reachable"]},
+		{"id": "distribution::kani_contracts::span_cap_minus_one_contract", "function": "distribution::kani_contracts::named::<9007199254740991>", "template": "range", "cardinality": "9007199254740991", "covers_extra": ["range rejection reachable"]},
+		{"id": "distribution::kani_contracts::span_cap_contract", "function": "distribution::kani_contracts::named::<9007199254740992>", "template": "range", "cardinality": "9007199254740992", "unreachable_covers": ["range rejection reachable"]}
+	]
+}

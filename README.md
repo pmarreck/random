@@ -557,10 +557,12 @@ Cold `./test` and Nix runs are dominated by ReleaseFast compilation and the
 multi-target artifact gates, not by the pure arithmetic checks themselves.
 
 On x86_64 Linux, `TMPDIR=/dev/shm ./verify-kani` runs the optional, pinned
-Kani fixed-point constructor proof and its deliberately failing control.
-It uses a separate Nix toolchain; ordinary builds and tests do not require Kani.
-See the [bounded proof report](docs/reports/2026-09-24-kani-poc.md) for the
-exact claims, resource measurements, and limitations.
+21 Kani constructor and bounded arithmetic, DRBG, range and batch contracts, each
+with a named deliberately failing control. It uses a separate Nix toolchain;
+ordinary builds and tests do not require Kani. The [contract report](docs/reports/2026-09-30-kani-contracts.md)
+states exact domains, modeled primitives, resource measurements and remaining
+proof gaps; the [original constructor POC](docs/reports/2026-09-24-kani-poc.md)
+preserves its earlier baseline. These are not whole-library or CSPRNG-security proofs.
 
 `./stats` is intentionally separate from the correctness suite. It streams raw
 bytes and distribution samples without writing them to disk, checks obvious

@@ -4,8 +4,9 @@ Completed work: [log](docs/PLAN_LOG.md). Historical directives and deferred risk
 
 ## Current: reusable libraries, then Rust verification
 
-- [ ] Ship caller-owned LuaJIT DRBG and distribution library, verify dedicated Nix library outputs for all four languages, and reply to ai_edu with the pinned surface (Peter, 2026-09-30).
-- [ ] Extend Kani proofs for cursor/error atomicity, unbiased range reduction, exact division, canonical arithmetic closure and bounded scalar batch equivalence; retain failing controls, reachability and measured bounds (Peter, 2026-09-30).
+- [x] Ship caller-owned LuaJIT DRBG/distribution library and dedicated Nix library consumer checks for all four languages; reply to ai_edu with the pinned surface (done 2026-09-30 14:49 EDT; commit: d2dd7e7; review: CODE_REVIEW.md).
+- [x] Extend Kani with 21 reviewed bounded cursor/read, named-range, fixed-arithmetic and portable-batch contracts; 42 red/green runs, complete discovery and all 28 ordinary suites pass (done 2026-09-30 17:46 EDT; commit: containing commit; context: docs/reports/2026-09-30-kani-contracts.md).
+- [ ] Complete the deferred MAX-mantissa/general multiplication Kani proof and minimize the rejected SMT diagnostic whose exported counterexamples do not reproduce natively (context: docs/reports/2026-09-30-kani-contracts.md).
 
 - [x] Implement reviewed Nix-isolated Kani constructor POC; red/green proofs, five covers and all 27 FAST suites pass (done 2026-09-24 13:53 EDT; commit: containing commit; context: docs/reports/2026-09-24-kani-poc.md).
 
