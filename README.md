@@ -350,6 +350,44 @@ path dependency; and `random-lean-lib` supplies source under `src` plus compiled
 modules under `lib/lean`. The package gate imports each native-language surface,
 and loads the installed shared `librandomz` directly through LuaJIT FFI.
 
+The LuaJIT package exports `drbg` and `distributions` alongside `fixed` and
+`blake3`. Add `${random.packages.${system}.random-luajit-lib}/lib/?.lua` to
+`LUA_PATH` (with `;;` to retain its defaults), then:
+
+```lua
+local drbg = require("drbg")
+local fixed = require("fixed")
+local seed = string.rep("\0", 31) .. string.char(42) -- canonical 32-byte seed
+local rng = drbg.new(seed) -- optional second argument: byte position
+local die = rng:range(1, 20)
+local bytes = rng:bytes(64)
+local unit = rng:uniform_number() -- exact k/2^32 as a Lua number
+local mean_m, mean_e = fixed.from_int(0)
+local sd_m, sd_e = fixed.from_int(1)
+local normal_m, normal_e = rng:normal(mean_m, mean_e, sd_m, sd_e)
+local resumed = drbg.from_state(rng:state())
+assert(rng:bytes(8) == resumed:bytes(8))
+```
+
+Each instance advances its private state. Construction/restoration never changes
+caller-supplied tables; `state()` returns a fresh snapshot, `clone()` forks the
+current stream, and `with_position(n)` creates a separate positioned stream.
+Raw seed material and exported derived keys are sensitive. Lua strings cannot
+guarantee secure erasure; callers must protect snapshots and use unpredictable
+seed material when unpredictability is required.
+
+Methods include `bytes`, `u32`, `u64`, `range`, `uniform`, `uniform_number`,
+`normal_int`, `normal`, `exponential`, `poisson`, `log_normal`, and `beta`.
+Fractional distributions return canonical `(mantissa, exponent)` pairs for
+`fixed.tostring`; `uniform_number` is the exact binary64 convenience API.
+Pass the pairs produced by `fixed.from_int` or `fixed.parse`: nonzero mantissas
+must be `int64_t` values, and exponents must be integral Lua numbers. The sampler
+domain limits match Rust's public API (beta exponents `-20..20`, log-normal
+mean exponent at most 27 and standard-deviation exponent at most 23).
+Position/count bounds are whole numbers in `0..2^53`. Lua errors report invalid
+arguments before drawing; arithmetic/source errors may follow earlier draws.
+The module performs no entropy or terminal I/O: applications supply their seeds.
+
 ### Manual
 
 For the LuaJIT oracle, put `bin/` on your `PATH`; it requires `luajit`. For the
@@ -496,7 +534,7 @@ direnv allow      # or: nix develop
 ./test            # FAST mode (quick, quiet on success)
 FAST= ./test      # full statistical run
 ./stats           # separate, deeper sanity analysis of all four command families
-nix flake check   # hermetic CI check (runs all 27 suites, but FORCES FAST=1 --
+nix flake check   # hermetic CI check (runs all 28 suites, but FORCES FAST=1 --
                    # kernel_jit_diff's 60000-iteration deep JIT differential
                    # is deep-mode-only by design and is SKIPPED here, not run;
                    # run `FAST= ./test` locally for the full non-FAST suite)

@@ -806,3 +806,31 @@ accuracy, and compiler/runtime/hardware correctness are not claimed as proved.
 
 Not applicable. RNG continuation state is explicit process input/output and no
 implementation persists it in a database or temporary payload file.
+
+## 2026-09-30: caller-owned LuaJIT library
+
+A fresh reviewer derived the library contract before inspecting the extraction.
+The review found three validation defects: fractional mantissas could hang inside
+normalization, an explicit `false` position defaulted to zero, and `normal_int`
+accepted an inclusive span wider than 2^53. Persistent rejection tests were added;
+the constructor regression failed before the fixes. Canonical-pair validation now
+avoids normalization, only nil defaults the position, and both range methods
+share an exact-width guard. Log-normal and beta parameter domains now match Rust.
+
+The reviewer independently rechecked 115 malformed-parameter cases, ownership
+and clone isolation, 500 interleaved calls, import/draw I/O traps, exact-span
+boundaries, nonlinear domain corners, and 43 exercised rejection paths. A
+131,073-byte native Zig/C differential covered a maximal seed, chunk boundaries
+and positioned reads. The shared suite compares values and byte cursors with
+all four CLIs. No remaining actionable LuaJIT defect was found in this scope.
+
+The Nix library gate now executes installed consumers for all four languages:
+LuaJIT module contracts, Zig module and shared C ABI frozen bytes, Rust frozen
+bytes/normal/resumption, and Lean compiled-module frozen bytes/resumption.
+`checks.x86_64-linux.library-packages` is an exact-commit CI target. These are
+deterministic execution controls, not a cryptographic security proof.
+
+A five-run release-CLI smoke comparison found no meaningful extraction slowdown:
+20,000 d20 draws measured 49.4 ms before and 49.7 ms after; 2,000 normal integers
+measured 230.7 ms before and 230.2 ms after. Hyperfine discarded output; no random
+payload files were written. Measurement variance was larger than these changes.

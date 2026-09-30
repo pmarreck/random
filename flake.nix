@@ -296,7 +296,7 @@
 			runHook postInstall
 		  '';
 		  meta = with pkgs.lib; {
-			description = "Importable LuaJIT numeric, BLAKE3, chart, and state modules";
+			description = "Caller-owned LuaJIT DRBG, distributions, numeric, chart and state modules";
 			license = licenses.mit;
 			platforms = platforms.unix;
 		  };
@@ -485,13 +485,6 @@
           pkgs.linkFarm "randomr-cross-targets"
             (pkgs.lib.mapAttrsToList (name: path: { inherit name path; })
               randomrCrossPackages);
-		leanLibraryConsumer = pkgs.writeText "randoml-library-consumer.lean"
-		  (builtins.concatStringsSep "\n" [
-			"import Randoml"
-			"#check Randoml.Drbg.init"
-			"#check Randoml.normal"
-			"example : Randoml.maxExactPosition = 9007199254740992 := rfl"
-		  ] + "\n");
       in {
         # The conditional attribute is merged INSIDE `packages`, not by `//`-ing
         # a second `{ packages.crossToolchains = ...; }` onto the outputs set.
@@ -728,6 +721,7 @@
 			  assert(b3.blake3("", nil, 32) ==
 			    "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262")
 			'
+			LUA_PATH='${randomLuaLib}/lib/?.lua;;' luajit ${./tests/luajit_library.lua}
 
 			# Load and execute the installed C ABI directly through LuaJIT FFI;
 			# no separately compiled test harness is needed for behavior coverage.
@@ -768,10 +762,10 @@
 			substituteInPlace "$TMPDIR/rust-consumer/Cargo.toml" \
 			  --replace-fail '../../../rust/randomr' \
 			  '${randomRustLib}/src/rust/randomr'
-			(cd "$TMPDIR/rust-consumer" && cargo check --offline)
+			(cd "$TMPDIR/rust-consumer" && cargo run --offline)
 
 			# The compiled Lean library imports without the CLI derivation or sources.
-			LEAN_PATH=${randomLeanLib}/lib/lean lean ${leanLibraryConsumer}
+			LEAN_PATH=${randomLeanLib}/lib/lean lean ${./tests/fixtures/randoml-consumer.lean}
 			touch $out
 		  '';
 

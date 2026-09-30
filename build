@@ -41,6 +41,8 @@ install -m755 result/libexec/randomr zig-out/bin/.randomr-bench
 # The LuaJIT frontend resolves these relative to its copied executable.
 install -m644 result/lib/blake3.lua             zig-out/lib/blake3.lua
 install -m644 result/lib/fixed.lua              zig-out/lib/fixed.lua
+install -m644 result/lib/drbg.lua               zig-out/lib/drbg.lua
+install -m644 result/lib/distributions.lua      zig-out/lib/distributions.lua
 install -m644 result/lib/distribution_charts.lua zig-out/lib/distribution_charts.lua
 install -m644 result/lib/distribution_view.lua   zig-out/lib/distribution_view.lua
 install -m644 result/lib/state_json.lua          zig-out/lib/state_json.lua

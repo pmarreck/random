@@ -2,7 +2,10 @@
 
 Completed work: [log](docs/PLAN_LOG.md). Historical directives and deferred risks: [context](docs/plan_context/legacy_decisions.md).
 
-## Current: bounded Rust verification experiment
+## Current: reusable libraries, then Rust verification
+
+- [ ] Ship caller-owned LuaJIT DRBG and distribution library, verify dedicated Nix library outputs for all four languages, and reply to ai_edu with the pinned surface (Peter, 2026-09-30).
+- [ ] Extend Kani proofs for cursor/error atomicity, unbiased range reduction, exact division, canonical arithmetic closure and bounded scalar batch equivalence; retain failing controls, reachability and measured bounds (Peter, 2026-09-30).
 
 - [x] Implement reviewed Nix-isolated Kani constructor POC; red/green proofs, five covers and all 27 FAST suites pass (done 2026-09-24 13:53 EDT; commit: containing commit; context: docs/reports/2026-09-24-kani-poc.md).
 
