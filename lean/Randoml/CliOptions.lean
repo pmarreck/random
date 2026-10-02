@@ -56,6 +56,7 @@ structure Options where
   encoding : Encoding := .text
   encodingCount : Nat := 0
   count : Option Nat := none
+  streaming : Bool := false
   countSet : Bool := false
   precision : Nat := 18
   precisionSet : Bool := false
@@ -265,6 +266,8 @@ def requireText (bytes : ByteArray) : Except String String :=
 def validate (options : Options) : Except String Options := do
   if options.modeCount > 1 then throw "only one distribution type can be specified"
   if options.operationCount > 1 then throw "only one stdin operation can be specified"
+  if options.streaming ∧ options.operation != .generate then
+    throw "--stream requires number or binary generation"
   if options.encodingCount > 1 then throw "output encodings are mutually exclusive"
   if options.view ∧ options.range.isSome then throw "--view does not accept a range"
   if options.view ∧ options.modeCount != 1 then
@@ -367,6 +370,8 @@ def parse (arguments : Array ByteArray) : Except String Options := do
     | "--weighted" => options := selectOperation options .weighted
     | "--binaryoutput" | "-b" =>
         options := { options with binary := true, generationSeen := true }
+    | "--stream" =>
+        options := { options with streaming := true, generationSeen := true }
     | "--hex" => options := selectEncoding options .hex
     | "--base64" => options := selectEncoding options .base64
     | "--state-stdout" =>

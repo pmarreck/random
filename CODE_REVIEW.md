@@ -863,3 +863,46 @@ SMT diagnostic's four exported witnesses pass native execution under both the
 production and exact verification-nightly compilers; no faulty component or
 production defect was established. These are open follow-ups, not exceptions
 to the acceptance gate or a whole-library/security correctness claim.
+
+## 2026-10-01: continuous CLI streaming
+
+A fresh reviewer froze twelve streaming obligations before inspecting the four
+adapter changes. It accepted this increment after 68 machine-asserted controls
+and 16 additional positive probes across LuaJIT, Zig/C, Rust and Lean. The fresh
+complete suite then passed: all 29 suites, including 168 shared streaming checks
+and 1,060 continuation checks. Generator arithmetic, cryptographic algorithms,
+public library interfaces and Lean proof modules are unchanged.
+
+The review found delayed Lua payload flushes and final-state-only writes that
+bypassed quiet broken-pipe handling. It also reproduced a `/dev/full` defect:
+zero-count stdout state returned empty-stderr failure in Lua and false success
+in Lean. All four adapters now report real sink failures as JSON and exit
+quietly when the consumer is already closed. Regressions create a readerless
+pipe before exec rather than depending on a race with `head -c 0`.
+
+Producer red tests also exposed finite direct-byte cursor overflow leaking a
+prefix and incorrect Lua/Lean Base64 padding at unbounded cursor exhaustion.
+Direct finite reads now preflight the complete count; continuous Base64 retains
+at most two carry bytes and pads only on finite completion. The consumer's
+independent seed-0, 8,192-byte SHA-256 fixture anchors the new streaming default;
+committed finite goldens were not changed. Pipeline checks assert producer and
+consumer status independently of digest equality.
+
+Memory controls deliver 256 MiB through pipes under a 128 MiB peak-resident
+threshold for each implementation, with an additional address-space limit for
+the three non-Lean adapters. Lean's unchanged runtime reserves large stacks
+and arenas, so its control uses resident memory rather than address space.
+Numeric controls and source inspection cover bounded buffers and the absence
+of retained value history or duration-proportional counters. These are execution
+and lifetime controls, not a formal proof of an infinite run. No payload files
+are written. Lean's release builder also consumes runtime linker inputs in one
+compile/link invocation; the production build now has a warning-rejection gate.
+
+The frozen obligation's unconditional interrupted-write retry sub-clause remains
+unestablished for the inherited C/Lua/Lean stdio boundary. Rust `write_all`
+retries interrupted writes; the other writers check full completion and fail
+closed, but no interrupted/zero-progress syscall fault injection was performed.
+This acceptance is scoped to the changed streaming behavior, not every frozen
+sub-clause, a new streaming theorem, cryptographic security or native execution
+on platforms other than this x86_64 Linux host. Optional output pacing remains
+deferred and must not be advertised as improving entropy or statistical quality.

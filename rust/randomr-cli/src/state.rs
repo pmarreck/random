@@ -103,7 +103,7 @@ pub fn apply(options: &mut Options, text: &str, positional: &[String]) -> Result
 			options.mode_count = usize::from(options.mode != Mode::Uniform);
 		}
 	}
-	if options.count.is_none() {
+	if options.count.is_none() && !options.stream {
 		if let Some(value) = take_optional_string(&mut args, "count")? {
 			options.count = Some(
 				parse_safe_i64(&value)

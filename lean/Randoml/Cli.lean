@@ -277,7 +277,8 @@ def helpText (program : String) : String :=
     "Options:",
     "  -a, --about         Show a short description",
     "  -b, --binaryoutput  Output binary bytes",
-    "  -c, --count N       Output N numbers (default: 1, or 1024 with -b)",
+    "  -c, --count N       Output N numbers/bytes (default: 1; -b keeps streaming)",
+    "      --stream        Keep streaming; an explicit --count supplies a finite cap",
     "  -d, --deterministic Use the cross-platform-identical BLAKE3 keyed XOF",
     "      --true-random   Force fresh OS/source CSPRNG entropy; ignore DRANDOML_SEED",
     "      --delimiter S   Set delimiter; empty means individual input bytes",
@@ -365,7 +366,7 @@ def makeSource (options : Options) : IO (Except String (Options × CliSource.Sou
 
 def generationBounds (options : Options) : Except String (Int × Int × Nat × Bool) := do
   let (start, stop) := options.range.getD (if options.binary then (0, 255) else (0, 99))
-  let count := options.count.getD (if options.binary then 1024 else 1)
+  let count := options.count.getD 1
   if options.binary ∧ start < 0 then throw "start value must be >= 0 for binary output"
   if options.binary ∧ stop > 255 then throw "end value must be <= 255 for binary output"
   if (options.mode == .uniform ∨ options.mode == .normal) ∧ start > stop then
@@ -426,8 +427,11 @@ def emitText (options : Options) (initialSource : CliSource.Source)
     (start stop : Int) (count : Nat) : IO (Except String CliSource.Source) := do
   let stdout ← IO.getStdout
   let mut source := initialSource
-  for index in [0:count] do
-    if index > 0 ∧ options.delimiter != "\n".toUTF8 then writeBytes stdout options.delimiter
+  let unbounded := options.count.isNone ∧ (options.binary ∨ options.streaming)
+  let mut remaining := count
+  let mut first := true
+  while unbounded ∨ remaining > 0 do
+    if !first ∧ options.delimiter != "\n".toUTF8 then writeBytes stdout options.delimiter
     match ← generate options source start stop with
     | .error message => return .error message
     | .ok (value, next) =>
@@ -437,6 +441,8 @@ def emitText (options : Options) (initialSource : CliSource.Source)
         | .ok text =>
             writeBytes stdout text.toUTF8
             if options.delimiter == "\n".toUTF8 then writeBytes stdout "\n".toUTF8
+    first := false
+    if unbounded then stdout.flush else remaining := remaining - 1
   if options.delimiter != "\n".toUTF8 then writeBytes stdout "\n".toUTF8
   stdout.flush
   pure (.ok source)
@@ -464,16 +470,35 @@ def emitBinary (options : Options) (initialSource : CliSource.Source)
   let stdout ← IO.getStdout
   let mut source := initialSource
   let mut remaining := count
-  while remaining > 0 do
-    let amount := min remaining streamChunk
+  let mut carry := ByteArray.empty
+  let unbounded := options.count.isNone ∧ (options.binary ∨ options.streaming)
+  let direct := options.mode == .uniform ∧ start = 0 ∧ stop = 255
+  if !unbounded ∧ direct then
+    if let .deterministic generator := source then
+      if count > maxExactPosition - generator.state.position then
+        return .error "RNG core failed: position overflow"
+  -- Bound first-output latency for expensive sampled streams; a multiple
+  -- of three also prevents base64 padding between complete chunks.
+  let chunkLimit := if unbounded ∧ !direct then 96 else streamChunk
+  while unbounded ∨ remaining > 0 do
+    let mut amount := if unbounded then chunkLimit else min remaining streamChunk
+    if unbounded ∧ direct then
+      if let .deterministic generator := source then
+        amount := min amount (max 1 (maxExactPosition - generator.state.position))
     match ← generatedBytes options source start stop amount with
     | .error message => return .error message
     | .ok (bytes, next) =>
         source := next
         if options.encoding == .hex then writeBytes stdout (byteHex bytes).toUTF8
-        else if options.encoding == .base64 then writeBytes stdout (Native.base64 bytes)
+        else if options.encoding == .base64 then
+          let combined := ByteArray.mk (carry.data ++ bytes.data)
+          let complete := combined.size - combined.size % 3
+          carry := combined.extract complete combined.size
+          writeBytes stdout (Native.base64 (combined.extract 0 complete))
         else writeBytes stdout bytes
-        remaining := remaining - amount
+        if unbounded then stdout.flush else remaining := remaining - amount
+  if options.encoding == .base64 ∧ carry.size > 0 then
+    writeBytes stdout (Native.base64 carry)
   if options.encoding != .text then writeBytes stdout "\n".toUTF8
   stdout.flush
   pure (.ok source)
@@ -716,6 +741,8 @@ def metadata (options : Options) (source : CliSource.Source)
         ",\"notices\":[" ++ noticeJson ++ "],\"warnings\":[]}\n"))
 
 def runGeneration (options : Options) : IO (Except String Unit) := do
+  if options.stateStdout ∧ options.count.isNone ∧ (options.binary ∨ options.streaming) then
+    return .error "streaming with --state-stdout requires --count"
   let sourceResult ← makeSource options
   let .ok (options, source) := sourceResult |
     return .error (match sourceResult with | .error message => message | _ => "source failed")
@@ -729,6 +756,7 @@ def runGeneration (options : Options) : IO (Except String Unit) := do
     if let some state := state then
       let stream ← if options.stateStdout then IO.getStdout else IO.getStderr
       writeBytes stream state.toUTF8
+      stream.flush
     return .ok ()
   let boundsResult := generationBounds options
   let .ok (start, stop, count, showDefault) := boundsResult |
@@ -744,6 +772,7 @@ def runGeneration (options : Options) : IO (Except String Unit) := do
   if let some state := state then
     let stream ← if options.stateStdout then IO.getStdout else IO.getStderr
     writeBytes stream state.toUTF8
+    stream.flush
   pure (.ok ())
 
 def effectiveArguments (arguments : Array ByteArray) : IO (Array ByteArray) := do
@@ -817,12 +846,16 @@ def run (arguments : Array ByteArray) : IO (Except String Unit) := do
 def runRaw (arguments : Array ByteArray) : IO UInt32 := do
   try
     match ← run arguments with
-    | .ok () => pure 0
+    | .ok () => pure (0 : UInt32)
     | .error message =>
         writeBytes (← IO.getStderr) (errorJson message).toUTF8
-        pure 1
+        pure (1 : UInt32)
   catch error =>
+    -- EPIPE is 32 on the supported POSIX/Windows CRTs. Other vanished
+    -- resources remain errors; a closed consumer must not emit replay state.
+    if let .resourceVanished code _ := error then
+      if code == 32 then return (0 : UInt32)
     writeBytes (← IO.getStderr) (errorJson error.toString).toUTF8
-    pure 1
+    pure (1 : UInt32)
 
 end Randoml.Cli

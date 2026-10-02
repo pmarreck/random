@@ -45,6 +45,7 @@ pub struct Options {
 	pub delimiter: String,
 	pub random_source: Option<PathBuf>,
 	pub count: Option<i64>,
+	pub stream: bool,
 	pub seed: Option<[u8; 32]>,
 	pub state_position: Option<u64>,
 	pub range: Option<(i64, i64)>,
@@ -83,6 +84,7 @@ impl Options {
 			delimiter: "\n".to_owned(),
 			random_source: None,
 			count: None,
+			stream: false,
 			seed: None,
 			state_position: None,
 			range: None,
@@ -102,6 +104,10 @@ impl Options {
 		}
 		self.mode = mode;
 		self.mode_count += 1;
+	}
+
+	pub fn unbounded(&self) -> bool {
+		(self.binary || self.stream) && self.count.is_none()
 	}
 }
 
@@ -134,6 +140,10 @@ pub fn parse(args: &[String], program: &str) -> Result<Options, String> {
 			"--exponential" => options.select(Mode::Exponential),
 			"--poisson" => options.select(Mode::Poisson),
 			"--log-normal" => options.select(Mode::LogNormal),
+			"--stream" => {
+				options.stream = true;
+				options.generation_seen = true;
+			}
 			"--binaryoutput" | "-b" => {
 				options.binary = true;
 				options.encoding_set = true;
@@ -385,6 +395,12 @@ pub fn parse(args: &[String], program: &str) -> Result<Options, String> {
 	}
 	if options.state_stdout && options.binary && !options.hex && !options.base64 {
 		return Err("--state-stdout requires --hex or --base64 with binary output".to_owned());
+	}
+	if options.stream && (options.choose || options.shuffle || options.weighted) {
+		return Err("--stream requires number or binary generation".to_owned());
+	}
+	if options.state_stdout && options.unbounded() {
+		return Err("streaming with --state-stdout requires --count".to_owned());
 	}
 	if options.state_stdout && options.force_true_random {
 		return Err("--state-stdout cannot be combined with --true-random".to_owned());

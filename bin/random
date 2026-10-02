@@ -700,7 +700,8 @@ local function print_help(invocation, distribution)
 	print("Options:")
 	print("  -a, --about         Show a short description")
 	print("  -b, --binaryoutput  Output binary bytes")
-	print("  -c, --count N       Output N numbers (default: 1, or 1024 with -b)")
+	print("  -c, --count N       Output N numbers/bytes (default: 1; -b keeps streaming)")
+	print("      --stream        Keep streaming; an explicit --count supplies a finite cap")
 	print("  -d, --deterministic Use the cross-platform-identical BLAKE3 keyed XOF")
 	print("      --true-random   Force fresh OS/source CSPRNG entropy; ignore DRANDOM_SEED")
 		print("      --delimiter S   Set delimiter; empty means individual input bytes")
@@ -873,7 +874,7 @@ local function apply_state(options, positionals)
 		else return nil, "state distribution is unsupported" end
 	end
 
-	if options.count == nil and args.count ~= nil then
+	if options.count == nil and not options.stream and args.count ~= nil then
 		options.count = fx.parse_int_safe(args.count)
 		if options.count == nil or options.count < 0 then return nil, "state count is invalid" end
 	end
@@ -967,6 +968,7 @@ local function parse_args()
 		shuffle = false,
 		weighted = false,
 		count = nil,
+		stream = false,
 		seed = nil,
 		seed_provided = false,
 		state_text = nil,
@@ -1139,6 +1141,9 @@ local function parse_args()
 			options.generation_option_seen = true
 			options.state_stdout = true
 			options.deterministic = true
+		elseif arg_val == "--stream" then
+			options.stream = true
+			options.generation_option_seen = true
 		elseif arg_val == "--count" or arg_val == "-c" then
 			options.generation_option_seen = true
 			i = i + 1
@@ -1424,6 +1429,14 @@ local function parse_args()
 		stderr_write("Error: only one stdin operation can be specified\n")
 		os.exit(1)
 	end
+	if options.stream and stdin_modes > 0 then
+		stderr_write("Error: --stream requires number or binary generation\n")
+		os.exit(1)
+	end
+	if options.state_stdout and options.count == nil and (options.binary_output or options.stream) then
+		stderr_write("Error: streaming with --state-stdout requires --count\n")
+		os.exit(1)
+	end
 	if options.base64_output and not options.binary_output then
 		stderr_write("Error: --base64 requires --binaryoutput\n")
 		os.exit(1)
@@ -1582,6 +1595,9 @@ end
 
 local function emit_success_metadata(options, seed_material, start_val, end_val, count)
 	if not io.stdout:flush() then
+		-- A finite small batch can hit a closed pipe only at this flush.
+		-- Exit before formatting or publishing its unread continuation state.
+		if ffi.errno() == 32 then os.exit(0) end
 		emit_error_json("stdout write failed", "io")
 		return false
 	end
@@ -1598,7 +1614,11 @@ local function emit_success_metadata(options, seed_material, start_val, end_val,
 	end
 	if output ~= nil then
 		local stream = options.state_stdout and io.stdout or io.stderr
-		if not stream:write(output) or not stream:flush() then return false end
+		if not stream:write(output) or not stream:flush() then
+			if options.state_stdout and ffi.errno() == 32 then os.exit(0) end
+			if options.state_stdout then emit_error_json("stdout write failed", "io") end
+			return false
+		end
 	end
 	return true
 end
@@ -1745,7 +1765,7 @@ local function main()
 	if options.binary_output then
 		start_val = options.start_val or 0
 		end_val = options.end_val or 255
-		count = options.count or 1024
+		count = options.count
 
 		if start_val < 0 then
 			stderr_write("Error: start value must be >= 0 for binary output\n")
@@ -1764,7 +1784,7 @@ local function main()
 		end
 		start_val = options.start_val or 0
 		end_val = options.end_val or 99
-		count = options.count or 1
+		count = options.count or (not options.stream and 1 or nil)
 	end
 
 	-- Validate range for integer distributions
@@ -1791,42 +1811,63 @@ local function main()
 	-- already applied below) or a 2-element {m, e} soft-float table
 	-- (--exponential, --log-normal, --beta) -- the shape distinguishes the
 	-- two cases downstream, so no separate is-integer flag is needed.
-	local values = {}
-	local binary_data = options.binary_output and buffer.new(SAMPLED_CHUNK_BYTES)
+	-- Bound first-output latency for expensive sampled streams. Both chunk
+	-- sizes are base64 quanta, so only a finite final chunk needs padding.
+	local sampled_chunk = count == nil and 96 or SAMPLED_CHUNK_BYTES
+	local binary_data = options.binary_output and buffer.new(sampled_chunk)
 	local binary_ptr
 	local binary_length = 0
 	local has_distribution = options.normalized or options.exponential or
 		options.poisson or options.log_normal or options.beta
 	local direct_binary = options.binary_output and not has_distribution and
 		start_val == 0 and end_val == 255
+	local function stdout_failure()
+		-- EPIPE is 32 on supported POSIX/Windows CRTs. The consumer chose to
+		-- stop; do not publish a success cursor for buffered, unread bytes.
+		if ffi.errno() == 32 then os.exit(0) end
+		emit_error_json("stdout write failed", "io")
+		os.exit(1)
+	end
+	local function write_stdout(data)
+		if not io.stdout:write(data) then stdout_failure() end
+	end
 
 	-- Fail on the first rejected write, before drawing the next chunk. A failed
 	-- stream cannot publish a successful continuation position.
+	local base64_carry = ""
 	local function write_binary_chunk(data)
-		if options.base64_output then data = base64_encode(data)
+		if options.base64_output then
+			data = base64_carry .. data
+			local complete = #data - (#data % 3)
+			base64_carry = data:sub(complete + 1)
+			data = base64_encode(data:sub(1, complete))
 		elseif options.hex_output then data = binary_hex_encode(data) end
-		if not io.stdout:write(data) then
-			emit_error_json("stdout write failed", "io")
-			os.exit(1)
-		end
+		write_stdout(data)
+		if count == nil and not io.stdout:flush() then stdout_failure() end
 	end
 
 	if direct_binary then
 		-- Retain the old whole-request preflight at the exact-integer cursor cap.
-		if options.deterministic and drbg_rng:position() > MAX_EXACT_INTEGER - count then
+		if count ~= nil and options.deterministic and drbg_rng:position() > MAX_EXACT_INTEGER - count then
 			error("BLAKE3 DRBG byte position exceeds the Lua oracle's exact-integer limit")
 		end
 		local remaining = count
-		while remaining > 0 do
-			local size = math.min(remaining, BINARY_CHUNK_BYTES)
+		while remaining == nil or remaining > 0 do
+			local size = remaining and math.min(remaining, BINARY_CHUNK_BYTES) or BINARY_CHUNK_BYTES
+			if remaining == nil and options.deterministic then
+				size = math.min(size, MAX_EXACT_INTEGER - drbg_rng:position())
+				if size == 0 then error("BLAKE3 DRBG byte position exceeds the Lua oracle's exact-integer limit") end
+			end
 			write_binary_chunk(options.deterministic and drbg_draw_bytes(size) or entropy_reader(size))
-			remaining = remaining - size
+			if remaining ~= nil then remaining = remaining - size end
 		end
 	elseif options.binary_output then
-		binary_ptr = binary_data:reserve(SAMPLED_CHUNK_BYTES)
+		binary_ptr = binary_data:reserve(sampled_chunk)
 	end
 
-	for _ = 1, direct_binary and 0 or count do
+	local remaining = direct_binary and 0 or count
+	local first = true
+	while remaining == nil or remaining > 0 do
 		local value
 
 		if options.exponential then
@@ -1878,15 +1919,29 @@ local function main()
 			end
 			binary_ptr[binary_length] = byte_val % 256
 			binary_length = binary_length + 1
-			if binary_length == SAMPLED_CHUNK_BYTES then
+			if binary_length == sampled_chunk then
 				binary_data:commit(binary_length)
 				write_binary_chunk(binary_data:get())
 				binary_length = 0
-				binary_ptr = binary_data:reserve(SAMPLED_CHUNK_BYTES)
+				binary_ptr = binary_data:reserve(sampled_chunk)
 			end
 		else
-			table.insert(values, value)
+			if not first and options.delimiter ~= "\n" then write_stdout(options.delimiter) end
+			local formatted
+			if type(value) == "table" then
+				formatted = fx.tostring(value[1], value[2], options.precision)
+			elseif options.hex_output then
+				formatted = string.format("%x", value)
+			else
+				local vm, ve = fx.from_int(value)
+				formatted = fx.tostring(vm, ve, 0)
+			end
+			write_stdout(formatted)
+			if options.delimiter == "\n" then write_stdout("\n") end
+			if count == nil and not io.stdout:flush() then stdout_failure() end
+			first = false
 		end
+		if remaining ~= nil then remaining = remaining - 1 end
 	end
 
 	-- Output
@@ -1896,70 +1951,13 @@ local function main()
 			write_binary_chunk(binary_data:get())
 		end
 		if options.base64_output or options.hex_output then
-			if not io.stdout:write("\n") then
-				emit_error_json("stdout write failed", "io")
-				os.exit(1)
+			if options.base64_output and #base64_carry > 0 then
+				write_stdout(base64_encode(base64_carry))
 			end
+			write_stdout("\n")
 		end
-	else
-		local output_delimiter = options.delimiter
-		if options.hex_output then
-			for i, v in ipairs(values) do
-				if i > 1 and output_delimiter ~= "\n" then
-					io.stdout:write(output_delimiter)
-				end
-				local formatted
-				if type(v) == "number" then
-					formatted = string.format("%x", v)
-				else
-					formatted = fx.tostring(v[1], v[2], options.precision)
-				end
-				if output_delimiter == "\n" then
-					print(formatted)
-				else
-					io.stdout:write(formatted)
-				end
-			end
-			if output_delimiter ~= "\n" then
-				print("")
-			end
-		else
-			for i, v in ipairs(values) do
-				if i > 1 and output_delimiter ~= "\n" then
-					io.stdout:write(output_delimiter)
-				end
-				local formatted
-				if type(v) == "number" then
-					-- Not plain tostring(v): Lua's default %.14g formatting
-					-- switches to scientific notation once an
-					-- integer-valued double's magnitude reaches ~1e14 --
-					-- the same defect lib/fixed.lua's M.tostring used to
-					-- have on its own output path (see that function's own
-					-- doc comment). Fixed the SAME way M.tostring itself
-					-- now is: route through fx.tostring's exact
-					-- digit-extraction rather than a floating-point-style
-					-- format specifier -- this file's own "no libm calls"
-					-- CLI test greps bin/random for exactly that shape of
-					-- specifier (a real determinism guard: formatting a
-					-- genuinely fractional value that way is
-					-- platform-dependent in its last digit), so this stays
-					-- clean of it too, not just clean of scientific
-					-- notation.
-					local vfm, vfe = fx.from_int(v)
-					formatted = fx.tostring(vfm, vfe, 0)
-				else
-					formatted = fx.tostring(v[1], v[2], options.precision)
-				end
-				if output_delimiter == "\n" then
-					print(formatted)
-				else
-					io.stdout:write(formatted)
-				end
-			end
-			if output_delimiter ~= "\n" then
-				print("")
-			end
-		end
+	elseif options.delimiter ~= "\n" then
+		write_stdout("\n")
 	end
 	if not emit_success_metadata(options, seed_material, start_val, end_val, count) then
 		os.exit(1)

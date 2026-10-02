@@ -32,6 +32,10 @@
 #define DEFAULT_FRACTION_DIGITS 18
 #define MAX_FRACTION_DIGITS 18
 #define STREAM_CHUNK 65536
+#define SAMPLED_STREAM_CHUNK 96
+
+/* Distinct from failure: do not emit success metadata after consumer closure. */
+enum { OUTPUT_CLOSED = 2 };
 
 typedef enum distribution {
 	DIST_UNIFORM,
@@ -79,6 +83,8 @@ typedef struct options {
 	const char *delimiter;
 	const char *random_source;
 	bool count_set;
+	bool stream;
+	bool unbounded;
 	int64_t count;
 	bool seed_set;
 	uint8_t seed[32];
@@ -453,7 +459,8 @@ static void print_help(distribution dist, chart_renderer renderer)
 	puts("Options:");
 	puts("  -a, --about         Show a short description");
 	puts("  -b, --binaryoutput  Output binary bytes");
-	puts("  -c, --count N       Output N numbers (default: 1, or 1024 with -b)");
+	puts("  -c, --count N       Output N numbers/bytes (default: 1; -b keeps streaming)");
+	puts("      --stream        Keep streaming; an explicit --count supplies a finite cap");
 	puts("  -d, --deterministic Use the cross-platform-identical BLAKE3 keyed XOF");
 	puts("      --true-random   Force fresh OS/source CSPRNG entropy; ignore DRANDOMZ_SEED");
 	puts("      --delimiter S   Set delimiter; empty means individual input bytes");
@@ -796,7 +803,7 @@ static int apply_state(options *opts, const char *range_literal)
 		}
 	}
 	const char *text;
-	if (!opts->count_set) {
+	if (!opts->count_set && !opts->stream) {
 		text = json_string(args, "count", false, error, sizeof(error));
 		if (text == &json_type_error_marker) { print_error(error); return 1; }
 		if (text != NULL) {
@@ -971,6 +978,9 @@ static int parse_arguments(int argc, char **argv, options *opts)
 			exit(0);
 		} else if (strcmp(arg, "--test") == 0) {
 			exit(run_test_suite());
+		} else if (strcmp(arg, "--stream") == 0) {
+			opts->stream = true;
+			opts->generation_option_seen = true;
 		} else if (strcmp(arg, "--deterministic") == 0 || strcmp(arg, "-d") == 0) {
 			opts->deterministic = true;
 			opts->generation_option_seen = true;
@@ -1319,6 +1329,15 @@ static int parse_arguments(int argc, char **argv, options *opts)
 	}
 	if (opts->base64_output && !opts->binary_output) {
 		print_error("--base64 requires --binaryoutput");
+		return 1;
+	}
+	if (opts->stream && stdin_modes > 0) {
+		print_error("--stream requires number or binary generation");
+		return 1;
+	}
+	opts->unbounded = (opts->stream || opts->binary_output) && !opts->count_set;
+	if (opts->state_stdout && opts->unbounded) {
+		print_error("streaming with --state-stdout requires --count");
 		return 1;
 	}
 	if (opts->state_stdout && opts->binary_output &&
@@ -1882,20 +1901,37 @@ static int direct_binary_fill(void *context, uint8_t *out, size_t count)
 static const char base64_alphabet[] =
 	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-static int emit_binary(byte_producer producer, void *context, uint64_t count,
+static int stdout_failure(void)
+{
+	int error = errno;
+	if (error == EPIPE) return OUTPUT_CLOSED;
+	print_error("stdout write failed");
+	return 1;
+}
+
+static int emit_binary(const options *opts, byte_producer producer, void *context, uint64_t count,
 	bool hex_output, bool base64_output)
 {
+	if (!opts->unbounded && opts->deterministic && producer == direct_binary_fill &&
+		count > RANDOMZ_MAX_EXACT_POSITION - deterministic_state.state.position)
+		return rng_failure(RANDOMZ_POSITION_OVERFLOW);
 	uint8_t *buffer = malloc(STREAM_CHUNK + 3);
 	if (buffer == NULL) { print_error("could not allocate output buffer"); return 1; }
 	uint64_t remaining = count;
 	uint8_t carry[3];
 	size_t carry_count = 0;
 	int result = 0;
-	while (remaining > 0) {
-		size_t chunk = remaining > STREAM_CHUNK ? STREAM_CHUNK : (size_t)remaining;
+	while (opts->unbounded || remaining > 0) {
+		size_t chunk = opts->unbounded || remaining > STREAM_CHUNK ? STREAM_CHUNK : (size_t)remaining;
+		/* Bound sampled first-output latency without changing draw order. */
+		if (opts->unbounded && producer == sampled_binary_fill) chunk = SAMPLED_STREAM_CHUNK;
+		if (opts->unbounded && opts->deterministic && producer == direct_binary_fill) {
+			uint64_t available = UINT64_C(9007199254740992) - deterministic_state.state.position;
+			if (available > 0 && available < chunk) chunk = (size_t)available;
+		}
 		int status = producer(context, buffer, chunk);
 		if (status != RANDOMZ_OK) { result = rng_failure(status); break; }
-		remaining -= chunk;
+		if (!opts->unbounded) remaining -= chunk;
 		if (base64_output) {
 			size_t i = 0;
 			if (carry_count > 0) {
@@ -1926,8 +1962,11 @@ static int emit_binary(byte_producer producer, void *context, uint64_t count,
 				putchar(hex[buffer[i] & 15]);
 			}
 		} else if (fwrite(buffer, 1, chunk, stdout) != chunk) {
-			print_error("stdout write failed");
-			result = 1;
+			result = stdout_failure();
+			break;
+		}
+		if (ferror(stdout) || (opts->unbounded && fflush(stdout) == EOF)) {
+			result = stdout_failure();
 			break;
 		}
 	}
@@ -1950,8 +1989,7 @@ static int emit_binary(byte_producer producer, void *context, uint64_t count,
 	}
 	free(buffer);
 	if (result == 0 && (fflush(stdout) == EOF || ferror(stdout))) {
-		print_error("stdout write failed");
-		result = 1;
+		result = stdout_failure();
 	}
 	return result;
 }
@@ -1963,13 +2001,14 @@ static int emit_text(const options *opts, rng_source *source,
 	int64_t batch[NORMAL_BATCH_VALUES];
 	size_t batch_count = 0, batch_index = 0;
 	int batch_status = RANDOMZ_OK;
-	for (uint64_t i = 0; i < count; ++i) {
+	bool first = true;
+	for (uint64_t i = 0; opts->unbounded || i < count; i += !opts->unbounded) {
 		generated_value value;
 		int status;
 		if (uses_range_normal(opts)) {
 			if (batch_index == batch_count) {
 				if (batch_status != RANDOMZ_OK) return rng_failure(batch_status);
-				size_t take = count - i > NORMAL_BATCH_VALUES ? NORMAL_BATCH_VALUES : (size_t)(count - i);
+				size_t take = opts->unbounded || count - i > NORMAL_BATCH_VALUES ? NORMAL_BATCH_VALUES : (size_t)(count - i);
 				batch_status = randomz_normal_int_batch(source->fill, source->context,
 					start, end, batch, take, &batch_count, RANDOMZ_BATCH_AUTO);
 				batch_index = 0;
@@ -1982,7 +2021,7 @@ static int emit_text(const options *opts, rng_source *source,
 			status = generate_value(opts, source, start, end, &value);
 		}
 		if (status != RANDOMZ_OK) return rng_failure(status);
-		if (i > 0 && strcmp(opts->delimiter, "\n") != 0) fputs(opts->delimiter, stdout);
+		if (!first && strcmp(opts->delimiter, "\n") != 0) fputs(opts->delimiter, stdout);
 		if (opts->hex_output && !value.is_fixed) {
 			printf("%" PRIx64, (uint64_t)value.integer);
 		} else if (value.is_fixed) {
@@ -1993,11 +2032,14 @@ static int emit_text(const options *opts, rng_source *source,
 			printf("%" PRId64, value.integer);
 		}
 		if (strcmp(opts->delimiter, "\n") == 0) putchar('\n');
+		first = false;
+		if (ferror(stdout) || (opts->unbounded && fflush(stdout) == EOF)) {
+			return stdout_failure();
+		}
 	}
 	if (strcmp(opts->delimiter, "\n") != 0) putchar('\n');
 	if (fflush(stdout) == EOF || ferror(stdout)) {
-		print_error("stdout write failed");
-		return 1;
+		return stdout_failure();
 	}
 	return 0;
 }
@@ -2023,7 +2065,7 @@ static const char *distribution_name(distribution dist)
 	}
 }
 
-static int emit_metadata(const options *opts, const randomz_drbg *drbg,
+static int write_metadata(const options *opts, const randomz_drbg *drbg,
 	int64_t start, int64_t end, uint64_t count, bool has_bounds)
 {
 	if (drbg == NULL && !default_range_notice && debug_warning == NULL) return 0;
@@ -2094,6 +2136,14 @@ static int emit_metadata(const options *opts, const randomz_drbg *drbg,
 	if (debug_warning != NULL) state_json_write_string(stream, debug_warning);
 	fputs("]}\n", stream);
 	return fflush(stream) == EOF || ferror(stream);
+}
+
+static int emit_metadata(const options *opts, const randomz_drbg *drbg,
+	int64_t start, int64_t end, uint64_t count, bool has_bounds)
+{
+	int result = write_metadata(opts, drbg, start, end, count, has_bounds);
+	if (result != 0 && opts->state_stdout) return stdout_failure();
+	return result;
 }
 
 static randomz_distribution public_distribution(distribution dist)
@@ -2282,7 +2332,7 @@ int main(int argc, char **argv)
 	if (opts.binary_output) {
 		start = opts.start_set ? opts.start : 0;
 		end = opts.end_set ? opts.end : 255;
-		count = opts.count_set ? (uint64_t)opts.count : 1024;
+		count = opts.count_set ? (uint64_t)opts.count : 0;
 		if (start < 0) { print_error("start value must be >= 0 for binary output"); return 1; }
 		if (end > 255) { print_error("end value must be <= 255 for binary output"); return 1; }
 	} else {
@@ -2312,11 +2362,11 @@ int main(int argc, char **argv)
 	if (opts.binary_output) {
 		bool direct = opts.dist == DIST_UNIFORM && start == 0 && end == 255;
 		if (direct) {
-			result = emit_binary(direct_binary_fill, &source, count,
+			result = emit_binary(&opts, direct_binary_fill, &source, count,
 				opts.hex_output, opts.base64_output);
 		} else {
 			sampled_binary sampled = {&opts, &source, start, end};
-			result = emit_binary(sampled_binary_fill, &sampled, count,
+			result = emit_binary(&opts, sampled_binary_fill, &sampled, count,
 				opts.hex_output, opts.base64_output);
 		}
 	} else {
@@ -2327,5 +2377,5 @@ int main(int argc, char **argv)
 	if (entropy.file != NULL) fclose(entropy.file);
 	state_json_free(opts.state_root);
 	free(opts.state_owned_text);
-	return result;
+	return result == OUTPUT_CLOSED ? 0 : result;
 }

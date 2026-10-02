@@ -61,8 +61,30 @@ enum Value {
 	Fixed(Fixed),
 }
 
+enum CliError {
+	Message(String),
+	Output(io::Error),
+}
+
+impl From<String> for CliError {
+	fn from(message: String) -> Self {
+		Self::Message(message)
+	}
+}
+
+impl From<&str> for CliError {
+	fn from(message: &str) -> Self {
+		Self::Message(message.to_owned())
+	}
+}
+
 fn main() {
-	if let Err(message) = run() {
+	if let Err(error) = run() {
+		let message = match error {
+			CliError::Output(error) if error.kind() == io::ErrorKind::BrokenPipe => return,
+			CliError::Output(_) => "stdout write failed".to_owned(),
+			CliError::Message(message) => message,
+		};
 		let encoded = format!(
 			"{{\"sv\":2,\"rv\":{},\"error\":{{\"code\":\"usage\",\"message\":{}}},\"notices\":[],\"warnings\":[]}}\n",
 			state::quote(VERSION),
@@ -73,7 +95,7 @@ fn main() {
 	}
 }
 
-fn run() -> Result<(), String> {
+fn run() -> Result<(), CliError> {
 	let os_args: Vec<OsString> = env::args_os().collect();
 	let program_path = os_args
 		.first()
@@ -95,7 +117,7 @@ fn run() -> Result<(), String> {
 				print_help(&program, &args)?;
 				return Ok(());
 			}
-			"--test" => return run_tests(&program_path),
+			"--test" => return run_tests(&program_path).map_err(CliError::from),
 			_ => {}
 		}
 	}
@@ -103,7 +125,7 @@ fn run() -> Result<(), String> {
 	let mut options = options::parse(&args, &program)?;
 	restore_os_path(&mut options, &os_paths)?;
 	if options.view {
-		return print_view(&args, &options);
+		return print_view(&args, &options).map_err(CliError::from);
 	}
 	let mut notices = Vec::new();
 	let mut source = make_source(&mut options)?;
@@ -235,7 +257,7 @@ fn emit_metadata(
 	source: &Source,
 	bounds: Option<(i64, i64, u64)>,
 	notices: &[String],
-) -> Result<(), String> {
+) -> Result<(), CliError> {
 	let mut output = String::new();
 	if let (Some(seed), Source::Drbg(drbg)) = (options.seed.as_ref(), source) {
 		use std::fmt::Write as _;
@@ -269,15 +291,17 @@ fn emit_metadata(
 	}
 	output.push_str("],\"warnings\":[]}\n");
 	if options.state_stdout {
-		io::stdout()
-			.lock()
+		let stdout = io::stdout();
+		let mut stream = stdout.lock();
+		stream
 			.write_all(output.as_bytes())
-			.map_err(|_| "stdout write failed".to_owned())
+			.map_err(CliError::Output)?;
+		stream.flush().map_err(CliError::Output)
 	} else {
 		io::stderr()
 			.lock()
 			.write_all(output.as_bytes())
-			.map_err(|_| "stderr write failed".to_owned())
+			.map_err(|_| CliError::Message("stderr write failed".to_owned()))
 	}
 }
 
@@ -421,12 +445,8 @@ fn generation_bounds(options: &Options) -> Result<(i64, i64, u64, bool), String>
 	let (start, end) = options
 		.range
 		.unwrap_or(if options.binary { (0, 255) } else { (0, 99) });
-	let count = u64::try_from(
-		options
-			.count
-			.unwrap_or(if options.binary { 1024 } else { 1 }),
-	)
-	.map_err(|_| "invalid count".to_owned())?;
+	let count =
+		u64::try_from(options.count.unwrap_or(1)).map_err(|_| "invalid count".to_owned())?;
 	if options.binary {
 		if start < 0 {
 			return Err("start value must be >= 0 for binary output".to_owned());
@@ -533,26 +553,33 @@ fn emit_text(
 	start: i64,
 	end: i64,
 	count: u64,
-) -> Result<(), String> {
+) -> Result<(), CliError> {
 	let stdout = io::stdout();
 	let mut output = stdout.lock();
 	let mut normal_values = [0_i64; 256];
 	let mut normal_failure = None;
 	let mut normal_len = 0;
+	let mut normal_lane = 0;
 	let batched_normal = matches!(source, Source::Drbg(_))
 		&& options.mode == Mode::Normal
 		&& options.mean.is_none()
 		&& options.stddev.is_none();
-	for index in 0..count {
-		if index > 0 && options.delimiter != "\n" {
+	let mut index = 0_u64;
+	let mut first = true;
+	while options.unbounded() || index < count {
+		if !first && options.delimiter != "\n" {
 			output
 				.write_all(options.delimiter.as_bytes())
-				.map_err(|_| "stdout write failed".to_owned())?;
+				.map_err(CliError::Output)?;
 		}
 		let value = if batched_normal {
-			let lane = index as usize % normal_values.len();
+			let lane = normal_lane;
 			if lane == 0 {
-				let take = (count - index).min(normal_values.len() as u64) as usize;
+				let take = if options.unbounded() {
+					normal_values.len()
+				} else {
+					(count - index).min(normal_values.len() as u64) as usize
+				};
 				normal_len = take;
 				if let Err(failure) =
 					source.normal_int_batch(start, end, &mut normal_values[..take])
@@ -562,10 +589,9 @@ fn emit_text(
 				}
 			}
 			if lane >= normal_len {
-				return Err(core_error(
-					normal_failure.expect("short batch has a failure"),
-				));
+				return Err(core_error(normal_failure.expect("short batch has a failure")).into());
 			}
+			normal_lane = (normal_lane + 1) % normal_values.len();
 			Value::Integer(normal_values[lane])
 		} else {
 			generate(options, source, start, end)?
@@ -577,19 +603,22 @@ fn emit_text(
 		};
 		output
 			.write_all(text.as_bytes())
-			.map_err(|_| "stdout write failed".to_owned())?;
+			.map_err(CliError::Output)?;
 		if options.delimiter == "\n" {
-			output
-				.write_all(b"\n")
-				.map_err(|_| "stdout write failed".to_owned())?;
+			output.write_all(b"\n").map_err(CliError::Output)?;
 		}
+		if options.unbounded() {
+			output.flush().map_err(CliError::Output)?;
+		}
+		if !options.unbounded() {
+			index += 1;
+		}
+		first = false;
 	}
 	if options.delimiter != "\n" {
-		output
-			.write_all(b"\n")
-			.map_err(|_| "stdout write failed".to_owned())?;
+		output.write_all(b"\n").map_err(CliError::Output)?;
 	}
-	output.flush().map_err(|_| "stdout write failed".to_owned())
+	output.flush().map_err(CliError::Output)
 }
 
 fn emit_binary(
@@ -598,20 +627,48 @@ fn emit_binary(
 	start: i64,
 	end: i64,
 	count: u64,
-) -> Result<(), String> {
+) -> Result<(), CliError> {
+	let direct = options.mode == Mode::Uniform && start == 0 && end == 255;
+	if !options.unbounded() && direct {
+		if let Source::Drbg(drbg) = source {
+			if count > MAX_EXACT_INTEGER as u64 - drbg.position() {
+				return Err(core_error(Error::PositionOverflow).into());
+			}
+		}
+	}
 	let stdout = io::stdout();
 	let mut output = stdout.lock();
-	let buffer_len = usize::try_from(count.min(STREAM_CHUNK as u64))
-		.map_err(|_| "output count is too large".to_owned())?;
+	// Small sampled chunks bound first-output latency without changing draws.
+	let chunk_limit = if options.unbounded() && !direct {
+		96
+	} else {
+		STREAM_CHUNK
+	};
+	let buffer_len = usize::try_from(if options.unbounded() {
+		chunk_limit as u64
+	} else {
+		count.min(STREAM_CHUNK as u64)
+	})
+	.map_err(|_| "output count is too large".to_owned())?;
 	let mut bytes = vec![0_u8; buffer_len];
 	let mut encoded = Vec::with_capacity(STREAM_CHUNK * 2);
 	let mut carry = [0_u8; 2];
 	let mut carry_len = 0_usize;
 	let mut remaining = count;
 	let mut normal_values = [0_i64; 256];
-	while remaining > 0 {
-		let chunk = usize::try_from(remaining.min(STREAM_CHUNK as u64))
-			.map_err(|_| "output count is too large".to_owned())?;
+	while options.unbounded() || remaining > 0 {
+		let mut chunk = usize::try_from(if options.unbounded() {
+			chunk_limit as u64
+		} else {
+			remaining.min(STREAM_CHUNK as u64)
+		})
+		.map_err(|_| "output count is too large".to_owned())?;
+		if options.unbounded() && direct {
+			if let Source::Drbg(drbg) = source {
+				chunk = (chunk as u64).min((MAX_EXACT_INTEGER as u64 - drbg.position()).max(1))
+					as usize;
+			}
+		}
 		let bytes = &mut bytes[..chunk];
 		if options.mode == Mode::Uniform && start == 0 && end == 255 {
 			source.fill_exact(bytes).map_err(entropy_error)?;
@@ -638,27 +695,23 @@ fn emit_binary(
 				encoded.push(b"0123456789abcdef"[usize::from(byte >> 4)]);
 				encoded.push(b"0123456789abcdef"[usize::from(byte & 15)]);
 			}
-			output
-				.write_all(&encoded)
-				.map_err(|_| "stdout write failed".to_owned())?;
+			output.write_all(&encoded).map_err(CliError::Output)?;
 		} else {
-			output
-				.write_all(bytes)
-				.map_err(|_| "stdout write failed".to_owned())?;
+			output.write_all(bytes).map_err(CliError::Output)?;
 		}
-		remaining -= chunk as u64;
+		if options.unbounded() {
+			output.flush().map_err(CliError::Output)?;
+		} else {
+			remaining -= chunk as u64;
+		}
 	}
 	if options.base64 {
 		finish_base64(&mut output, &carry, carry_len)?;
-		output
-			.write_all(b"\n")
-			.map_err(|_| "stdout write failed".to_owned())?;
+		output.write_all(b"\n").map_err(CliError::Output)?;
 	} else if options.hex {
-		output
-			.write_all(b"\n")
-			.map_err(|_| "stdout write failed".to_owned())?;
+		output.write_all(b"\n").map_err(CliError::Output)?;
 	}
-	output.flush().map_err(|_| "stdout write failed".to_owned())
+	output.flush().map_err(CliError::Output)
 }
 
 fn push_base64_quad(encoded: &mut Vec<u8>, bytes: [u8; 3]) {
@@ -675,7 +728,7 @@ fn write_base64_chunk(
 	carry: &mut [u8; 2],
 	carry_len: &mut usize,
 	encoded: &mut Vec<u8>,
-) -> Result<(), String> {
+) -> Result<(), CliError> {
 	encoded.clear();
 	let mut index = 0_usize;
 	if *carry_len > 0 {
@@ -698,12 +751,14 @@ fn write_base64_chunk(
 	}
 	*carry_len = bytes.len() - index;
 	carry[..*carry_len].copy_from_slice(&bytes[index..]);
-	output
-		.write_all(encoded)
-		.map_err(|_| "stdout write failed".to_owned())
+	output.write_all(encoded).map_err(CliError::Output)
 }
 
-fn finish_base64(output: &mut impl Write, carry: &[u8; 2], carry_len: usize) -> Result<(), String> {
+fn finish_base64(
+	output: &mut impl Write,
+	carry: &[u8; 2],
+	carry_len: usize,
+) -> Result<(), CliError> {
 	let mut encoded = [b'='; 4];
 	if carry_len > 0 {
 		let word = (u32::from(carry[0]) << 16)
@@ -717,9 +772,7 @@ fn finish_base64(output: &mut impl Write, carry: &[u8; 2], carry_len: usize) -> 
 		if carry_len == 2 {
 			encoded[2] = BASE64_ALPHABET[((word >> 6) & 63) as usize];
 		}
-		output
-			.write_all(&encoded)
-			.map_err(|_| "stdout write failed".to_owned())?;
+		output.write_all(&encoded).map_err(CliError::Output)?;
 	}
 	Ok(())
 }
@@ -970,7 +1023,8 @@ fn print_help(program: &str, args: &[String]) -> Result<(), String> {
 			"Options:\n",
 			"  -a, --about         Show a short description\n",
 			"  -b, --binaryoutput  Output binary bytes\n",
-			"  -c, --count N       Output N numbers (default: 1, or 1024 with -b)\n",
+			"  -c, --count N       Output N numbers/bytes (default: 1; -b keeps streaming)\n",
+			"      --stream        Keep streaming; an explicit --count supplies a finite cap\n",
 			"  -d, --deterministic Use the cross-platform-identical BLAKE3 keyed XOF\n",
 			"      --true-random   Force fresh OS/source CSPRNG entropy; ignore DRANDOMR_SEED\n",
 			"      --delimiter S   Set delimiter; empty means individual input bytes\n",

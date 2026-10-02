@@ -118,7 +118,7 @@
         # External tools the executable shells out to / the test suite needs.
         testTools = with pkgs; [
           bashInteractive coreutils gnugrep ripgrep gawk bc xxd binutils gnutar
-          stdenv.cc libsixel imagemagick nodejs wasm-tools jq
+          stdenv.cc libsixel imagemagick nodejs wasm-tools jq time
         ];
         # The installed 80-case CLI self-test needs ordinary shell utilities,
         # not the compilers, cross toolchains, image decoders, Node, or WASM

@@ -2,7 +2,13 @@
 
 Completed work: [log](docs/PLAN_LOG.md). Historical directives and deferred risks: [context](docs/plan_context/legacy_decisions.md).
 
-## Current: reusable libraries, then Rust verification
+## Completed: streaming CLI output
+
+- [x] Replace the implicit 1,024-byte binary count with continuous output across LuaJIT, Zig/C, Rust and Lean; preserve explicit finite counts, bounded memory, seeded prefixes and clean consumer shutdown (done 2026-10-01 20:26 EDT; commit: containing commit; review: CODE_REVIEW.md).
+- [x] Add explicit streaming for every generator/distribution mode without changing unflagged numeric invocations; preserve rejection order and exact cross-language continuation behavior; all 29 suites and 168 streaming checks pass (done 2026-10-01 20:26 EDT; commit: containing commit; review: CODE_REVIEW.md).
+- [ ] Consider optional output pacing at the I/O edge; pacing must never change random values or be advertised as improving entropy or statistical quality.
+
+## Completed: reusable libraries and Rust verification
 
 - [x] Ship caller-owned LuaJIT DRBG/distribution library and dedicated Nix library consumer checks for all four languages; reply to ai_edu with the pinned surface (done 2026-09-30 14:49 EDT; commit: d2dd7e7; review: CODE_REVIEW.md).
 - [x] Extend Kani with 21 reviewed bounded cursor/read, named-range, fixed-arithmetic and portable-batch contracts; 42 red/green runs, complete discovery and all 28 ordinary suites pass (done 2026-09-30 17:46 EDT; commit: containing commit; context: docs/reports/2026-09-30-kani-contracts.md).

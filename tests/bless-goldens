@@ -12,8 +12,8 @@ unset IFS
 
 which="${1-}"
 [ -n "$which" ] || { echo "usage: bless-goldens integer|dist [output_path]" >&2; exit 1; }
-# Second argument redirects output. golden_test uses it to generate into a temp
-# file and diff, so a test run never writes to tracked files.
+# Second argument redirects output. golden_test uses /dev/stdout to compare
+# generated vectors in memory without modifying tracked fixtures.
 outfile="${2-}"
 
 emit() {  # emit <label> <command...>
@@ -46,8 +46,8 @@ integer)
 			emit "hex/$seed"             random -d --seed "$seed" -c 8 --hex
 			emit "delim/$seed"           random -d --seed "$seed" -c 5 --delimiter , 0..10
 			emit "binhex/$seed"          bash -c "random -d --seed $seed -b -c 64 | xxd -p | tr -d '\n'"
-			# no -c: locks the `count = options.count or 1024` binary default branch
-			emit "bindef/$seed"          bash -c "random -d --seed $seed -b | xxd -p | tr -d '\n'"
+			# Preserve the frozen 1024-byte vector as a prefix of continuous output.
+			emit "bindef/$seed"          bash -c "random -d --seed $seed -b | head -c 1024 | xxd -p | tr -d '\n'"
 			# ranged binary: locks the constrained-range branch, not just 0..255
 			emit "binrange/$seed"        bash -c "random -d --seed $seed -b -c 32 64..192 | xxd -p | tr -d '\n'"
 			emit "b64/$seed"             random -d --seed "$seed" -b -c 30 --base64
@@ -56,7 +56,9 @@ integer)
 			emit_stdin "weighted/$seed" $'rare:1\ncommon:10\nverycommon:100' random --weighted -d --seed "$seed"
 		done
 	} > "${outfile:-$here/golden/integer.txt}"
-	echo "wrote $(wc -l < "${outfile:-$here/golden/integer.txt}") integer vectors" >&2
+	if [ "$outfile" != /dev/stdout ]; then
+		echo "wrote $(wc -l < "${outfile:-$here/golden/integer.txt}") integer vectors" >&2
+	fi
 	;;
 dist)
 	{
@@ -76,7 +78,9 @@ dist)
 			emit "beta/$seed"        random -d --beta 5 --alpha 2 --seed "$seed" -c 12
 		done
 	} > "${outfile:-$here/golden/dist.txt}"
-	echo "wrote $(wc -l < "${outfile:-$here/golden/dist.txt}") distribution vectors" >&2
+	if [ "$outfile" != /dev/stdout ]; then
+		echo "wrote $(wc -l < "${outfile:-$here/golden/dist.txt}") distribution vectors" >&2
+	fi
 	;;
 *)
 	echo "unknown set: $which" >&2; exit 1 ;;

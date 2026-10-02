@@ -30,20 +30,18 @@ for set_name in $REQUIRED_SETS; do
 		checked=$((checked + 1))
 		continue
 	fi
-	# Regenerate into a temp file and diff against the committed one. Never write
-	# to a tracked file during a test run: that would clobber deliberate
-	# uncommitted golden edits and make ./test mutate the repo.
-	tmp="$(mktemp)"
-	"$here/bless-goldens" "$set_name" "$tmp" >/dev/null 2>&1
-	if diff -q "$set_file" "$tmp" >/dev/null 2>&1; then
+	# Compare in shell memory. The tracked expectations are never rewritten.
+	expected="$(< "$set_file")"
+	actual="$("$here/bless-goldens" "$set_name" /dev/stdout 2>/dev/null)"
+	status=$?
+	if [ "$status" -eq 0 ] && [ "$actual" = "$expected" ]; then
 		echo "✓ $set_name: all vectors reproduce"
 	else
 		echo "✗ $set_name: vectors CHANGED" >&2
-		diff --unified=0 "$set_file" "$tmp" | head -20 >&2
+		diff --unified=0 <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") | head -20 >&2
 		fails=$((fails + 1))
 	fi
 	checked=$((checked + 1))
-	rm -f "$tmp"
 done
 
 # Also flag any golden/*.txt set NOT in the required manifest -- an

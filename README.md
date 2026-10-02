@@ -33,6 +33,9 @@ deterministic mode in every family.
 - **Cryptographically secure sources:** the platform OS CSPRNG, or a deterministic BLAKE3 keyed XOF (`-d`/`--seed`)
 - **Stdin ops:** `--choose` one item, `--shuffle` all items, `--weighted` (`value:weight`)
 - **Output formats:** decimal, `--hex`, `--base64`, raw `--binaryoutput`
+- **Continuous output:** binary output keeps streaming unless a count is
+  supplied; `--stream` does the same for numbers and every distribution,
+  with bounded buffers and normal pipe backpressure
 - **Visual distribution help:** append `--help` to an alternate-distribution
   flag for its shape; Kitty and Ghostty receive an embedded PNG via Kitty
   graphics, WezTerm receives Sixel, and other terminals (including every
@@ -153,6 +156,8 @@ state=$(random -d --seed 42 d20 2>&1 >/dev/null)
 random --resume "$state"             # continue at the next die roll
 printf '%s\n' "$state" | random --state - --count 10
 random --true-random -b -c 32       # force entropy even if DRANDOM_SEED is set
+drandom --seed 0 -b | head -c 8192 | sha256sum # reproducible byte-stream prefix
+drandomr --seed 42 --stream d20 | head -n 10 # reproducible die-roll prefix
 random --hex -c 5                   # 5 hex values
 printf 'a\nb\nc\n' | random --choose
 printf %s Peter | random --shuffle --delimiter '' # byte-wise: e.g. ePert
@@ -216,13 +221,43 @@ Fractional distributions print 18 deterministic decimal places by default.
 Use `--precision N` or its `--truncate N` alias to truncate (never round) to
 0–18 places; integer and binary stream semantics are unchanged.
 
-Binary output streams in bounded chunks, including `--hex`, `--base64`,
-and distribution-based bytes. LuaJIT uses at most 48 KiB of raw payload per
-bulk chunk and 3 KiB per sampled chunk; memory does not grow with `--count`.
-Base64 padding and the encoded-output newline appear only at the end.
-A failed stream can leave an already-written prefix, but does not emit
-successful continuation metadata. Text-number batches and stdin population
-operations are separate paths and do not inherit this binary-memory bound.
+### Continuous output
+
+Across all four implementations, `-b`/`--binaryoutput` without a count keeps
+streaming until its consumer closes, an I/O error occurs, or a deterministic
+cursor reaches its shared 2^53-byte limit. This replaces the old implicit
+1,024-byte count. Use `-c 1024` to retain that finite behavior. This policy is
+the same at a terminal and in a pipe; use `--hex` or `--base64` if viewing bytes
+at a terminal.
+
+Numeric output still defaults to one value. Add `--stream` for continuous
+uniform or alternate-distribution samples. An explicit `-c N` always supplies
+a finite cap, including zero, even with `--stream`. Resumed state inherits its
+finite `args.count` unless `--stream` overrides it; an explicit CLI count
+still wins. `--stream` is an invocation policy, not a new state field.
+It rejects `--choose`, `--shuffle`, and `--weighted`, whose population
+operations remain finite.
+
+Raw, hex, base64, and text generation use bounded buffers independent of count
+or stream length. LuaJIT bulk chunks are at most 48 KiB; compiled adapters use
+at most 64 KiB. Continuous sampled-byte chunks hold 96 values to bound
+first-output latency, while finite requests keep their existing chunk sizes.
+Base64 preserves incomplete quanta between chunks; padding and the final
+encoded-output newline appear only on finite completion. Stdin population
+operations still retain their input and are not covered by this bound.
+
+A closed consumer exits quietly (success or conventional POSIX SIGPIPE status
+141). Other I/O or entropy failures return a nonzero status and structured
+JSON on stderr. Failed or interrupted streams do not publish a successful
+continuation state. Buffered generation can run ahead of a consumer, so a
+truncated pipe is not a delivery-aware cursor checkpoint. Use a finite count
+to obtain exact resumable metadata; unbounded `--state-stdout` is rejected
+because it cannot provide a final state line. Known finite direct-byte
+requests crossing the cursor limit reject before emitting any prefix.
+
+There is no additional entropy-based throttle. The OS source controls
+initialization waits; pipe backpressure controls output speed. Artificial
+pacing would not improve randomness or make a predictable seed secure.
 
 Distribution-qualified help is order-independent: for example,
 `random --normalized --help` and `random --help --normalized` show the normal

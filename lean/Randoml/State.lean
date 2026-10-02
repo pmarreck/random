@@ -340,7 +340,7 @@ def apply (initial : Options) (input : ByteArray) : Except String Options := do
         | _ => throw "state distribution is unsupported"
       options := { options with mode, modeCount := if mode == .uniform then 0 else 1 }
 
-  if !options.countSet then
+  if !options.countSet ∧ !options.streaming then
     if let some text ← optionalString args "count" then
       let value ← match Decimal.parseInt text with
         | some value => pure value

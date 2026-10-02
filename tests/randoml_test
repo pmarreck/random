@@ -8,7 +8,14 @@ lean_cli="${RANDOML_TEST_CLI:-$root/zig-out/bin/randoml}"
 zig_cli="${RANDOML_TEST_ZIG_CLI:-$root/zig-out/bin/randomz}"
 
 if [ -z "${RANDOML_TEST_CLI:-}" ]; then
-	"$root/lean/build-owned-cli" "$lean_cli" || exit 1
+	build_log=$("$root/lean/build-owned-cli" "$lean_cli" 2>&1)
+	build_status=$?
+	printf '%s\n' "$build_log"
+	[ "$build_status" -eq 0 ] || exit 1
+	if grep -q 'warning:' <<<"$build_log"; then
+		echo "randoml test RED: production CLI build emitted a compiler warning" >&2
+		exit 1
+	fi
 fi
 if [ -z "${RANDOML_TEST_ZIG_CLI:-}" ]; then
 	(cd "$root" && zig build -Doptimize=ReleaseFast) || exit 1

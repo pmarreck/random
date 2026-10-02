@@ -1,0 +1,194 @@
+#!/usr/bin/env bash
+# Continuous CLI output checked against finite prefixes and a downstream fixture.
+# Payloads only travel through pipes; digests, diagnostics and state stay in RAM.
+set -u
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+zig_cli="${STATE_TEST_ZIG_CLI:-$root/zig-out/bin/randomz}"
+if [ -z "${STATE_TEST_ZIG_CLI:-}" ]; then
+	(cd "$root" && zig build -Doptimize=ReleaseFast) || exit 1
+fi
+rust_target="$(cd "$root" && cargo metadata --no-deps --format-version 1 | jq -r .target_directory)"
+rust_cli="${STATE_TEST_RUST_CLI:-$rust_target/release/randomr}"
+if [ -z "${STATE_TEST_RUST_CLI:-}" ]; then
+	(cd "$root" && cargo build --locked --release -p randomr-cli) || exit 1
+fi
+lean_cli="${STATE_TEST_LEAN_CLI:-$root/zig-out/bin/randoml}"
+if [ -z "${STATE_TEST_LEAN_CLI:-}" ]; then
+	"$root/lean/build-owned-cli" "$lean_cli" || exit 1
+fi
+clis=("${STATE_TEST_LUA_CLI:-$root/bin/random}" "$zig_cli" "$rust_cli" "$lean_cli")
+oracle="${clis[0]}"
+fails=0
+checks=0
+fail() { printf 'stream FAILED: %s\n' "$*" >&2; fails=$((fails + 1)); }
+
+finite_digest() {
+	set -o pipefail
+	timeout 20 "$@" 2>/dev/null | sha256sum
+}
+
+# Close the reader before launching the CLI. Unlike head -c0, this cannot race
+# with a small finite producer finishing and legitimately emitting metadata.
+check_closed_consumer() {
+	local cli="$1" result
+	shift
+	result=$( {
+		trap '' PIPE
+		coproc CLOSED_CONSUMER { IFS= read -r release; }
+		closed_pid=$CLOSED_CONSUMER_PID
+		exec {closed_fd}>&"${CLOSED_CONSUMER[1]}"
+		printf 'close\n' >&"$closed_fd"
+		wait "$closed_pid"
+		timeout 20 "$cli" "$@" >&"$closed_fd"
+		status=$?
+		exec {closed_fd}>&-
+		printf 'producer=%s\n' "$status"
+	} 2>&1)
+	checks=$((checks + 1))
+	[ "$result" = 'producer=0' ] || [ "$result" = 'producer=141' ] || fail "$(basename "$cli") closed consumer $*: $result"
+}
+
+# The timeout is only a hang guard. Success depends on an exact digest and
+# producer/consumer statuses, never on timing or a delayed kill.
+check_prefix() {
+	local cli="$1" unit="$2" amount="$3" expected="$4" result
+	shift 4
+	result=$( {
+		if [ "${STREAM_TEST_IGNORE_SIGPIPE:-0}" = 1 ]; then trap '' PIPE; fi
+		( if [ -n "${STREAM_TEST_MEMORY_KIB:-}" ]; then
+			if [ "${STREAM_TEST_RSS_ONLY:-0}" != 1 ]; then
+				ulimit -v "$STREAM_TEST_MEMORY_KIB" || exit 1
+			fi
+			# Lean reserves a 1 GiB runtime thread stack even with no task
+			# workers. Measure actual peak residency; do not rewrite its runtime.
+			export LEAN_NUM_THREADS=0
+			exec time -q -f 'maxrss=%M' timeout 20 "$cli" "$@"
+		  fi
+		  exec timeout 20 "$cli" "$@" ) | head "$unit" "$amount" | sha256sum
+		statuses=("${PIPESTATUS[@]}")
+		printf 'producer=%s consumer=%s digest=%s\n' "${statuses[0]}" "${statuses[1]}" "${statuses[2]}"
+	} 2>&1)
+	checks=$((checks + 1))
+	if [ -n "${STREAM_TEST_MEMORY_KIB:-}" ]; then
+		if [[ "$result" =~ (^|$'\n')maxrss=([0-9]+)($|$'\n') ]]; then
+			local peak="${BASH_REMATCH[2]}"
+			[ "$peak" -le "$STREAM_TEST_MEMORY_KIB" ] || fail "$(basename "$cli") peak resident memory: ${peak} KiB"
+			result=$(sed '/^maxrss=[0-9][0-9]*$/d' <<<"$result")
+		else
+			fail "$(basename "$cli") missing peak-memory measurement: $result"
+		fi
+	fi
+	if [ "$result" != "$expected"$'\n''producer=0 consumer=0 digest=0' ] &&
+	   [ "$result" != "$expected"$'\n''producer=141 consumer=0 digest=0' ]; then
+		fail "$(basename "$cli") $*: $result"
+	fi
+}
+
+for cli in "${clis[@]}"; do
+	# Independent corruption_probe vector, beyond the former silent 1024 cap.
+	check_prefix "$cli" -c 8192 '9bd12ced9a6ab30ec0995baf7c8bb768a1968458c523771d563c3f3feaec7512  -' --seed 0 -b
+	STREAM_TEST_IGNORE_SIGPIPE=1 check_prefix "$cli" -c 8192 '9bd12ced9a6ab30ec0995baf7c8bb768a1968458c523771d563c3f3feaec7512  -' --seed 0 -b
+	check_closed_consumer "$cli" --seed 77 -c 1 d20
+	check_closed_consumer "$cli" --seed 77 -c 0 --state-stdout
+	for mode in uniform normal exponential poisson log-normal beta; do
+		flags=()
+		case "$mode" in uniform) flags+=(d20);; normal) flags+=(-n);; *) flags+=("--$mode");; esac
+		expected=$(finite_digest "$oracle" --seed 77 -c 17 "${flags[@]}") || fail "finite $mode oracle failed"
+		check_prefix "$cli" -n 17 "$expected" --seed 77 --stream "${flags[@]}"
+		byte_flags=("${flags[@]}")
+		[ "$mode" != uniform ] || byte_flags=(64..192)
+		expected=$(finite_digest "$oracle" --seed 77 -b -c 24 "${byte_flags[@]}") || fail "finite $mode byte oracle failed"
+		check_prefix "$cli" -c 24 "$expected" --seed 77 -b "${byte_flags[@]}"
+	done
+	for spec in '-n --mean -3 --stddev 2.5' '--exponential --rate 4' '--poisson --lambda 5' \
+		'--log-normal --mean -1 --stddev 0.5' '--beta 3 --alpha 1' '--beta 0.7 --alpha 0.3'; do
+		read -r -a flags <<<"$spec"
+		expected=$(finite_digest "$oracle" --seed 0xdeadbeef -c 5 "${flags[@]}") || fail "parameterized oracle failed: $spec"
+		check_prefix "$cli" -n 5 "$expected" --seed 0xdeadbeef --stream "${flags[@]}"
+	done
+	for encoding in hex base64; do
+		# Cross the 65536-byte chunk, on a base64 quantum. Chunk padding fails.
+		expected=$(set -o pipefail; "$oracle" --seed 77 -b -c 98304 "--$encoding" 2>/dev/null | tr -d '\n' | sha256sum) || fail "finite encoding oracle failed"
+		amount=196608
+		[ "$encoding" != base64 ] || amount=131072
+		check_prefix "$cli" -c "$amount" "$expected" --seed 77 -b "--$encoding"
+	done
+	checks=$((checks + 1))
+	state=$("$cli" --seed 77 -b -c 3 2>&1 >/dev/null)
+	check_closed_consumer "$cli" --state "$state"
+	finite=$(finite_digest "$oracle" --state "$state" -c 8192) || fail "resumed finite oracle failed"
+	check_prefix "$cli" -c 8192 "$finite" --state "$state" --stream
+	# Replaying an inherited finite count must still finish without --stream.
+	result=$(set -o pipefail; timeout 20 "$cli" --state "$state" 2>/dev/null | wc -c)
+	status=$?
+	[ "$status" -eq 0 ] && [ "$result" -eq 3 ] || fail "$(basename "$cli") inherited count: status=$status bytes=$result"
+	near_end=$(jq '.next_pos = "9007199254740989"' <<<"$state")
+	checks=$((checks + 1))
+	result=$( { timeout 20 "$cli" --state "$near_end" --stream | wc -c; printf 'status=%s\n' "${PIPESTATUS[0]}"; } 2>&1)
+	if ! grep -q '^3$' <<<"$result" || ! grep -q '^status=1$' <<<"$result" ||
+	   ! jq -e '.error' <<<"${result%%$'\n'*}" >/dev/null 2>&1; then
+		fail "$(basename "$cli") stream must exhaust cursor without wrapping: $result"
+	fi
+	checks=$((checks + 1))
+	finite_end=$(jq '.next_pos = "9007199254675456"' <<<"$state")
+	result=$( { timeout 20 "$cli" --state "$finite_end" -c 65537 | wc -c; printf 'status=%s\n' "${PIPESTATUS[0]}"; } 2>&1)
+	if ! grep -q '^0$' <<<"$result" || ! grep -q '^status=1$' <<<"$result" ||
+	   ! jq -e '.error' <<<"${result%%$'\n'*}" >/dev/null 2>&1; then
+		fail "$(basename "$cli") known over-cap request must fail before any prefix: $result"
+	fi
+	# An incomplete final base64 quantum must not be padded on an error.
+	checks=$((checks + 1))
+	encoded_end=$(jq '.next_pos = "9007199254740988"' <<<"$state")
+	expected=$(set -o pipefail; "$oracle" --state "$encoded_end" -b -c 3 --base64 2>/dev/null | tr -d '\n')
+	[ "$?" -eq 0 ] && [ "${#expected}" -eq 4 ] || fail "$(basename "$cli") finite base64 boundary oracle failed"
+	result=$( { timeout 20 "$cli" --state "$encoded_end" -b --stream --base64; printf '\nstatus=%s\n' "$?"; } 2>/dev/null)
+	[ "$result" = "$expected"$'\nstatus=1' ] || fail "$(basename "$cli") stream padded an incomplete base64 quantum: $result"
+	for operation in choose shuffle weighted; do
+		checks=$((checks + 1))
+		result=$(timeout 20 "$cli" --seed 77 --stream "--$operation" 2>&1 </dev/null)
+		status=$?
+		if [ "$status" -eq 0 ] || ! jq -e '.error.message | contains("--stream requires")' <<<"$result" >/dev/null 2>&1; then
+			fail "$(basename "$cli") ignored --stream with --$operation: $result"
+		fi
+	done
+	for count in 0 1 17; do
+		checks=$((checks + 1))
+		expected=$("$cli" --seed 77 -c "$count" d20 2>&1)
+		result=$(timeout 20 "$cli" --seed 77 --stream -c "$count" d20 2>&1)
+		[ "$?" -eq 0 ] && [ "$result" = "$expected" ] || fail "$(basename "$cli") explicit count $count changed stdout/state"
+	done
+	checks=$((checks + 1))
+	result=$(timeout 20 "$cli" --seed 77 --stream --state-stdout 2>&1)
+	status=$?
+	if [ "$status" -eq 0 ] || ! jq -e '.error.message | contains("requires --count")' <<<"$result" >/dev/null 2>&1; then
+		fail "$(basename "$cli") infinite final state must reject before output: $result"
+	fi
+	if [ "$(uname -s)" = Linux ]; then
+		checks=$((checks + 1))
+		result=$(timeout 20 "$cli" --seed 77 -c 0 --state-stdout 2>&1 >/dev/full)
+		status=$?
+		if [ "$status" -ne 1 ] || ! jq -e '.error' <<<"$result" >/dev/null 2>&1; then
+			fail "$(basename "$cli") final-state sink failure must be JSON/nonzero: status=$status $result"
+		fi
+		checks=$((checks + 1))
+		result=$(timeout 20 "$cli" --seed 77 -b 2>&1 >/dev/full)
+		status=$?
+		if [ "$status" -eq 0 ] || [ "$status" -eq 124 ] || ! jq -e '.error' <<<"$result" >/dev/null 2>&1; then
+			fail "$(basename "$cli") genuine sink failure must remain an error: $result"
+		fi
+		expected=$(head -c 8192 /dev/zero | sha256sum)
+		check_prefix "$cli" -c 8192 "$expected" --true-random --random-source /dev/zero -b
+		# Twice the resident-memory limit; also enforce an address-space cap
+		# except for Lean's fixed 1 GiB reserved stacks/allocator arena.
+		rss_only=0
+		[ "$cli" != "$lean_cli" ] || rss_only=1
+		expected=$(head -c 268435456 /dev/zero | sha256sum)
+		STREAM_TEST_IGNORE_SIGPIPE=1 STREAM_TEST_MEMORY_KIB=131072 STREAM_TEST_RSS_ONLY="$rss_only" check_prefix "$cli" -c 268435456 "$expected" \
+			--true-random --random-source /dev/zero -b
+		expected=$(yes 1 | head -n 10000 | sha256sum)
+		STREAM_TEST_IGNORE_SIGPIPE=1 STREAM_TEST_MEMORY_KIB=131072 STREAM_TEST_RSS_ONLY="$rss_only" check_prefix "$cli" -n 10000 "$expected" \
+			--true-random --random-source /dev/zero --stream d20
+	fi
+done
+printf 'Continuous streaming: %s checks, %s failures\n' "$checks" "$fails"
+exit "$fails"

@@ -471,19 +471,19 @@ test_random() {
 		(( fails++ ))
 	fi
 
-	# Test 11: --binaryoutput default count (1024)
+	# Test 11: binary output keeps streaming until the consumer stops.
 	(( tests++ ))
-	echo "Testing --binaryoutput default count (1024)..."
+	echo "Testing --binaryoutput continuous default..."
 
 	local binary_default_output
-	binary_default_output=$(random --binaryoutput 2>/dev/null | xxd -p | tr -d '\n')
+	binary_default_output=$(random --binaryoutput 2>/dev/null | head -c 8192 | xxd -p | tr -d '\n')
 	local default_byte_count
 	default_byte_count=$((${#binary_default_output} / 2))
 
-	if [ "$default_byte_count" -eq 1024 ]; then
-		echo "✓ --binaryoutput default count test passed"
+	if [ "$default_byte_count" -eq 8192 ]; then
+		echo "✓ --binaryoutput continuous default test passed"
 	else
-		echo "✗ --binaryoutput default count test failed: expected 1024, got $default_byte_count" >&2
+		echo "✗ --binaryoutput stream test failed: expected 8192-byte prefix, got $default_byte_count" >&2
 		(( fails++ ))
 	fi
 
