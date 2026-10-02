@@ -906,3 +906,19 @@ This acceptance is scoped to the changed streaming behavior, not every frozen
 sub-clause, a new streaming theorem, cryptographic security or native execution
 on platforms other than this x86_64 Linux host. Optional output pacing remains
 deferred and must not be advertised as improving entropy or statistical quality.
+
+The first exact-commit Nix CI run passed all 168 new stream checks but rejected
+the older LuaJIT huge-prefix control: it still required status 1 or 141 after
+consumer closure. CI inherited ignored SIGPIPE, exposing the new intentional
+quiet-success path. The failure was reproduced locally with ignored SIGPIPE.
+That control now exercises default and ignored handling, accepts only 0 or 141,
+and asserts every pipeline status plus empty diagnostics. GNU `env` explicitly
+sets each producer's signal disposition, regardless of the CI parent's setting.
+The reviewer independently observed status 141/default and 0/ignored with exact
+Zig prefix digests, and checked the finite numeric fixture against Bash `printf`.
+Its oracle remains
+the finite Zig digest; neither source bytes nor expectations were regenerated.
+The numeric memory fixture also uses a finite `awk` producer instead of `yes`
+to avoid unrelated fixture broken-pipe diagnostics under ignored SIGPIPE.
+The complete local rerun passed all 29 suites; the final explicit-signal control
+also passed all 54 checks under an ignored parent signal before shipping.

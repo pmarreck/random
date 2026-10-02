@@ -52,15 +52,24 @@ if [ "$(uname -s)" = Linux ]; then
 			fail "$mode $count bytes under $budget KiB budget, status=$rc, bytes=$actual"
 		fi
 	done
-	checks=$((checks + 1))
-	actual=$( (ulimit -v 65536; "$lua_cli" --seed 0x700A -b -c 2362232012 2>/dev/null) |
-		head -c 65536 | sha256sum)
-	rc=$?
 	expected=$("$zig_cli" --seed 0x700A -b -c 65536 2>/dev/null | sha256sum)
-	if [ "$?" -ne 0 ] || [ "$actual" != "$expected" ] ||
-		{ [ "$rc" -ne 1 ] && [ "$rc" -ne 141 ]; }; then
-		fail "huge request prefix must match Zig before downstream closes, status=$rc"
-	fi
+	[ "$?" -eq 0 ] || fail "finite Zig prefix oracle failed"
+	for pipe_handling in default ignored; do
+		checks=$((checks + 1))
+		pipe_flag=--default-signal=PIPE
+		[ "$pipe_handling" != ignored ] || pipe_flag=--ignore-signal=PIPE
+		actual=$( {
+			# Set the producer disposition even if the CI shell ignores PIPE.
+			(ulimit -v 65536; env "$pipe_flag" "$lua_cli" --seed 0x700A -b -c 2362232012) |
+				head -c 65536 | sha256sum
+			statuses=("${PIPESTATUS[@]}")
+			printf 'producer=%s consumer=%s digest=%s\n' "${statuses[0]}" "${statuses[1]}" "${statuses[2]}"
+		} 2>&1)
+		if [ "$actual" != "$expected"$'\n''producer=0 consumer=0 digest=0' ] &&
+		   [ "$actual" != "$expected"$'\n''producer=141 consumer=0 digest=0' ]; then
+			fail "huge request prefix/quiet shutdown with $pipe_handling SIGPIPE: $actual"
+		fi
+	done
 
 	checks=$((checks + 1))
 	err=$(head -c 49152 /dev/zero | "$lua_cli" --true-random --random-source /dev/stdin \

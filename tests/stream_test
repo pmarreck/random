@@ -185,7 +185,7 @@ for cli in "${clis[@]}"; do
 		expected=$(head -c 268435456 /dev/zero | sha256sum)
 		STREAM_TEST_IGNORE_SIGPIPE=1 STREAM_TEST_MEMORY_KIB=131072 STREAM_TEST_RSS_ONLY="$rss_only" check_prefix "$cli" -c 268435456 "$expected" \
 			--true-random --random-source /dev/zero -b
-		expected=$(yes 1 | head -n 10000 | sha256sum)
+		expected=$(set -o pipefail; awk 'BEGIN { for (i = 0; i < 10000; i++) print 1 }' | sha256sum) || fail "finite numeric memory oracle failed"
 		STREAM_TEST_IGNORE_SIGPIPE=1 STREAM_TEST_MEMORY_KIB=131072 STREAM_TEST_RSS_ONLY="$rss_only" check_prefix "$cli" -n 10000 "$expected" \
 			--true-random --random-source /dev/zero --stream d20
 	fi
