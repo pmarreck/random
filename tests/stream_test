@@ -114,6 +114,26 @@ for cli in "${clis[@]}"; do
 		[ "$encoding" != base64 ] || amount=131072
 		check_prefix "$cli" -c "$amount" "$expected" --seed 77 -b "--$encoding"
 	done
+	# Geometric --count measures samples, not BLIP bytes. Check wide raw and
+	# encoded streaming prefixes without assuming one byte per sampled value.
+	for probability in 1e-20 2^-100 2^-1000; do
+		flags=(--seed 0xdeadbeef --geometric --probability "$probability" -b)
+		amount=$(set -o pipefail; timeout 20 "$oracle" "${flags[@]}" -c 5 2>/dev/null | wc -c) || fail "wide BLIP size oracle failed"
+		expected=$(finite_digest "$oracle" "${flags[@]}" -c 5) || fail "wide BLIP digest oracle failed"
+		check_prefix "$cli" -c "$amount" "$expected" "${flags[@]}"
+		for encoding in hex base64; do
+			encoded=$(timeout 20 "$oracle" "${flags[@]}" -c 5 "--$encoding" 2>/dev/null) || fail "wide BLIP encoding oracle failed"
+			if [ "$encoding" = hex ]; then
+				encoded_amount=$((amount * 2))
+			else
+				# Continuous base64 must not pad the finite oracle's last quantum.
+				encoded_amount=$((amount / 3 * 4))
+			fi
+			[ "$encoded_amount" -gt 0 ] && [ "${#encoded}" -ge "$encoded_amount" ] || fail "wide BLIP encoding oracle is empty or short"
+			expected=$(printf '%s' "${encoded:0:encoded_amount}" | sha256sum)
+			check_prefix "$cli" -c "$encoded_amount" "$expected" "${flags[@]}" "--$encoding"
+		done
+	done
 	checks=$((checks + 1))
 	state=$("$cli" --seed 77 -b -c 3 2>&1 >/dev/null)
 	check_closed_consumer "$cli" --state "$state"
