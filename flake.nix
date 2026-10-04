@@ -597,6 +597,7 @@
             RANDOM_GMP_LIBRARY = "${pkgs.gmp}/lib/libgmp${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
           } // pkgs.lib.optionalAttrs rocSupported {
             RANDOM_ROC_COMPILER = "${rocToolchain}/bin/roc";
+            RANDOM_ROC_SOURCE_DIR = "${rocToolchain.src}";
           }) ''
             cp -r ${./.} work
             chmod -R u+w work
@@ -635,8 +636,10 @@
 
         checks.roc-core = if rocSupported then pkgs.runCommand "random-roc-core"
           {
-            nativeBuildInputs = runtimeTools ++ testTools ++ rocTools;
+            nativeBuildInputs = runtimeTools ++ testTools ++ zigTools ++ rocTools;
             RANDOM_ROC_COMPILER = "${rocToolchain}/bin/roc";
+            RANDOM_ROC_SOURCE_DIR = "${rocToolchain.src}";
+            RANDOM_ROC_LIBRARY_DIR = "${randomRocLib}/lib/roc/random";
           } ''
             cp -r ${./.} work
             chmod -R u+w work
@@ -646,6 +649,7 @@
             mkdir -p "$ROC_CACHE_DIR" "$XDG_CACHE_HOME"
             patchShebangs bin tests
             bash tests/roc_core_test
+            bash tests/roc_platform_test
             mkdir consumer
             cp tests/roc_library_consumer.roc consumer/main.roc
             ln -s ${randomRocLib}/lib/roc/random consumer/library
@@ -992,11 +996,13 @@
             RANDOM_GMP_LIBRARY = "${pkgs.gmp}/lib/libgmp${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
           } // pkgs.lib.optionalAttrs rocSupported {
             RANDOM_ROC_COMPILER = "${rocToolchain}/bin/roc";
+            RANDOM_ROC_SOURCE_DIR = "${rocToolchain.src}";
           });
         } // nixpkgs.lib.optionalAttrs (nixpkgs.lib.hasSuffix "-linux" system) {
           roc = pkgs.mkShell {
-            packages = runtimeTools ++ testTools ++ rocTools;
+            packages = runtimeTools ++ testTools ++ zigTools ++ rocTools;
             RANDOM_ROC_COMPILER = "${rocToolchain}/bin/roc";
+            RANDOM_ROC_SOURCE_DIR = "${rocToolchain.src}";
           };
         } // nixpkgs.lib.optionalAttrs crossSupported {
           kani = pkgs.mkShell {

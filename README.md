@@ -485,8 +485,12 @@ A native C ABI, production CLI, charts and full shared CLI acceptance remain
 unfinished.
 `nix develop .#roc -c bash tests/roc_core_test` runs its native kernel
 differentials; `nix build .#checks.x86_64-linux.roc-core` additionally checks
-installed-package imports and native execution of an isolated source-overlay
-consumer. Those checks do not establish execution of a custom Roc platform.
+installed-package imports, a source-overlay consumer, and a real custom-platform
+shared library through LuaJIT FFI. The native platform fixture checks exact
+numeric/DRBG/sampler results, owned-byte transport, allocation canaries and ELF
+RELRO protections. It remains a test fixture, not the production C ABI or CLI.
+The pinned official compiler carries a small ELF pointer-constant section patch;
+its negative/positive object-writer tests cover x86_64 and aarch64 emission.
 
 For Lean, `(cd lean && lake build)` with Lean 4.30.0 builds and checks the
 importable `Randoml` library. Build the byte-preserving production executable

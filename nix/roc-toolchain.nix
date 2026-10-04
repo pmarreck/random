@@ -1,9 +1,12 @@
 { pkgs, upstream }:
 
-# Keep official Roc sources unchanged. Zig 0.16's InternPool can overflow
+# Use the pinned official Roc source with a narrow ELF constant-data fix.
+# Remove the patch when the unchanged native platform fixture passes upstream.
+# Zig 0.16's InternPool can overflow
 # while interning Roc's embedded builtin arrays on many-core build hosts.
 # A graph-level `zig build -j8` does not constrain the compiler's CPU count.
 upstream.overrideAttrs (old: {
+  patches = (old.patches or [ ]) ++ [ ./roc-elf-relro.patch ];
   nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ pkgs.util-linux pkgs.gawk ];
   preBuild = (old.preBuild or "") + ''
     roc_allowed_cpus="$(${pkgs.util-linux}/bin/taskset -pc "$$")"

@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Collect the filesystem effects in memory: no fixtures are moved by this test.
+set -u
+set -o pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$root/tests/fixture-cleanup.sh"
+checks=0
+check() {
+	checks=$((checks + 1))
+	if ! "$@"; then
+		echo "Fixture cleanup test failed: $*" >&2
+		exit 1
+	fi
+}
+mkdir() { mkdir_args="$*"; }
+mktemp() { printf '%s\n' "${2%/random-fixture.XXXXXX}/random-fixture.mock"; }
+mv() { move_args="$*"; }
+fixture="$root/tests/fixture-cleanup.sh"
+trash="${TMPDIR:-/tmp}/random-test-Trash"
+mkdir_args= move_args=
+test_trash "$fixture" "$trash" || exit 1
+check test "$mkdir_args" = "-p $trash"
+check test "$move_args" = "-- $fixture $trash/random-fixture.mock/"
+test_trash "$fixture" || exit 1
+check test "$mkdir_args" = "-p ${HOME:?}/.Trash"
+move_args=
+if test_trash / "$trash" 2>/dev/null; then exit 1; fi
+check test -z "$move_args"
+if test_trash "$fixture" relative-trash 2>/dev/null; then exit 1; fi
+check test -z "$move_args"
+
+# A successful suite must not conceal a failed EXIT-trap move. Conversely,
+# successful cleanup must retain the original failure status of the suite.
+(
+	test_trash() { return 1; }
+	trap 'test_trash_on_exit "$fixture" "$trash"' EXIT
+	exit 0
+) 2>/dev/null
+check test "$?" -eq 1
+(
+	test_trash() { return 0; }
+	trap 'test_trash_on_exit "$fixture" "$trash"' EXIT
+	exit 7
+)
+check test "$?" -eq 7
+(
+	test_trash() { return 0; }
+	trap 'test_trash_on_exit "$fixture" "$trash"' EXIT
+	exit 0
+)
+check test "$?" -eq 0
+echo "Fixture cleanup: $checks in-memory adapter checks passed."

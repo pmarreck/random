@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# Real upstream-platform/native-C ABI integration, additional to the unchanged
+# shared Bash CLI gate. Temporary build artifacts live in TMPDIR; payloads do not.
+set -u
+set -o pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$root/tests/fixture-cleanup.sh"
+if [ "$(uname -s)" != Linux ] || [ "$(uname -m)" != x86_64 ]; then
+	echo "Roc native platform probe: not applicable; x86_64 Linux fixture only."
+	exit 0
+fi
+if [ -z "${RANDOM_ROC_COMPILER:-}" ] || [ -z "${RANDOM_ROC_SOURCE_DIR:-}" ]; then
+	echo "Roc platform test RED: declared compiler and source directory are required" >&2
+	exit 1
+fi
+work="$(mktemp -d "${TMPDIR:-/tmp}/random-roc-platform.XXXXXX")" || exit 1
+trap 'test_trash_on_exit "$work" "${RANDOM_TEST_TRASH_DIR:-${TMPDIR:-/tmp}/random-test-Trash}"' EXIT
+cp -r "$root/tests/roc_platform/." "$work/" || exit 1
+mkdir -p "$work/platform/targets/x64glibc" || exit 1
+ln -s "${RANDOM_ROC_LIBRARY_DIR:-$root/roc}" "$work/core" || exit 1
+
+# Run the actual upstream object writer before/after the packaging patch. The
+# refusal control must fail for the missing RELRO section, not a build error.
+mkdir -p "$work/elf/src/backend/dev/object" || exit 1
+cp "$root/tests/roc_elf_writer_probe.zig" "$work/elf/probe.zig" || exit 1
+for module in elf mod coff macho; do
+	cp "$RANDOM_ROC_SOURCE_DIR/src/backend/dev/object/$module.zig" \
+		"$work/elf/src/backend/dev/object/" || exit 1
+done
+for module in Relocation SymbolTable; do
+	cp "$RANDOM_ROC_SOURCE_DIR/src/backend/dev/$module.zig" \
+		"$work/elf/src/backend/dev/" || exit 1
+done
+unpatched="$(zig test "$work/elf/probe.zig" --test-filter 'Roc ELF constant relocation' 2>&1)"
+unpatched_status=$?
+if [ "$unpatched_status" -eq 0 ] || [[ "$unpatched" != *'FAIL (MissingSection)'* ]]; then
+	echo "Roc ELF negative control RED: the upstream fixture no longer demonstrates the patched defect" >&2
+	printf '%s\n' "$unpatched" >&2
+	exit 1
+fi
+chmod u+w "$work/elf/src/backend/dev/object/elf.zig" || exit 1
+patch --silent -p1 -d "$work/elf" < "$root/nix/roc-elf-relro.patch" || exit 1
+patched="$(zig test "$work/elf/probe.zig" --test-filter 'Roc ELF constant relocation' 2>&1)"
+patched_status=$?
+if [ "$patched_status" -ne 0 ]; then
+	printf '%s\n' "$patched" >&2
+	exit 1
+fi
+echo "Roc ELF writer: x86_64/aarch64 and no-relocation controls passed; unpatched fixture rejected."
+
+roc_compiler="$RANDOM_ROC_COMPILER"
+"$roc_compiler" check "$work/main.roc" || exit 1
+"$roc_compiler" glue "$RANDOM_ROC_SOURCE_DIR/src/glue/src/CGlue.roc" \
+	"$work/platform" "$work/platform/main.roc" --opt=speed || exit 1
+cc -std=c11 -O2 -fPIC -Wall -Wextra -Werror -c "$work/platform/host.c" \
+	-o "$work/platform/host.o" || exit 1
+ar rcs "$work/platform/targets/x64glibc/libhost.a" "$work/platform/host.o" || exit 1
+"$roc_compiler" build "$work/main.roc" --opt=speed --output="$work/libprobe.so" || exit 1
+luajit "$work/probe.lua" "$work/libprobe.so" "$root/lib" || exit 1
+
+# Check actual loader protection, not a producer-written build configuration.
+dynamic="$(readelf -dW "$work/libprobe.so")" || exit 1
+segments="$(readelf -lW "$work/libprobe.so")" || exit 1
+sections="$(readelf -SW "$work/libprobe.so")" || exit 1
+if [[ "$dynamic" == *TEXTREL* ]] || [[ "$segments" == *' RWE '* ]]; then
+	echo "Roc platform test RED: text relocations or executable writable memory" >&2
+	exit 1
+fi
+read -r kind offset address physical filesz memsz rest <<<"$(awk '$1 == "GNU_RELRO" { print; exit }' <<<"$segments")"
+read -r section_address section_size <<<"$(awk '{for (i=1;i<=NF;i++) if ($i==".data.rel.ro") print $(i+2), $(i+4)}' <<<"$sections")"
+if [ "${kind:-}" != GNU_RELRO ] || [ -z "${section_address:-}" ] || [ -z "${section_size:-}" ]; then
+	echo "Roc platform test RED: no protected relocatable constants" >&2
+	exit 1
+fi
+section_start=$((16#$section_address))
+section_end=$((section_start + 16#$section_size))
+relro_start=$((address))
+relro_end=$((relro_start + memsz))
+if ((section_start < relro_start || section_end > relro_end)); then
+	echo "Roc platform test RED: pointer constants lie outside GNU_RELRO" >&2
+	exit 1
+fi
+echo "Roc native platform ELF: relocation constants are RELRO, no TEXTREL or writable executable segment."

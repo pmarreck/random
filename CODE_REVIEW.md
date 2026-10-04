@@ -1,4 +1,33 @@
-# Code review — independent Roc core and decimal codecs
+# Code review — Roc native platform and ELF packaging
+
+2026-10-04 · Codex, with fresh-context reviewer
+`/root/roc_native_platform_review` · base `f1ee208`, staged native checkpoint.
+No confirmed findings in this scope. The reviewer independently ran the native
+platform suite twice, using repository sources and the installed source package.
+Both passed the raw-writer refusal, four patched architecture/relocation controls,
+exact LuaJIT FFI results, allocation guards and actual ELF loader protections.
+
+The full 37-suite run passed. Cleanup's eight in-memory adapter checks and
+all-system flake evaluation passed; the installed source package has no runtime
+references. The reviewer reran the native checks and corroborated the full-suite
+logs, rather than claiming a second complete run. The sandbox cleanup defect was
+fixed before review: explicit RAM Trash selection avoids an unwritable HOME,
+and an EXIT trap can no longer conceal a failed move.
+
+The actual pinned CGlue and generated header agree on allocator signatures,
+list layout and owned-argument transfer. C transports bytes and owns memory;
+Roc computes values and drops returned output lists. Relocatable pointer constants
+are protected by GNU_RELRO without TEXTREL or writable executable segments.
+
+Limits: native execution is Linux x86_64; aarch64 checks establish object emission
+only. Finite allocation witnesses do not prove concurrency, all failure paths or
+full zeroization. Production Roc ABI/CLI, charts and mathematical proof were
+excluded. Roc's eventual CLI must pass the same Bash assertions and expected
+results as every other implementation.
+
+---
+
+# Previous review — independent Roc core and decimal codecs
 
 The 2026-10-04 Decimal follow-up found no confirmed new defect. It checked the
 pure parser/formatter, probability grammar, safe-integer bounds, test admission
