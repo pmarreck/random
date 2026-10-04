@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# GMP is an independent exact-rational oracle; unavailable checks fail closed.
+set -u
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export LUA_PATH="$here/lib/?.lua;;"
+report="$(luajit "$here/tests/geometric_rational.lua" 2>&1)"
+status=$?
+if [[ "$status" != 0 ]]; then
+	printf '%s\n' "$report" >&2
+	exit "$status"
+fi
+for control in threshold tail; do
+	result="$(luajit "$here/tests/geometric_rational.lua" "--mutate-$control" 2>&1)"
+	status=$?
+	if [[ "$status" == 0 ]]; then
+		printf 'Geometric rational gate failed to reject %s mutation\n' "$control" >&2
+		exit 1
+	fi
+	case "$control:$result" in
+		threshold:*'base threshold mismatch'*) ;;
+		tail:*'tail bit count mismatch'*) ;;
+		*) printf 'Geometric control failed for an unexpected reason:\n%s\n' "$result" >&2; exit 1 ;;
+	esac
+done
+printf '%s\n' "$report"
+printf 'Geometric rejection controls passed: threshold corruption and tail-length corruption\n'

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Keep library byte/cursor controls separate from the shared Bash CLI oracle.
+set -u
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export LUA_PATH="$here/lib/?.lua;;"
+exec luajit "$here/tests/geometric.lua"

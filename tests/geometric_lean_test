@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Pure Lean sampler controls and kernel-checked reconstruction invariants.
+set -u
+set -o pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$root/lean" || exit 1
+lake build Randoml.Curve || exit 1
+lake env lean --trust=0 ../tests/geometric_lean.lean || exit 1
+exec lake env lean --run ../tests/geometric_lean.lean

@@ -4,6 +4,7 @@ local ffi = require("ffi")
 local b3 = require("blake3")
 local fx = require("fixed")
 local distributions = require("distributions")
+local geometric = require("geometric")
 local u64 = ffi.typeof("uint64_t")
 local i64 = ffi.typeof("int64_t")
 local LIMIT = 9007199254740992
@@ -145,6 +146,12 @@ function M.from_state(state)
 		assert(ae >= -20 and ae <= 20 and be >= -20 and be <= 20,
 			"beta parameters are outside the supported domain")
 		return distributions.beta(am, ae, bm, be, function() return self:uniform() end)
+	end
+	-- Return canonical unsigned magnitude bytes; decimal/BLIP formatting is a
+	-- separate pure operation, so large gaps never pass through Lua numbers.
+	function rng:geometric(m, e)
+		local prepared = geometric.prepare(m, e)
+		return geometric.sample(prepared, function(count) return self:bytes(count) end)
 	end
 	return rng
 end

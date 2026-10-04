@@ -22,7 +22,7 @@ mkdir -p "$(dirname "$output")"
 lake env leanc -O3 -I"$root/src" -o "$output" \
 	"$lean_dir/randoml_launcher.c" "$lean_dir/randoml_native.c" \
 	"$ir/Native.c" "$ir/Blake3.c" "$ir/Fixed.c" "$ir/Drbg.c" \
-	"$ir/Distribution.c" "$ir/Decimal.c" "$ir/Curve.c" "$ir/GeneratedCharts.c" \
+	"$ir/Distribution.c" "$ir/Geometric.c" "$ir/Decimal.c" "$ir/Curve.c" "$ir/GeneratedCharts.c" \
 	"$ir/Chart.c" "$ir/CliOptions.c" "$ir/CliSource.c" "$ir/State.c" \
 	"$ir/Shuffle.c" "$ir/Cli.c"
 

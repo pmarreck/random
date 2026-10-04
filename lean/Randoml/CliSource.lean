@@ -1,4 +1,5 @@
 import Randoml.Distribution
+import Randoml.Geometric
 import Randoml.Native
 
 namespace Randoml.CliSource
@@ -56,6 +57,20 @@ def availableFuel (source : Source) (bytesPerAttempt : Nat) : Nat :=
   match source with
   | .deterministic value => (maxExactPosition - value.state.position) / bytesPerAttempt + 1
   | .entropy _ => maxExactPosition / bytesPerAttempt + 1
+
+/-- Only a byte-source interpreter: the distribution program lives in the core. -/
+def geometric (source : Source) (prepared : Geometric.Prepared) : IO (Result Nat) := do
+  let read : Nat → StateT Source (ExceptT String IO) ByteArray := fun count => do
+    let current ← get
+    let result ← liftM (fill current count)
+    match result with
+    | .error message => throw message
+    | .ok (bytes, next) => set next; pure bytes
+  let result ← ((Geometric.sampleWith read (availableFuel source 8) prepared).run source).run
+  pure (match result with
+    | .ok (some value, next) => .ok (value, next)
+    | .ok (none, _) => .error "RNG core failed: position overflow"
+    | .error message => .error message)
 
 private def rangeLoop : Nat → Source → Int → Nat → IO (Result Int)
   | 0, _, _, _ => pure (.error "RNG core failed: position overflow")

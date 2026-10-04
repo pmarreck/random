@@ -409,6 +409,8 @@ end
 -- ===== Distribution functions (integer-only, via lib/fixed.lua) =====
 
 local distributions = require("distributions")
+local geometric = require("geometric")
+local unsigned_count = require("unsigned_count")
 local ONE_M, ONE_E = fx.from_int(1)
 local TWO_M, TWO_E = fx.from_int(2)
 local round_to_int = distributions.round_to_int
@@ -557,6 +559,7 @@ local view_titles = {
 	normal = "Normal (Gaussian)",
 	exponential = "Exponential",
 	poisson = "Poisson",
+	geometric = "Geometric (failures before success)",
 	log_normal = "Log-normal",
 	beta = "Beta",
 }
@@ -565,6 +568,7 @@ local view_axes = {
 	normal = "Horizontal axis: mean +/- 4 standard deviations; vertical axis: relative probability density.",
 	exponential = "Horizontal axis: 0 to 6/rate; vertical axis: relative probability density.",
 	poisson = "Horizontal axis: lambda +/- 6*sqrt(lambda), clipped at zero; vertical axis: probability mass.",
+	geometric = "Horizontal axis: failures from 0 to 6/probability; vertical axis: relative probability mass.",
 	log_normal = "Horizontal axis: 0 to exp(mean + min(1.625*stddev, 20)); vertical axis: relative probability density.",
 	beta = "Horizontal axis: value from 0 to 1; vertical axis: relative probability density.",
 }
@@ -573,6 +577,7 @@ local function selected_distribution_key(options)
 	if options.normalized then return "normal" end
 	if options.exponential then return "exponential" end
 	if options.poisson then return "poisson" end
+	if options.geometric then return "geometric" end
 	if options.log_normal then return "log_normal" end
 	if options.beta then return "beta" end
 	return nil
@@ -596,6 +601,9 @@ local function distribution_view_spec(options)
 		return key, options.lambda or options.mean or one, zero,
 			("Parameters: lambda=%s."):format(
 				options.lambda_text or options.mean_text or "1")
+	elseif key == "geometric" then
+		return key, options.probability or {geometric.parse_probability("0.5")}, zero,
+			("Parameters: probability=%s."):format(options.probability_text or "0.5")
 	elseif key == "beta" then
 		return key, options.alpha or two, options.beta_param or two,
 			("Parameters: alpha=%s, beta=%s."):format(
@@ -642,6 +650,7 @@ local function help_distribution(invocation)
 	local flag_to_distribution = {
 		["-n"] = "normal", ["--normalized"] = "normal",
 		["--exponential"] = "exponential", ["--poisson"] = "poisson",
+		["--geometric"] = "geometric",
 		["--log-normal"] = "log_normal", ["--beta"] = "beta",
 	}
 	for _, value in ipairs(argv) do
@@ -689,6 +698,7 @@ local function print_help(invocation, distribution)
 	print("  -n, --normalized    Normal (Gaussian) via Box-Muller")
 	print("      --exponential   Exponential distribution (use --rate)")
 	print("      --poisson       Poisson distribution (use --lambda or --mean)")
+	print("      --geometric     Failures before success; default probability 0.5")
 	print("      --log-normal    Log-normal distribution")
 	print("      --beta[=B]      Beta distribution; optional B replaces default beta 2")
 	print("")
@@ -725,6 +735,7 @@ local function print_help(invocation, distribution)
 	print("      --stddev S      Set stddev for normal/log-normal")
 	print("      --rate R        Set exponential rate")
 	print("      --lambda L      Set Poisson lambda (clearer alias for --mean)")
+	print("      --probability P Set geometric success probability; accepts 1e-20 or 2^-100")
 	print("      --alpha A       Set alpha for beta distribution")
 	print("      --test          Run the test suite")
 	print("")
@@ -848,7 +859,7 @@ local function apply_state(options, positionals)
 
 	local args = decoded.args
 	local args_allowed = {op=true, distribution=true, range=true, count=true,
-		mean=true, stddev=true, rate=true, lambda=true, alpha=true, beta=true,
+		mean=true, stddev=true, rate=true, lambda=true, alpha=true, beta=true, p=true,
 		precision=true, binary=true, encoding=true, delim=true}
 	for key in pairs(args) do
 		if not args_allowed[key] then return nil, "unknown state args key: " .. tostring(key) end
@@ -864,11 +875,12 @@ local function apply_state(options, positionals)
 	end
 	if not cli_distribution and not cli_stdin_mode and args.distribution ~= nil then
 		options.normalized, options.exponential, options.poisson = false, false, false
-		options.log_normal, options.beta = false, false
+		options.log_normal, options.beta, options.geometric = false, false, false
 		if args.distribution == "uniform" then
 		elseif args.distribution == "normal" then options.normalized = true
 		elseif args.distribution == "exponential" then options.exponential = true
 		elseif args.distribution == "poisson" then options.poisson = true
+		elseif args.distribution == "geometric" then options.geometric = true
 		elseif args.distribution == "log-normal" then options.log_normal = true
 		elseif args.distribution == "beta" then options.beta = true
 		else return nil, "state distribution is unsupported" end
@@ -914,8 +926,14 @@ local function apply_state(options, positionals)
 			fixed_relevant.mean, fixed_relevant.stddev = true, true
 		elseif options.exponential then fixed_relevant.rate = true
 		elseif options.poisson then fixed_relevant.mean, fixed_relevant.lambda = true, true
+		elseif options.geometric then fixed_relevant.p = true
 		elseif options.beta then fixed_relevant.alpha, fixed_relevant.beta = true, true
 		end
+	end
+	if fixed_relevant.p and options.probability == nil and args.p ~= nil then
+		local pm, pe = geometric.parse_probability(args.p)
+		if pm == nil then return nil, "state probability is invalid" end
+		options.probability, options.probability_text = {pm, pe}, args.p
 	end
 	for _, fields in ipairs({
 		{"mean", "mean", "mean_text"}, {"stddev", "stddev", "stddev_text"},
@@ -958,6 +976,7 @@ local function parse_args()
 		normalized = (invocation == "nrandom"),
 		exponential = false,
 		poisson = false,
+		geometric = false,
 		log_normal = false,
 		beta = false,
 		binary_output = false,
@@ -996,6 +1015,8 @@ local function parse_args()
 		rate_text = nil,
 		lambda = nil,
 		lambda_text = nil,
+		probability = nil,
+		probability_text = nil,
 		alpha = nil,
 		alpha_text = nil,
 		beta_param = nil,
@@ -1045,6 +1066,9 @@ local function parse_args()
 			options.distribution_cli = true
 		elseif arg_val == "--poisson" then
 			options.poisson = true
+			options.distribution_cli = true
+		elseif arg_val == "--geometric" then
+			options.geometric = true
 			options.distribution_cli = true
 		elseif arg_val == "--log-normal" then
 			options.log_normal = true
@@ -1289,6 +1313,15 @@ local function parse_args()
 			end
 			options.lambda = { lm, le }
 			options.lambda_text = value
+		elseif arg_val == "--probability" or attached_option == "--probability" then
+			local value = attached_value
+			if value == nil then i = i + 1; value = argv[i] end
+			local pm, pe = geometric.parse_probability(value)
+			if pm == nil then
+				stderr_write("Error: --probability must be in (0,1] using decimal, scientific, or 2^N syntax\n")
+				os.exit(1)
+			end
+			options.probability, options.probability_text = {pm, pe}, value
 		elseif arg_val == "--alpha" or attached_option == "--alpha" then
 			local value = attached_value
 			if not value then i = i + 1; value = argv[i] end
@@ -1363,7 +1396,7 @@ local function parse_args()
 		os.exit(1)
 	end
 	if #positionals > 0 and (options.exponential or options.poisson or
-		options.log_normal or options.beta) then
+		options.log_normal or options.beta or options.geometric) then
 		stderr_write("Error: ranges do not apply to the selected distribution\n")
 		os.exit(1)
 	end
@@ -1405,6 +1438,7 @@ local function parse_args()
 	if options.normalized then dist_count = dist_count + 1 end
 	if options.exponential then dist_count = dist_count + 1 end
 	if options.poisson then dist_count = dist_count + 1 end
+	if options.geometric then dist_count = dist_count + 1 end
 	if options.log_normal then dist_count = dist_count + 1 end
 	if options.beta then dist_count = dist_count + 1 end
 	if options.chart_renderer_flag and not options.view then
@@ -1464,6 +1498,10 @@ local function parse_args()
 	end
 	if options.rate and not options.exponential then
 		stderr_write("Error: --rate requires --exponential\n")
+		os.exit(1)
+	end
+	if options.probability and not options.geometric then
+		stderr_write("Error: --probability requires --geometric\n")
 		os.exit(1)
 	end
 	if options.lambda and not options.poisson then
@@ -1554,10 +1592,10 @@ local function canonical_args_json(options, start_val, end_val, count)
 		(options.exponential and "exponential" or
 		(options.poisson and "poisson" or
 		(options.log_normal and "log-normal" or
-		(options.beta and "beta" or "uniform"))))
+		(options.beta and "beta" or (options.geometric and "geometric" or "uniform")))))
 	add_string("distribution", distribution)
 	local range_scaled = not (options.exponential or options.poisson or
-		options.log_normal or options.beta) and not
+		options.log_normal or options.beta or options.geometric) and not
 		(options.normalized and (options.mean or options.stddev))
 	if range_scaled then
 		add_string("range", exact_integer_text(start_val) .. ".." .. exact_integer_text(end_val))
@@ -1570,6 +1608,8 @@ local function canonical_args_json(options, start_val, end_val, count)
 		add_string("rate", options.rate_text or "1")
 	elseif options.poisson then
 		add_string("lambda", options.lambda_text or options.mean_text or "1")
+	elseif options.geometric then
+		add_string("p", options.probability_text or "0.5")
 	elseif options.log_normal then
 		add_string("mean", options.mean_text or "0")
 		add_string("stddev", options.stddev_text or "1")
@@ -1777,7 +1817,7 @@ local function main()
 		end
 	else
 		local range_scaled = not (options.exponential or options.poisson or
-			options.log_normal or options.beta) and not
+			options.log_normal or options.beta or options.geometric) and not
 			(options.normalized and (options.mean or options.stddev))
 		if options.start_val == nil and options.end_val == nil and range_scaled then
 			show_defaults_msg = true
@@ -1788,7 +1828,7 @@ local function main()
 	end
 
 	-- Validate range for integer distributions
-	if not (options.exponential or options.poisson or options.log_normal or options.beta) then
+	if not (options.exponential or options.poisson or options.log_normal or options.beta or options.geometric) then
 		if start_val > end_val then
 			stderr_write("Error: start value must be less than or equal to end value\n")
 			os.exit(1)
@@ -1818,7 +1858,7 @@ local function main()
 	local binary_ptr
 	local binary_length = 0
 	local has_distribution = options.normalized or options.exponential or
-		options.poisson or options.log_normal or options.beta
+		options.poisson or options.log_normal or options.beta or options.geometric
 	local direct_binary = options.binary_output and not has_distribution and
 		start_val == 0 and end_val == 255
 	local function stdout_failure()
@@ -1861,16 +1901,24 @@ local function main()
 			write_binary_chunk(options.deterministic and drbg_draw_bytes(size) or entropy_reader(size))
 			if remaining ~= nil then remaining = remaining - size end
 		end
-	elseif options.binary_output then
+	elseif options.binary_output and not options.geometric then
 		binary_ptr = binary_data:reserve(sampled_chunk)
 	end
 
+	local prepared_geometric
+	if options.geometric then
+		local probability = options.probability or {fx.parse("0.5")}
+		prepared_geometric = geometric.prepare(unpack(probability))
+	end
+	local geometric_read = options.deterministic and drbg_draw_bytes or entropy_reader
 	local remaining = direct_binary and 0 or count
 	local first = true
 	while remaining == nil or remaining > 0 do
 		local value
 
-		if options.exponential then
+		if options.geometric then
+			value = geometric.sample(prepared_geometric, geometric_read)
+		elseif options.exponential then
 			local rm, re = ONE_M, ONE_E
 			if options.rate then rm, re = options.rate[1], options.rate[2] end
 			value = { exponential_random(rm, re, uniform_func) }
@@ -1910,7 +1958,9 @@ local function main()
 			value = rand_func(start_val, end_val)
 		end
 
-		if options.binary_output then
+		if options.binary_output and options.geometric then
+			write_binary_chunk(unsigned_count.to_blip(value))
+		elseif options.binary_output then
 			local byte_val
 			if type(value) == "table" then
 				byte_val = fx.to_int_trunc(value[1], value[2])
@@ -1928,7 +1978,9 @@ local function main()
 		else
 			if not first and options.delimiter ~= "\n" then write_stdout(options.delimiter) end
 			local formatted
-			if type(value) == "table" then
+			if options.geometric then
+				formatted = options.hex_output and unsigned_count.to_hex(value) or unsigned_count.to_decimal(value)
+			elseif type(value) == "table" then
 				formatted = fx.tostring(value[1], value[2], options.precision)
 			elseif options.hex_output then
 				formatted = string.format("%x", value)

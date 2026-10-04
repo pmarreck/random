@@ -1,4 +1,5 @@
 # shellcheck shell=bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixture-cleanup.sh"
 # Shared executable selector for the LuaJIT, Zig/C, Rust, and Lean CLI contract suites.
 #
 # Set RANDOM_TEST_CLI to an executable path to run that implementation under
@@ -82,17 +83,6 @@ cli_test_setup() {
 
 cli_test_cleanup() {
 	if [ -n "${CLI_TEST_SHIM_DIR:-}" ]; then
-		unlink "$CLI_TEST_SHIM_DIR/random" 2>/dev/null || true
-		unlink "$CLI_TEST_SHIM_DIR/nrandom" 2>/dev/null || true
-		unlink "$CLI_TEST_SHIM_DIR/drandom" 2>/dev/null || true
-		unlink "$CLI_TEST_SHIM_DIR/randomr" 2>/dev/null || true
-		unlink "$CLI_TEST_SHIM_DIR/nrandomr" 2>/dev/null || true
-		unlink "$CLI_TEST_SHIM_DIR/drandomr" 2>/dev/null || true
-		unlink "$CLI_TEST_SHIM_DIR/randoml" 2>/dev/null || true
-		unlink "$CLI_TEST_SHIM_DIR/nrandoml" 2>/dev/null || true
-		unlink "$CLI_TEST_SHIM_DIR/drandoml" 2>/dev/null || true
-		trash_root="${HOME:?HOME must be set}/.Trash"
-		mkdir -p "$trash_root"
-		mv "$CLI_TEST_SHIM_DIR" "$trash_root/$(basename "$CLI_TEST_SHIM_DIR").$$" 2>/dev/null || true
+		test_trash "$CLI_TEST_SHIM_DIR"
 	fi
 }

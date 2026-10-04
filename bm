@@ -104,6 +104,8 @@ case_names=(
 	normal
 	exponential
 	poisson
+	geometric
+	geometric_sparse
 	log_normal
 	beta
 )
@@ -117,6 +119,8 @@ case_arguments=(
 	"-d --seed 42 --normalized --mean=-0.25 --stddev=1.75 --count $count"
 	"-d --seed 42 --exponential --rate=1.75 --count $count"
 	"-d --seed 42 --poisson --lambda=5 --count $count"
+	"-d --seed 42 --geometric --probability=0.25 --count $count"
+	"-d --seed 42 --geometric --probability=1e-20 --count $count"
 	"-d --seed 42 --log-normal --mean=-0.25 --stddev=1.75 --count $count"
 	"-d --seed 42 --beta=3 --alpha=1 --count $count"
 )

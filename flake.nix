@@ -170,6 +170,7 @@
 			${pkgs.lib.optionalString runTests ''
 			  install -Dm755 tests/random_test "$out/share/randomr/tests/random_test"
 			  install -Dm644 tests/cli_test_setup.sh "$out/share/randomr/tests/cli_test_setup.sh"
+			  install -Dm644 tests/fixture-cleanup.sh "$out/share/randomr/tests/fixture-cleanup.sh"
 			  patchShebangs "$out/share/randomr/tests/random_test"
 			  wrapProgram "$out/bin/randomr" \
 			    --set-default RANDOM_TEST_FILE "$out/share/randomr/tests/random_test" \
@@ -261,6 +262,7 @@
             install -Dm755 randoml $out/bin/randoml
             install -Dm755 tests/random_test $out/share/randoml/tests/random_test
             install -Dm644 tests/cli_test_setup.sh $out/share/randoml/tests/cli_test_setup.sh
+            install -Dm644 tests/fixture-cleanup.sh $out/share/randoml/tests/fixture-cleanup.sh
 			install -Dm644 LICENSE $out/share/licenses/random-lean/LICENSE
 			substituteInPlace $out/share/randoml/tests/random_test \
 			  --replace-fail '#!/usr/bin/env bash' '#!${pkgs.bash}/bin/bash'
@@ -316,6 +318,7 @@
 			ln -s ${randomLuaLib}/lib $out/lib
 			install -Dm755 tests/random_test $out/tests/random_test
 			install -Dm644 tests/cli_test_setup.sh $out/tests/cli_test_setup.sh
+			install -Dm644 tests/fixture-cleanup.sh $out/tests/fixture-cleanup.sh
 			install -Dm644 LICENSE $out/share/licenses/random-luajit/LICENSE
 			ln -s random $out/bin/nrandom
 			ln -s random $out/bin/drandom
@@ -397,6 +400,7 @@
 			install -Dm644 zig-out/include/randomz.h $out/include/randomz.h
 			install -Dm755 tests/random_test $out/tests/random_test
 			install -Dm644 tests/cli_test_setup.sh $out/tests/cli_test_setup.sh
+			install -Dm644 tests/fixture-cleanup.sh $out/tests/fixture-cleanup.sh
 			install -Dm644 LICENSE $out/share/licenses/random-zig/LICENSE
 			patchShebangs $out/tests/random_test
 			wrapProgram $out/tests/random_test \
@@ -559,6 +563,7 @@
           {
             nativeBuildInputs = runtimeTools ++ testTools ++ zigTools ++ rustTools ++ leanTools;
             cargoDeps = rustCargoDeps;
+            RANDOM_GMP_LIBRARY = "${pkgs.gmp}/lib/libgmp${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
           } ''
             cp -r ${./.} work
             chmod -R u+w work
@@ -722,6 +727,9 @@
 			    "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262")
 			'
 			LUA_PATH='${randomLuaLib}/lib/?.lua;;' luajit ${./tests/luajit_library.lua}
+			LUA_PATH='${randomLuaLib}/lib/?.lua;;' luajit ${./tests/geometric.lua}
+			LUA_PATH='${randomLuaLib}/lib/?.lua;;' luajit ${./tests/geometric_ffi.lua} \
+			  ${randomZigLib}/lib/${randomZigSharedName}
 
 			# Load and execute the installed C ABI directly through LuaJIT FFI;
 			# no separately compiled test harness is needed for behavior coverage.
@@ -906,6 +914,9 @@
           default = pkgs.mkShell {
             packages = runtimeTools ++ testTools ++ zigTools ++ leanTools ++
               [ pkgs.cargo pkgs.clippy pkgs.rustc pkgs.rustfmt pkgs.openssh pkgs.rsync pkgs.hyperfine ];
+            # The geometric accuracy oracle uses exact rational arithmetic;
+            # resolve its library from the derivation, never by store searches.
+            RANDOM_GMP_LIBRARY = "${pkgs.gmp}/lib/libgmp${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
           };
         } // nixpkgs.lib.optionalAttrs crossSupported {
           kani = pkgs.mkShell {

@@ -97,11 +97,11 @@ compare_case()
 echo "Testing the complete four-way CLI help contract..."
 compare_case "--help" --help
 compare_case "-h" -h
-for distribution in --normalized --exponential --poisson --log-normal --beta; do
+for distribution in --normalized --exponential --poisson --log-normal --beta --geometric; do
 	compare_case "$distribution --help" "$distribution" --help
 done
 for renderer in --kitty --sixel; do
-	for distribution in --normalized --exponential --poisson --log-normal --beta; do
+	for distribution in --normalized --exponential --poisson --log-normal --beta --geometric; do
 		compare_case "$distribution $renderer --help" \
 			"$distribution" "$renderer" --help
 	done

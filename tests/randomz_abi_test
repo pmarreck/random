@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixture-cleanup.sh"
 # Compile and execute a consumer that knows the public header, not Zig internals.
 set -u
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/randomz-abi.XXXXXX")" || exit 1
-trap 'rm -rf -- "$tmp"' EXIT
+trap 'test_trash "$tmp"' EXIT
 
 (cd "$root" && zig build -Doptimize=ReleaseFast) >/dev/null || exit 1
 compiler="${CC:-cc}"

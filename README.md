@@ -5,7 +5,7 @@
 `random` is a cryptographically secure command-line generator built around an
 unusual guarantee: given the same seed and arguments, it emits bit-identical
 output across supported operating systems and CPU architectures—including for
-normal, exponential, Poisson, log-normal, and beta distributions. True-random
+normal, exponential, Poisson, geometric, log-normal, and beta distributions. True-random
 mode instead draws fresh entropy from the operating system CSPRNG and is
 intentionally not reproducible.
 
@@ -29,7 +29,8 @@ deterministic mode in every family.
 
 ## Features
 
-- **Distributions:** uniform (default), normal (Box-Muller), exponential, Poisson, log-normal, beta
+- **Distributions:** uniform (default), normal (Box-Muller), exponential, Poisson, geometric (failures before success), log-normal, beta
+- **Sparse-event gaps:** geometric counts have no u32/u64 ceiling; exact decimal/hex output and unsigned BLIP support probabilities such as `1e-20` and `2^-100` ([contract](docs/specs/2026-10-04-geometric-distribution.md))
 - **Cryptographically secure sources:** the platform OS CSPRNG, or a deterministic BLAKE3 keyed XOF (`-d`/`--seed`)
 - **Stdin ops:** `--choose` one item, `--shuffle` all items, `--weighted` (`value:weight`)
 - **Output formats:** decimal, `--hex`, `--base64`, raw `--binaryoutput`
@@ -149,6 +150,7 @@ random 1...7                        # same values; three dots exclude 7
 random -n --mean 50 --stddev 10     # normal distribution
 random --exponential --rate 4       # exponential with rate 4
 random --poisson --lambda 5         # --mean 5 remains an exact alias
+drandomz --seed 42 --geometric --probability 1e-20 -c 2 # exact wide gaps
 random --beta=3 --alpha=1 --view    # chart Beta(alpha=1, beta=3)
 random --exponential --precision 6  # truncate fractional output to 6 places
 random -d --seed 42 -c 5            # 5 reproducible numbers
@@ -246,6 +248,10 @@ Base64 preserves incomplete quanta between chunks; padding and the final
 encoded-output newline appear only on finite completion. Stdin population
 operations still retain their input and are not covered by this bound.
 
+Geometric binary output is a stream of unsigned LE BLIP integers, not one byte
+per sample. Its memory bound is per sample: a very sparse probability requires
+more result bytes, but memory does not grow with total count or stream length.
+
 A closed consumer exits quietly (success or conventional POSIX SIGPIPE status
 141). Other I/O or entropy failures return a nonzero status and structured
 JSON on stderr. Failed or interrupted streams do not publish a successful
@@ -278,8 +284,10 @@ and log-normal accept `--mean` and `--stddev`; either normal parameter can be
 supplied independently and the omitted one defaults to mean 0 or standard
 deviation 1. Exponential accepts `--rate`, Poisson accepts `--lambda` (with
 `--mean` retained as an exact alias), and bare `--beta` uses beta parameter 2
-while `--beta B` or `--beta=B` replaces it; `--alpha` controls alpha. Parameter
-options accept both `--name value` and `--name=value`. Distribution-qualified
+while `--beta B` or `--beta=B` replaces it; `--alpha` controls alpha.
+Geometric accepts `--probability P` (default `0.5`), including scientific and
+exact binary-power syntax such as `1e-20` and `2^-100`.
+Parameter options accept both `--name value` and `--name=value`. Distribution-qualified
 `--help` deliberately keeps showing the frozen default chart even when
 parameter tokens are also present.
 
@@ -412,7 +420,7 @@ guarantee secure erasure; callers must protect snapshots and use unpredictable
 seed material when unpredictability is required.
 
 Methods include `bytes`, `u32`, `u64`, `range`, `uniform`, `uniform_number`,
-`normal_int`, `normal`, `exponential`, `poisson`, `log_normal`, and `beta`.
+`normal_int`, `normal`, `exponential`, `poisson`, `geometric`, `log_normal`, and `beta`.
 Fractional distributions return canonical `(mantissa, exponent)` pairs for
 `fixed.tostring`; `uniform_number` is the exact binary64 convenience API.
 Pass the pairs produced by `fixed.from_int` or `fixed.parse`: nonzero mantissas
@@ -422,6 +430,13 @@ mean exponent at most 27 and standard-deviation exponent at most 23).
 Position/count bounds are whole numbers in `0..2^53`. Lua errors report invalid
 arguments before drawing; arithmetic/source errors may follow earlier draws.
 The module performs no entropy or terminal I/O: applications supply their seeds.
+
+`geometric` returns a canonical arbitrary-width LE magnitude rather than a
+Fixed pair. Use `unsigned_count.to_decimal`/`to_hex`/`to_blip` to format it.
+For repeated draws, `geometric.prepare(m,e)` caches parameters and
+`geometric.sample(prepared, function(n) return rng:bytes(n) end)` supplies bytes
+through a caller-owned source. Rust exports the equivalent `Geometric` and
+`UnsignedCount`; Zig's public C ABI returns unsigned BLIP into caller storage.
 
 ### Manual
 
@@ -569,21 +584,22 @@ direnv allow      # or: nix develop
 ./test            # FAST mode (quick, quiet on success)
 FAST= ./test      # full statistical run
 ./stats           # separate, deeper sanity analysis of all four command families
-nix flake check   # hermetic CI check (runs all 28 suites, but FORCES FAST=1 --
+nix flake check   # hermetic CI check (runs all 34 suites, but FORCES FAST=1 --
                    # kernel_jit_diff's 60000-iteration deep JIT differential
                    # is deep-mode-only by design and is SKIPPED here, not run;
                    # run `FAST= ./test` locally for the full non-FAST suite)
 ```
 
 `./test` runs every suite under `tests/` (official BLAKE3 vectors, an independent
-Zig DRBG reference check, the same 80-check Bash CLI contract against all four
-command families, a 68-output byte-exact four-way help/chart contract, the
+Zig DRBG reference check, the same 85-check Bash CLI contract against all four
+command families, an 80-output byte-exact four-way help/chart contract, the
 independent LuaJIT-vs-Zig/Rust/Lean exact frontend matrices, Rust
 mutation/downstream-library controls, a C-compiled public-ABI conformance
 test, Lean trust-zero elaboration/frozen vectors/proof axiom audits, isolated
 Zig-package reconstruction, 11-target Zig cross-compilation
 (including Windows ARM64), Wine-executed Windows x86_64 parity, kernel unit
-tests, golden vectors, the `bc` sweep, the all-directions continuation
+tests, golden vectors, geometric exact-rational and direct LuaJIT-FFI controls,
+the `bc` sweep, the all-directions continuation
 matrix, and the deep-mode-only JIT differential).
 Set `RANDOM_TEST_CLI` to
 run `tests/random_test` or `tests/drbg_test` against another compatible binary.
@@ -605,9 +621,10 @@ bias/shape failures, and first proves its thresholds reject deliberately bad
 generators. Use `./stats --lua`, `./stats --c`, `./stats --rust`, `./stats --lean`, or
 `./stats --cli PATH`; `FAST=1`
 reduces sample sizes. A pass is a statistical smoke test, not a cryptographic
-security certification. The sensitivity set rejects seven deliberately bad
+security certification. The sensitivity set rejects eight deliberately bad
 generators: an all-zero byte stream plus constant uniform, normal,
-exponential, Poisson, log-normal, and beta samples.
+exponential, Poisson, geometric, log-normal, and beta samples. Geometric checks
+also cover ideal PMF bins, survival/memorylessness, and sparse-count low bits.
 
 `./bm` compares release-built LuaJIT, Zig/C, Rust, and Lean command payloads
 over raw, encoded, uniform, and every nonlinear distribution. Before timing,

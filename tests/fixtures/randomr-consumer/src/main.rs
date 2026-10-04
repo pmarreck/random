@@ -28,4 +28,9 @@ fn main() {
 	let value = normal(&mut source, Fixed::ZERO, Fixed::from_i64(1)).expect("valid parameters");
 	assert_eq!(value.parts(), (-6_261_580_692_471_259_166, -2));
 	assert_eq!(source.position(), 8);
+	let mut source = Drbg::new(&seed);
+	let p = randomr::Geometric::parse_probability("2^-100").unwrap();
+	let gap = randomr::Geometric::new(p).unwrap().sample(&mut source).unwrap();
+	assert_eq!(gap.to_decimal(), "50065276213116078233391743926");
+	assert_eq!(source.position(), 509);
 }

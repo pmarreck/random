@@ -36,7 +36,8 @@ typedef enum randomz_distribution {
 	RANDOMZ_DISTRIBUTION_EXPONENTIAL = 2,
 	RANDOMZ_DISTRIBUTION_POISSON = 3,
 	RANDOMZ_DISTRIBUTION_LOG_NORMAL = 4,
-	RANDOMZ_DISTRIBUTION_BETA = 5
+	RANDOMZ_DISTRIBUTION_BETA = 5,
+	RANDOMZ_DISTRIBUTION_GEOMETRIC = 6
 } randomz_distribution;
 
 /* Caller-owned, trivially serializable, and sensitive when secretly seeded.
@@ -116,6 +117,17 @@ int randomz_exponential(randomz_fill_fn fill, void *context,
 	randomz_fixed rate, randomz_fixed *out);
 int randomz_poisson(randomz_fill_fn fill, void *context,
 	randomz_fixed lambda, int64_t *out);
+/* Failures before success, 0<p<=1. Writes one canonical UNSIGNED little-endian
+ * BLIP integer, with no u32/u64 result limit. p=1 returns zero without reading.
+ * Probability exponent is supported down to -1000000. Storage belongs to the
+ * caller; small buffers return BUFFER_TOO_SMALL, never clamp or resample.
+ * Output, written, and callback source/context storage must be disjoint.
+ * After reads begin, an error may consume callback bytes and modify out;
+ * written is zero unless the complete encoding succeeds. Invalid parameters
+ * are rejected before any source/output mutation. Do not retry by resampling
+ * a consumed entropy source. Retain/clone deterministic state when appropriate. */
+int randomz_geometric(randomz_fill_fn fill, void *context,
+	randomz_fixed probability, uint8_t *out, size_t capacity, size_t *written);
 int randomz_log_normal(randomz_fill_fn fill, void *context,
 	randomz_fixed mean, randomz_fixed stddev, randomz_fixed *out);
 int randomz_beta(randomz_fill_fn fill, void *context,
@@ -123,7 +135,8 @@ int randomz_beta(randomz_fill_fn fill, void *context,
 
 /* Pure, entropy-free distribution curves for visualization. `first` and
  * `second` are mean/stddev (normal and log-normal), rate/zero
- * (exponential), lambda/zero (Poisson), or alpha/beta (beta). Heights are
+ * (exponential), lambda/zero (Poisson), probability/zero (geometric), or
+ * alpha/beta (beta). Heights are
  * normalized to [0,65535]. Continuous curves write `capacity` samples;
  * Poisson writes one sample per integer when that fits, otherwise a
  * capacity-wide compressed curve. The caller supplies all storage. */
@@ -137,6 +150,15 @@ randomz_fixed randomz_fixed_from_int(int64_t value);
 int randomz_fixed_to_int_trunc(randomz_fixed value, int64_t *out);
 int randomz_fixed_to_int_round(randomz_fixed value, int64_t *out);
 int randomz_fixed_parse(const char *text, size_t length, randomz_fixed *out);
+/* Geometric-only decimal/scientific/2^N syntax, validated before replacement. */
+int randomz_geometric_probability_parse(const char *text, size_t length, randomz_fixed *out);
+/* Format exactly one canonical unsigned LE BLIP count as radix 10 or 16.
+ * Disjoint input, scratch, output and length storage are caller-owned. Scratch
+ * capacity >= input length (u32 limbs) and output capacity >= 3*input length
+ * suffice; no terminator is appended. Static malformed inputs leave written
+ * unchanged; other failures set written=0 and may alter scratch/output. */
+int randomz_count_format(const uint8_t *input, size_t length, uint8_t radix,
+    uint32_t *scratch, size_t scratch_capacity, char *out, size_t capacity, size_t *written);
 int randomz_fixed_parse_int_safe(const char *text, size_t length, int64_t *out);
 /* Writes an unterminated byte span and its length; capacity excludes no
  * implicit NUL. Callers that need a C string reserve and append one byte. */

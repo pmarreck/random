@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixture-cleanup.sh"
 # C-FFI CLI acceptance and LuaJIT-oracle differential suite.
 # No set -e: failures are accumulated so one run reports the whole matrix.
 set -u
@@ -13,7 +14,7 @@ candidate_label="${RANDOM_TEST_CLI_KIND:-zig}"
 fails=0
 cases=0
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/randomz-differential.XXXXXX")" || exit 1
-trap 'rm -rf -- "$tmp"' EXIT
+trap 'test_trash "$tmp"' EXIT
 
 # The repository-default target is always rebuilt. Otherwise source edits can
 # be "verified" against a stale zig-out executable left by an earlier run.
@@ -184,7 +185,7 @@ compare_help() {
 	fi
 }
 
-for help_dist in --normalized --exponential --poisson --log-normal --beta; do
+for help_dist in --normalized --exponential --poisson --log-normal --beta --geometric; do
 	compare_help "UTF-8 $help_dist" utf8 utf8 "" "$help_dist" --help
 done
 compare_help "direct Kitty PNG" kitty kitty "" --help --normalized
@@ -247,6 +248,9 @@ compare_view() {
 
 compare_view "normal mean-only" utf8 utf8 "" --normalized --mean=3 --view
 compare_view "exponential rate" utf8 utf8 "" --exponential --rate=2.5 --view
+compare_view "geometric probability" utf8 utf8 "" --geometric --probability=0.25 --view
+compare_view "geometric large scale" utf8 utf8 "" --geometric --probability=1e-20 --view
+compare_view "certain geometric" utf8 utf8 "" --geometric --probability=1 --view
 compare_view "compressed Poisson lambda" utf8 utf8 "" --poisson --lambda=1000 --view
 compare_view "log-normal parameters" utf8 utf8 "" --log-normal --mean=-0.25 --stddev=1.75 --view
 compare_view "beta user example" utf8 utf8 "" --beta=3 --alpha=1 --view
@@ -357,6 +361,9 @@ for seed in 0 1 42 "$max_seed"; do
 	compare_args "exponential custom rate, seed=$seed" -d --seed "$seed" --exponential --rate=4 -c 32
 	compare_args "poisson, seed=$seed" -d --seed "$seed" --poisson --mean 5.5 -c 32
 	compare_args "poisson lambda alias, seed=$seed" -d --seed "$seed" --poisson --lambda=5.5 -c 32
+	compare_args "geometric default, seed=$seed" -d --seed "$seed" --geometric -c 32
+	compare_args "geometric low probability, seed=$seed" -d --seed "$seed" --geometric --probability=1e-20 -c 8
+	compare_args "geometric wide BLIP, seed=$seed" -d --seed "$seed" --geometric --probability=2^-100 -b --hex -c 8
 	compare_args "log-normal, seed=$seed" -d --seed "$seed" --log-normal --mean -0.25 --stddev 1.75 -c 32
 	compare_args "beta, seed=$seed" -d --seed "$seed" --beta 7.75 --alpha 2.5 -c 32
 	compare_args "beta alpha below one, seed=$seed" -d --seed "$seed" --beta 2 --alpha 0.5 -c 32

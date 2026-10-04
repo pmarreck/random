@@ -207,6 +207,12 @@ resume_case "normal binary batch boundary" hex 257 519 --normalized --binaryoutp
 resume_case "custom normal" text 3 9 --normalized --mean -3.25 --stddev 1.75
 resume_case "exponential" text 4 11 --exponential --rate 2.5
 resume_case "poisson" text 4 11 --poisson --lambda 5.5
+resume_case "geometric" text 4 11 --geometric --probability 0.25
+resume_case "wide geometric" text 4 11 --geometric --probability '2^-100'
+resume_case "scientific geometric" text 4 11 --geometric --probability 1e-20
+resume_case "geometric BLIP" hex 4 11 --geometric --probability '2^-100' --binaryoutput --hex
+resume_case "geometric BLIP length continuation" hex 3 7 --geometric --probability '2^-1000' --binaryoutput --hex
+resume_case "certain geometric" text 4 11 --geometric --probability 1
 resume_case "log-normal" text 4 11 --log-normal --mean -0.25 --stddev 1.75
 resume_case "beta" text 4 11 --beta 0.75 --alpha 0.5
 resume_case "direct binary" hex 67 173 --binaryoutput --hex

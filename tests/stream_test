@@ -90,7 +90,7 @@ for cli in "${clis[@]}"; do
 	STREAM_TEST_IGNORE_SIGPIPE=1 check_prefix "$cli" -c 8192 '9bd12ced9a6ab30ec0995baf7c8bb768a1968458c523771d563c3f3feaec7512  -' --seed 0 -b
 	check_closed_consumer "$cli" --seed 77 -c 1 d20
 	check_closed_consumer "$cli" --seed 77 -c 0 --state-stdout
-	for mode in uniform normal exponential poisson log-normal beta; do
+	for mode in uniform normal exponential poisson log-normal beta geometric; do
 		flags=()
 		case "$mode" in uniform) flags+=(d20);; normal) flags+=(-n);; *) flags+=("--$mode");; esac
 		expected=$(finite_digest "$oracle" --seed 77 -c 17 "${flags[@]}") || fail "finite $mode oracle failed"
@@ -101,7 +101,8 @@ for cli in "${clis[@]}"; do
 		check_prefix "$cli" -c 24 "$expected" --seed 77 -b "${byte_flags[@]}"
 	done
 	for spec in '-n --mean -3 --stddev 2.5' '--exponential --rate 4' '--poisson --lambda 5' \
-		'--log-normal --mean -1 --stddev 0.5' '--beta 3 --alpha 1' '--beta 0.7 --alpha 0.3'; do
+		'--log-normal --mean -1 --stddev 0.5' '--beta 3 --alpha 1' '--beta 0.7 --alpha 0.3' \
+		'--geometric --probability 1e-20' '--geometric --probability 2^-100'; do
 		read -r -a flags <<<"$spec"
 		expected=$(finite_digest "$oracle" --seed 0xdeadbeef -c 5 "${flags[@]}") || fail "parameterized oracle failed: $spec"
 		check_prefix "$cli" -n 5 "$expected" --seed 0xdeadbeef --stream "${flags[@]}"

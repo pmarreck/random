@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixture-cleanup.sh"
 # Compile the C entropy boundary for each supported platform and inspect the
 # object before Zig/libc can add their own RNG references. This is a provenance
 # gate: random-looking output cannot prove that the intended OS API was linked.
@@ -7,7 +8,7 @@ set -o pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/randomz-entropy-backends.XXXXXX")" || exit 1
-trap 'rm -rf -- "$tmp"' EXIT
+trap 'test_trash "$tmp"' EXIT
 
 fails=0
 cases=0

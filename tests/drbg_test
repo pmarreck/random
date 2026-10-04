@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixture-cleanup.sh"
 # End-to-end contract tests for the BLAKE3 DRBG and entropy boundary.
 # No `set -e`; commands under test deliberately fail.
 set -u
@@ -16,7 +17,7 @@ state_probe="$test_tmp/state-probe"
 capture_dir="$test_tmp/captures"
 mkdir -p "$state_probe" "$capture_dir"
 cleanup_test_tmp() {
-	rm -rf -- "$test_tmp"
+	test_trash "$test_tmp"
 	cli_test_cleanup
 }
 trap cleanup_test_tmp EXIT

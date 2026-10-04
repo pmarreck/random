@@ -52,6 +52,15 @@ local charts = {
 		end,
 	},
 	{
+		key = "geometric",
+		title = "Geometric (failures before success)",
+		parameters = "Default shape: probability=0.5; --probability sets the success probability.",
+		axis = "Horizontal axis: failures before success; vertical axis: probability mass.",
+		xmin = 0, xmax = 12,
+		discrete = true,
+		value = function(x) return 0.5 ^ (x + 1) end,
+	},
+	{
 		key = "beta",
 		title = "Beta",
 		parameters = "Default shape: alpha=2, beta=2; --alpha and --beta[=B] reshape it.",
@@ -143,8 +152,8 @@ local function samples(chart, count)
 	local points = {}
 	if chart.discrete then
 		local probability = math.exp(-1)
-		for k = 0, 8 do
-			points[#points + 1] = { x = k, y = probability }
+		for k = chart.xmin, chart.xmax do
+			points[#points + 1] = { x = k, y = chart.value and chart.value(k) or probability }
 			probability = probability / (k + 1)
 		end
 	else
@@ -361,6 +370,12 @@ local function c_quote(value)
 	return '"' .. value .. '"'
 end
 
+-- Sixel can contain C11 trigraphs such as three question marks followed by
+-- '!'. Escape question marks in C literals only; other languages need none.
+local function c_transport_quote(value)
+	return (c_quote(value):gsub("%?", "\\?"))
+end
+
 local function wrapped_literal(value, indent, quote)
 	local lines = {}
 	for offset = 1, #value, 96 do
@@ -420,6 +435,7 @@ local function c_source()
 	local enum_name = {
 		normal = "DIST_NORMAL", exponential = "DIST_EXPONENTIAL",
 		poisson = "DIST_POISSON", log_normal = "DIST_LOG_NORMAL", beta = "DIST_BETA",
+		geometric = "DIST_GEOMETRIC",
 	}
 	for _, chart in ipairs(charts) do
 		out[#out + 1] = "\t{"
@@ -428,7 +444,7 @@ local function c_source()
 		out[#out + 1] = "\t\t" .. c_quote(chart.parameters) .. ","
 		out[#out + 1] = "\t\t" .. c_quote(chart.axis) .. ","
 		out[#out + 1] = wrapped_literal(chart.png_base64, "\t\t", c_quote) .. ","
-		out[#out + 1] = wrapped_literal(chart.sixel_data, "\t\t", c_quote) .. ","
+		out[#out + 1] = wrapped_literal(chart.sixel_data, "\t\t", c_transport_quote) .. ","
 		out[#out + 1] = "\t\t" .. c_quote(chart.fallback)
 		out[#out + 1] = "\t},"
 	end

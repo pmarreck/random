@@ -29,6 +29,8 @@ mod distribution;
 mod drbg;
 mod error;
 mod fixed;
+mod geometric;
+mod unsigned_count;
 
 #[cfg(kani)]
 mod kani_proofs;
@@ -44,6 +46,8 @@ pub use distribution::{
 pub use drbg::Drbg;
 pub use error::Error;
 pub use fixed::Fixed;
+pub use geometric::Geometric;
+pub use unsigned_count::UnsignedCount;
 
 /// Largest exactly supported signed-integer magnitude and range cardinality.
 pub const MAX_EXACT_INTEGER: i64 = 9_007_199_254_740_992;

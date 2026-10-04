@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixture-cleanup.sh"
 # Enforce the Rust library/CLI dependency and purity boundary.
 set -u
 set -o pipefail
@@ -6,7 +7,7 @@ set -o pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fixture_tmp="$(mktemp -d "${TMPDIR:-/tmp}/randomr-consumer.XXXXXX")" || exit 1
 cleanup_fixture() {
-	rm -rf "$fixture_tmp"
+	test_trash "$fixture_tmp"
 }
 trap cleanup_fixture EXIT
 
@@ -65,6 +66,7 @@ bash -n "$root/tests/randomr_bsd_targets" \
 	"$root/tools/zig-aarch64-windows-linker" || exit 1
 
 (cd "$root" && cargo test --locked -p randomr --lib) || exit 1
+(cd "$root" && cargo test --locked -p randomr --test geometric) || exit 1
 (cd "$root" && cargo test --locked -p randomr --doc) || exit 1
 (cd "$root" && RUSTDOCFLAGS='-D warnings' cargo doc --locked -p randomr --no-deps) || exit 1
 cp -R "$root/tests/fixtures/randomr-consumer/." "$fixture_tmp/"

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixture-cleanup.sh"
 # Prove Zig's declared package archive contains every input downstream builds need.
 set -u
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/random-zig-package.XXXXXX")" || exit 1
-trap 'rm -rf -- "$tmp"' EXIT
+trap 'test_trash "$tmp"' EXIT
 
 # Zig 0.16 materializes a local-path fetch under ./zig-pkg as well as filling
 # the requested cache. Run it inside the disposable root so the package

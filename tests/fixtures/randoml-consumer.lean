@@ -23,3 +23,9 @@ def seed42 : ByteArray := Id.run do
   let some resumed := Randoml.Drbg.restore next.key next.position
     | throw (IO.userError "restore failed")
   unless next.nextU64 == resumed.nextU64 do throw (IO.userError "resumption mismatch")
+  let some prepared := Randoml.Geometric.prepare { m := 4611686018427387904, e := -100 }
+    | throw (IO.userError "geometric prepare failed")
+  let some (gap, next) := Randoml.Geometric.sample state prepared
+    | throw (IO.userError "geometric sample failed")
+  unless gap == 50065276213116078233391743926 && next.position == 509 do
+    throw (IO.userError "geometric wide gap/cursor mismatch")

@@ -3,6 +3,7 @@ import Randoml.Drbg
 import Randoml.Fixed
 import Randoml.Decimal
 import Randoml.Distribution
+import Randoml.Geometric
 import Randoml.Curve
 import Randoml.Chart
 import Randoml.Native

@@ -23,3 +23,13 @@ test "a downstream Zig package consumes the public randomz module" {
     );
     try std.testing.expectEqualSlices(u8, expected, &actual);
 }
+
+test "a downstream consumer imports geometric preparation and unsigned BLIP" {
+    const p = randomz.geometric.parseProbability("2^-100").?;
+    const prepared = try randomz.geometric.Prepared.init(p);
+    try std.testing.expectEqual(@as(usize, 38), prepared.tail_bits);
+    var magnitude = [_]u8{0} ** 32;
+    magnitude[0] = 128;
+    const length = try randomz.geometric.encodeInPlace(&magnitude, 1);
+    try std.testing.expectEqualSlices(u8, &.{ 129, 128 }, magnitude[0..length]);
+}

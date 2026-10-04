@@ -11,8 +11,8 @@ use std::process::{self, Command};
 
 use randomr::entropy::{PathEntropy, SystemEntropy};
 use randomr::{
-	ByteSource, Drbg, Error, Fixed, MAX_EXACT_INTEGER, beta, exponential, log_normal, normal,
-	normal_int, poisson, range,
+	ByteSource, Drbg, Error, Fixed, Geometric, MAX_EXACT_INTEGER, UnsignedCount, beta, exponential,
+	log_normal, normal, normal_int, poisson, range,
 };
 use zeroize::{Zeroize, Zeroizing};
 
@@ -59,6 +59,7 @@ impl Source {
 enum Value {
 	Integer(i64),
 	Fixed(Fixed),
+	Count(UnsignedCount),
 }
 
 enum CliError {
@@ -331,6 +332,7 @@ fn canonical_args(options: &Options, bounds: Option<(i64, i64, u64)>) -> String 
 			Mode::Normal => "normal",
 			Mode::Exponential => "exponential",
 			Mode::Poisson => "poisson",
+			Mode::Geometric => "geometric",
 			Mode::LogNormal => "log-normal",
 			Mode::Beta => "beta",
 		},
@@ -367,6 +369,11 @@ fn canonical_args(options: &Options, bounds: Option<(i64, i64, u64)>) -> String 
 				.as_ref()
 				.or(options.mean.as_ref())
 				.map_or("1", |value| &value.1),
+		),
+		Mode::Geometric => push_string(
+			&mut fields,
+			"p",
+			options.probability.as_ref().map_or("0.5", |value| &value.1),
 		),
 		Mode::LogNormal => {
 			push_string(
@@ -473,7 +480,13 @@ fn generation_bounds(options: &Options) -> Result<(i64, i64, u64, bool), String>
 	))
 }
 
-fn generate(options: &Options, source: &mut Source, start: i64, end: i64) -> Result<Value, String> {
+fn generate(
+	options: &Options,
+	source: &mut Source,
+	start: i64,
+	end: i64,
+	geometric: Option<&Geometric>,
+) -> Result<Value, String> {
 	let one = Fixed::from_i64(1);
 	let two = Fixed::from_i64(2);
 	let result = match options.mode {
@@ -504,6 +517,12 @@ fn generate(options: &Options, source: &mut Source, start: i64, end: i64) -> Res
 					.map_or(one, |value| value.0),
 			)
 			.map_err(core_error)?,
+		),
+		Mode::Geometric => Value::Count(
+			geometric
+				.ok_or("geometric parameters are absent")?
+				.sample(source)
+				.map_err(core_error)?,
 		),
 		Mode::LogNormal => Value::Fixed(
 			log_normal(
@@ -543,6 +562,7 @@ fn value_byte(value: Value) -> u8 {
 	let integer = match value {
 		Value::Integer(integer) => integer,
 		Value::Fixed(fixed) => fixed.to_i64_trunc(),
+		Value::Count(_) => unreachable!("arbitrary counts are encoded as unsigned BLIP"),
 	};
 	integer.rem_euclid(256) as u8
 }
@@ -554,6 +574,7 @@ fn emit_text(
 	end: i64,
 	count: u64,
 ) -> Result<(), CliError> {
+	let geometric = prepare_geometric(options)?;
 	let stdout = io::stdout();
 	let mut output = stdout.lock();
 	let mut normal_values = [0_i64; 256];
@@ -594,12 +615,19 @@ fn emit_text(
 			normal_lane = (normal_lane + 1) % normal_values.len();
 			Value::Integer(normal_values[lane])
 		} else {
-			generate(options, source, start, end)?
+			generate(options, source, start, end, geometric.as_ref())?
 		};
 		let text = match value {
 			Value::Integer(integer) if options.hex => format!("{integer:x}"),
 			Value::Integer(integer) => integer.to_string(),
 			Value::Fixed(fixed) => format_fixed(fixed, options.precision)?.to_owned(),
+			Value::Count(count) => {
+				if options.hex {
+					count.to_hex()
+				} else {
+					count.to_decimal()
+				}
+			}
 		};
 		output
 			.write_all(text.as_bytes())
@@ -628,6 +656,9 @@ fn emit_binary(
 	end: i64,
 	count: u64,
 ) -> Result<(), CliError> {
+	if let Some(prepared) = prepare_geometric(options)? {
+		return emit_geometric_binary(options, source, &prepared, count);
+	}
 	let direct = options.mode == Mode::Uniform && start == 0 && end == 255;
 	if !options.unbounded() && direct {
 		if let Source::Drbg(drbg) = source {
@@ -684,7 +715,7 @@ fn emit_binary(
 			}
 		} else {
 			for byte in &mut *bytes {
-				*byte = value_byte(generate(options, source, start, end)?);
+				*byte = value_byte(generate(options, source, start, end, None)?);
 			}
 		}
 		if options.base64 {
@@ -709,6 +740,66 @@ fn emit_binary(
 		finish_base64(&mut output, &carry, carry_len)?;
 		output.write_all(b"\n").map_err(CliError::Output)?;
 	} else if options.hex {
+		output.write_all(b"\n").map_err(CliError::Output)?;
+	}
+	output.flush().map_err(CliError::Output)
+}
+
+fn prepare_geometric(options: &Options) -> Result<Option<Geometric>, String> {
+	if options.mode != Mode::Geometric {
+		return Ok(None);
+	}
+	Geometric::new(
+		options
+			.probability
+			.as_ref()
+			.map_or(Fixed::from_ratio(1, 2).map_err(core_error)?, |value| {
+				value.0
+			}),
+	)
+	.map(Some)
+	.map_err(core_error)
+}
+
+fn emit_geometric_binary(
+	options: &Options,
+	source: &mut Source,
+	prepared: &Geometric,
+	count: u64,
+) -> Result<(), CliError> {
+	let stdout = io::stdout();
+	let mut output = stdout.lock();
+	let mut carry = [0_u8; 2];
+	let mut carry_len = 0;
+	let mut encoded = Vec::new();
+	let mut remaining = count;
+	while options.unbounded() || remaining != 0 {
+		let bytes = prepared.sample(source).map_err(core_error)?.to_blip();
+		if options.base64 {
+			write_base64_chunk(
+				&mut output,
+				&bytes,
+				&mut carry,
+				&mut carry_len,
+				&mut encoded,
+			)?;
+		} else if options.hex {
+			for byte in bytes {
+				write!(output, "{byte:02x}").map_err(CliError::Output)?;
+			}
+		} else {
+			output.write_all(&bytes).map_err(CliError::Output)?;
+		}
+		if options.unbounded() {
+			output.flush().map_err(CliError::Output)?;
+		} else {
+			remaining -= 1;
+		}
+	}
+	if options.base64 {
+		finish_base64(&mut output, &carry, carry_len)?;
+	}
+	if options.base64 || options.hex {
 		output.write_all(b"\n").map_err(CliError::Output)?;
 	}
 	output.flush().map_err(CliError::Output)
@@ -978,6 +1069,7 @@ fn selected_help_mode(args: &[String], program: &str) -> Mode {
 			"--normalized" | "-n" => Some(Mode::Normal),
 			"--exponential" => Some(Mode::Exponential),
 			"--poisson" => Some(Mode::Poisson),
+			"--geometric" => Some(Mode::Geometric),
 			"--log-normal" => Some(Mode::LogNormal),
 			"--beta" => Some(Mode::Beta),
 			_ if argument.starts_with("--beta=") => Some(Mode::Beta),
@@ -1012,6 +1104,7 @@ fn print_help(program: &str, args: &[String]) -> Result<(), String> {
 			"  -n, --normalized    Normal (Gaussian) via Box-Muller\n",
 			"      --exponential   Exponential distribution (use --rate)\n",
 			"      --poisson       Poisson distribution (use --lambda or --mean)\n",
+			"      --geometric     Failures before success; default probability 0.5\n",
 			"      --log-normal    Log-normal distribution\n",
 			"      --beta[=B]      Beta distribution; optional B replaces default beta 2\n",
 			"\n",
@@ -1048,6 +1141,7 @@ fn print_help(program: &str, args: &[String]) -> Result<(), String> {
 			"      --stddev S      Set stddev for normal/log-normal\n",
 			"      --rate R        Set exponential rate\n",
 			"      --lambda L      Set Poisson lambda (clearer alias for --mean)\n",
+			"      --probability P Set geometric success probability; accepts 1e-20 or 2^-100\n",
 			"      --alpha A       Set alpha for beta distribution\n",
 			"      --test          Run the test suite\n",
 			"\n",
@@ -1096,6 +1190,7 @@ fn print_help_chart(args: &[String], mode: Mode) -> Result<(), String> {
 		Mode::Normal => "normal",
 		Mode::Exponential => "exponential",
 		Mode::Poisson => "poisson",
+		Mode::Geometric => "geometric",
 		Mode::LogNormal => "log_normal",
 		Mode::Beta => "beta",
 		Mode::Uniform => unreachable!(),
@@ -1141,6 +1236,24 @@ fn print_view(args: &[String], options: &Options) -> Result<(), String> {
 			format!(
 				"Parameters: rate={}.",
 				options.rate.as_ref().map_or("1", |value| value.1.as_str())
+			),
+		),
+		Mode::Geometric => (
+			"Geometric (failures before success)",
+			"Horizontal axis: failures from 0 to 6/probability; vertical axis: relative probability mass.",
+			options
+				.probability
+				.as_ref()
+				.map_or(Fixed::from_ratio(1, 2).map_err(core_error)?, |value| {
+					value.0
+				}),
+			zero,
+			format!(
+				"Parameters: probability={}.",
+				options
+					.probability
+					.as_ref()
+					.map_or("0.5", |value| value.1.as_str())
 			),
 		),
 		Mode::Poisson => {
@@ -1205,6 +1318,7 @@ fn distribution(mode: Mode) -> randomr::Distribution {
 		Mode::Normal => randomr::Distribution::Normal,
 		Mode::Exponential => randomr::Distribution::Exponential,
 		Mode::Poisson => randomr::Distribution::Poisson,
+		Mode::Geometric => randomr::Distribution::Geometric,
 		Mode::LogNormal => randomr::Distribution::LogNormal,
 		Mode::Beta => randomr::Distribution::Beta,
 		Mode::Uniform => unreachable!(),

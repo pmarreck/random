@@ -314,7 +314,7 @@ def apply (initial : Options) (input : ByteArray) : Except String Options := do
   stringArray root "notices"
   stringArray root "warnings"
   allowedKeys args #["op", "distribution", "range", "count", "mean", "stddev",
-    "rate", "lambda", "alpha", "beta", "precision", "binary", "encoding", "delim"]
+    "rate", "lambda", "p", "alpha", "beta", "precision", "binary", "encoding", "delim"]
     "unknown state args key: "
 
   let cliStdin := initial.operationCount > 0
@@ -335,6 +335,7 @@ def apply (initial : Options) (input : ByteArray) : Except String Options := do
         | "normal" => pure Mode.normal
         | "exponential" => pure Mode.exponential
         | "poisson" => pure Mode.poisson
+        | "geometric" => pure Mode.geometric
         | "log-normal" => pure Mode.logNormal
         | "beta" => pure Mode.beta
         | _ => throw "state distribution is unsupported"
@@ -385,6 +386,11 @@ def apply (initial : Options) (input : ByteArray) : Except String Options := do
         let mean ← inheritFixed options.mean args "mean"
         let lambda ← inheritFixed options.lambda args "lambda"
         options := { options with mean, lambda }
+    | .geometric =>
+        if options.probability.isNone then
+          if let some text ← optionalString args "p" then
+            let value ← optionToExcept "state p is invalid" (Geometric.parseProbability text)
+            options := { options with probability := some { value, text } }
     | .beta =>
         let alpha ← inheritFixed options.alpha args "alpha"
         let beta ← inheritFixed options.beta args "beta"

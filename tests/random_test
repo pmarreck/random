@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixture-cleanup.sh"
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PATH="$here/../bin:$PATH"
@@ -141,6 +142,7 @@ test_random() {
 		'--normalized:Normal (Gaussian)' \
 		'--exponential:Exponential' \
 		'--poisson:Poisson' \
+		'--geometric:Geometric (failures before success)' \
 		'--log-normal:Log-normal' \
 		'--beta:Beta'; do
 		local distribution_flag="${distribution_spec%%:*}"
@@ -257,7 +259,7 @@ test_random() {
 		echo "✗ --test flag failed to invoke/propagate probe: success=$test_status rejected=$rejected_status output='$test_output'" >&2
 		(( fails++ ))
 	fi
-	rm -rf -- "$probe_dir"
+	test_trash "$probe_dir"
 
 	(( tests++ ))
 	echo "Testing byte-oriented stdin items..."
@@ -1845,7 +1847,8 @@ verycommon:100"
 		if [ "${RANDOM_TEST_CLI_KIND:-}" = lean ]; then
 			libm_inspected=true
 			libm_hits=$(grep -R -nE '\b(Float|Float32|Float64|float|double)\b' \
-				"$here/../lean/Randoml" 2>/dev/null || true)
+				"$here/../lean/Randoml" 2>/dev/null | \
+				grep -vE '^[^:]+:[0-9]+:[[:space:]]*(--|/--|/-)' || true)
 		fi
 		if ! $libm_inspected && command -v ldd >/dev/null 2>&1; then
 			libm_inspected=true
@@ -2091,6 +2094,92 @@ verycommon:100"
 		echo "✓ Aggregate/zero --weighted validation passed"
 	else
 		echo "✗ Aggregate/zero --weighted validation failed (overflow=$aggregate_weight_status zero=$zero_weight_status)" >&2
+		(( fails++ ))
+	fi
+
+	# Geometric's p=1/2 golden follows the already frozen seed-42 byte stream:
+	# each big-endian u64 with a clear high bit ends one failures-before-success
+	# count. These expectations are identical under every executable selector.
+	(( tests++ ))
+	echo "Testing shared geometric count and continuation contracts..."
+	local geometric_values geometric_status geometric_packet geometric_state
+	geometric_values=$(random --seed 42 --geometric --probability 0.5 --count 8 2>/dev/null)
+	geometric_status=$?
+	if [ "$geometric_status" -ne 0 ] || [ "$geometric_values" != $'0\n4\n1\n4\n0\n0\n3\n1' ]; then
+		echo "✗ Geometric p=1/2 golden failed (status=$geometric_status): '$geometric_values'" >&2
+		(( fails++ ))
+	fi
+	geometric_packet=$(random --seed 42 --geometric --probability 0.5 --count 1 --state-stdout 2>/dev/null)
+	geometric_status=$?
+	geometric_state=$(printf '%s\n' "$geometric_packet" | tail -n 1)
+	if [ "$geometric_status" -ne 0 ] || [[ "$geometric_state" != *'"next_pos":"8"'* ]] ||
+	   [[ "$geometric_state" != *'"distribution":"geometric"'* ]] ||
+	   [[ "$geometric_state" != *'"p":"0.5"'* ]] ||
+	   [ "$(random --resume "$geometric_state" --count 1 2>/dev/null)" != "4" ]; then
+		echo "✗ Geometric continuation lost its probability or byte cursor" >&2
+		(( fails++ ))
+	fi
+	geometric_packet=$(random --seed 42 --geometric --probability 1 --count 3 --state-stdout 2>/dev/null)
+	geometric_status=$?
+	if [ "$geometric_status" -ne 0 ] || [[ "$geometric_packet" != $'0\n0\n0\n'* ]] ||
+	   [[ "$geometric_packet" != *'"next_pos":"0"'* ]]; then
+		echo "✗ Geometric p=1 must return zero without reading random bytes" >&2
+		(( fails++ ))
+	fi
+	(( tests++ ))
+	geometric_state=$(random --seed 42 --geometric --probability 0.25 --count 1 2>&1 >/dev/null)
+	if [ "$(random --resume "$geometric_state" --probability 0.5 --count 1 2>/dev/null)" != '2' ]; then
+		echo '✗ Explicit geometric probability must override inherited state without repeating the mode' >&2
+		(( fails++ ))
+	fi
+	geometric_state=${geometric_state/\"p\":\"0.25\"/\"p\":false}
+	if [ "$(random --resume "$geometric_state" --geometric --probability 0.5 --count 1 2>/dev/null)" != '2' ]; then
+		echo '✗ Overridden geometric state probability must not affect generation' >&2
+		(( fails++ ))
+	fi
+	for geometric_invalid in 0 -0.1 1.01 NaN; do
+		assert_clean_cli_error "invalid geometric probability $geometric_invalid" \
+			random --seed 42 --geometric --probability "$geometric_invalid" || (( fails++ ))
+	done
+	local geometric_long
+	printf -v geometric_long '%02001d' 0
+	assert_clean_cli_error 'overlong geometric decimal mantissa' \
+		random --seed 42 --geometric --probability "$geometric_long.5" || (( fails++ ))
+	for geometric_invalid in '1e -1' '2^ -1' '2^-1000001'; do
+		assert_clean_cli_error "invalid geometric exponent $geometric_invalid" \
+			random --seed 42 --geometric --probability "$geometric_invalid" || (( fails++ ))
+	done
+	(( tests++ ))
+	local geometric_tiny geometric_hex geometric_binary geometric_base64
+	geometric_tiny=$(random --seed 42 --geometric --probability '2^-100' --count 1 2>/dev/null)
+	geometric_status=$?
+	geometric_hex=$(random --seed 42 --geometric --probability '2^-100' --count 1 --hex 2>/dev/null)
+	geometric_binary=$(random --seed 42 --geometric --probability 0.5 --count 8 -b --hex 2>/dev/null)
+	geometric_base64=$(random --seed 42 --geometric --probability 0.5 --count 8 -b --base64 2>/dev/null)
+	if [ "$geometric_status" -ne 0 ] || [ "$geometric_tiny" != '50065276213116078233391743926' ] ||
+	   [ "$geometric_hex" != 'a1c5069dd13ed593472c43b6' ] ||
+	   [ "$geometric_binary" != '0004010400000301' ] || [ "$geometric_base64" != 'AAQBBAAAAwE=' ]; then
+		echo "✗ Geometric exact wide count or unsigned BLIP transport failed: '$geometric_tiny' '$geometric_hex' '$geometric_binary' '$geometric_base64'" >&2
+		(( fails++ ))
+	fi
+	(( tests++ ))
+	local geometric_scientific geometric_decimal
+	geometric_scientific=$(random --seed 42 --geometric --probability '5e-1' --count 8 2>/dev/null)
+	geometric_decimal=$(random --seed 42 --geometric --probability '1e-20' --count 2 2>/dev/null)
+	if [ "$geometric_scientific" != "$geometric_values" ] ||
+	   [ "$geometric_decimal" != $'2914182621352146285\n80629014300636972342' ]; then
+		echo "✗ Geometric scientific probability syntax differs from its portable contract" >&2
+		(( fails++ ))
+	fi
+	(( tests++ ))
+	local geometric_view geometric_view_attached
+	geometric_view=$(random --geometric --probability 0.25 --view --utf8)
+	geometric_status=$?
+	geometric_view_attached=$(random --probability=0.25 --geometric --utf8 --view)
+	if [ "$geometric_status" -ne 0 ] || [ "$geometric_view" != "$geometric_view_attached" ] ||
+	   [[ "$geometric_view" != 'Distribution: Geometric (failures before success)'* ]] ||
+	   [[ "$geometric_view" != *'Parameters: probability=0.25.'* ]] || [[ "$geometric_view" != *'⡇'* ]]; then
+		echo "✗ Geometric customized shape view failed" >&2
 		(( fails++ ))
 	fi
 

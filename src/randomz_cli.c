@@ -42,6 +42,7 @@ typedef enum distribution {
 	DIST_NORMAL,
 	DIST_EXPONENTIAL,
 	DIST_POISSON,
+	DIST_GEOMETRIC,
 	DIST_LOG_NORMAL,
 	DIST_BETA
 } distribution;
@@ -103,18 +104,21 @@ typedef struct options {
 	bool stddev_set;
 	bool rate_set;
 	bool lambda_set;
+	bool probability_set;
 	bool alpha_set;
 	bool beta_set;
 	randomz_fixed mean;
 	randomz_fixed stddev;
 	randomz_fixed rate;
 	randomz_fixed lambda;
+	randomz_fixed probability;
 	randomz_fixed alpha;
 	randomz_fixed beta;
 	const char *mean_text;
 	const char *stddev_text;
 	const char *rate_text;
 	const char *lambda_text;
+	const char *probability_text;
 	const char *alpha_text;
 	const char *beta_text;
 } options;
@@ -448,6 +452,7 @@ static void print_help(distribution dist, chart_renderer renderer)
 	puts("  -n, --normalized    Normal (Gaussian) via Box-Muller");
 	puts("      --exponential   Exponential distribution (use --rate)");
 	puts("      --poisson       Poisson distribution (use --lambda or --mean)");
+	puts("      --geometric     Failures before success; default probability 0.5");
 	puts("      --log-normal    Log-normal distribution");
 	puts("      --beta[=B]      Beta distribution; optional B replaces default beta 2");
 	puts("");
@@ -484,6 +489,7 @@ static void print_help(distribution dist, chart_renderer renderer)
 	puts("      --stddev S      Set stddev for normal/log-normal");
 	puts("      --rate R        Set exponential rate");
 	puts("      --lambda L      Set Poisson lambda (clearer alias for --mean)");
+	puts("      --probability P Set geometric success probability; accepts 1e-20 or 2^-100");
 	puts("      --alpha A       Set alpha for beta distribution");
 	puts("      --test          Run the test suite");
 	puts("");
@@ -529,6 +535,8 @@ static distribution help_distribution_from_args(int argc, char **argv)
 			candidate = DIST_EXPONENTIAL;
 		} else if (strcmp(argv[i], "--poisson") == 0) {
 			candidate = DIST_POISSON;
+		} else if (strcmp(argv[i], "--geometric") == 0) {
+			candidate = DIST_GEOMETRIC;
 		} else if (strcmp(argv[i], "--log-normal") == 0) {
 			candidate = DIST_LOG_NORMAL;
 		} else if (strcmp(argv[i], "--beta") == 0 ||
@@ -771,7 +779,7 @@ static int apply_state(options *opts, const char *range_literal)
 	}
 	static const char *const args_allowed[] = {"op", "distribution", "range", "count",
 		"mean", "stddev", "rate", "lambda", "alpha", "beta", "precision", "binary",
-		"encoding", "delim"};
+		"encoding", "delim", "p"};
 	for (size_t i = 0; i < args->member_count; ++i) {
 		if (!json_key_allowed(args->members[i].key, args_allowed,
 			sizeof(args_allowed) / sizeof(args_allowed[0]))) {
@@ -796,6 +804,7 @@ static int apply_state(options *opts, const char *range_literal)
 			else if (strcmp(dist, "normal") == 0) opts->dist = DIST_NORMAL;
 			else if (strcmp(dist, "exponential") == 0) opts->dist = DIST_EXPONENTIAL;
 			else if (strcmp(dist, "poisson") == 0) opts->dist = DIST_POISSON;
+			else if (strcmp(dist, "geometric") == 0) opts->dist = DIST_GEOMETRIC;
 			else if (strcmp(dist, "log-normal") == 0) opts->dist = DIST_LOG_NORMAL;
 			else if (strcmp(dist, "beta") == 0) opts->dist = DIST_BETA;
 			else { print_error("state distribution is unsupported"); return 1; }
@@ -852,6 +861,17 @@ static int apply_state(options *opts, const char *range_literal)
 		print_error("state binary must be boolean"); return 1;
 	}
 	int fixed_error = 0;
+	if (opts->dist == DIST_GEOMETRIC && !opts->probability_set) {
+		text = json_string(args, "p", false, error, sizeof(error));
+		if (text == &json_type_error_marker) { print_error(error); return 1; }
+		if (text != NULL) {
+			if (randomz_geometric_probability_parse(text, strlen(text), &opts->probability) != RANDOMZ_OK) {
+				print_error("state p is invalid"); return 1;
+			}
+			opts->probability_set = true;
+			opts->probability_text = text;
+		}
+	}
 	if (!(opts->choose || opts->shuffle || opts->weighted)) switch (opts->dist) {
 	case DIST_NORMAL:
 	case DIST_LOG_NORMAL:
@@ -877,6 +897,7 @@ static int apply_state(options *opts, const char *range_literal)
 				&opts->beta_text, error, sizeof(error));
 		break;
 	case DIST_UNIFORM:
+	case DIST_GEOMETRIC:
 		break;
 	}
 	if (fixed_error) {
@@ -993,6 +1014,8 @@ static int parse_arguments(int argc, char **argv, options *opts)
 			select_distribution(opts, DIST_EXPONENTIAL);
 		} else if (strcmp(arg, "--poisson") == 0) {
 			select_distribution(opts, DIST_POISSON);
+		} else if (strcmp(arg, "--geometric") == 0) {
+			select_distribution(opts, DIST_GEOMETRIC);
 		} else if (strcmp(arg, "--log-normal") == 0) {
 			select_distribution(opts, DIST_LOG_NORMAL);
 		} else if (strcmp(arg, "--beta") == 0 ||
@@ -1217,6 +1240,14 @@ static int parse_arguments(int argc, char **argv, options *opts)
 			}
 			opts->lambda_set = true;
 			opts->lambda_text = value;
+		} else if (strcmp(arg, "--probability") == 0 || attached_option_value(arg, "--probability") != NULL) {
+			value = attached_option_value(arg, "--probability");
+			if (value == NULL && require_next(argc, argv, &i, "--probability requires a number", &value)) return 1;
+			if (randomz_geometric_probability_parse(value, strlen(value), &opts->probability) != RANDOMZ_OK) {
+				print_error("--probability must be in (0,1] using decimal, scientific, or 2^N syntax"); return 1;
+			}
+			opts->probability_set = true;
+			opts->probability_text = value;
 		} else if (strcmp(arg, "--alpha") == 0 ||
 			attached_option_value(arg, "--alpha") != NULL) {
 			value = attached_option_value(arg, "--alpha");
@@ -1373,6 +1404,9 @@ static int parse_arguments(int argc, char **argv, options *opts)
 	if (opts->lambda_set && opts->dist != DIST_POISSON) {
 		print_error("--lambda requires --poisson");
 		return 1;
+	}
+	if (opts->probability_set && opts->dist != DIST_GEOMETRIC) {
+		print_error("--probability requires --geometric"); return 1;
 	}
 	if (opts->dist == DIST_POISSON && opts->lambda_set && opts->mean_set) {
 		print_error("--lambda and --mean are aliases; specify only one");
@@ -1569,6 +1603,8 @@ static int generate_value(const options *opts, rng_source *source,
 	int status;
 	value->is_fixed = false;
 	switch (opts->dist) {
+	case DIST_GEOMETRIC:
+		return RANDOMZ_INVALID_ARGUMENT; /* Wide counts use emit_geometric. */
 	case DIST_EXPONENTIAL:
 		value->is_fixed = true;
 		return randomz_exponential(source->fill, source->context,
@@ -2044,6 +2080,69 @@ static int emit_text(const options *opts, rng_source *source,
 	return 0;
 }
 
+/* Allocation and transport only: sampling and wide-integer formatting both
+ * dogfood the public Zig C ABI. Never retry a failed sample by resampling. */
+static int emit_geometric(const options *opts, rng_source *source, uint64_t count)
+{
+	randomz_fixed p = opts->probability;
+	if (!opts->probability_set && randomz_geometric_probability_parse("0.5", 3, &p) != RANDOMZ_OK)
+		return rng_failure(RANDOMZ_INVALID_ARGUMENT);
+	size_t capacity = (size_t)(-(int64_t)p.e + 7) / 8 + 256;
+	uint8_t *encoded = malloc(capacity);
+	uint32_t *scratch = malloc(capacity * sizeof(*scratch));
+	char *text = malloc(capacity * 3);
+	if (encoded == NULL || scratch == NULL || text == NULL) {
+		free(encoded); free(scratch); free(text);
+		print_error("could not allocate geometric output buffers"); return 1;
+	}
+	uint8_t carry[3];
+	size_t carry_count = 0;
+	bool first = true;
+	int result = 0;
+	for (uint64_t i = 0; opts->unbounded || i < count; i += !opts->unbounded) {
+		size_t written = 0;
+		int status = randomz_geometric(source->fill, source->context, p, encoded, capacity, &written);
+		if (status != RANDOMZ_OK) { result = rng_failure(status); break; }
+		if (!opts->binary_output) {
+			size_t length = 0;
+			status = randomz_count_format(encoded, written, opts->hex_output ? 16 : 10,
+				scratch, capacity, text, capacity * 3, &length);
+			if (status != RANDOMZ_OK) { result = rng_failure(status); break; }
+			if (!first && strcmp(opts->delimiter, "\n") != 0) fputs(opts->delimiter, stdout);
+			if (fwrite(text, 1, length, stdout) != length) { result = stdout_failure(); break; }
+			if (strcmp(opts->delimiter, "\n") == 0) putchar('\n');
+		} else if (opts->base64_output) {
+			for (size_t byte = 0; byte < written; ++byte) {
+				carry[carry_count++] = encoded[byte];
+				if (carry_count == 3) {
+					uint32_t word = ((uint32_t)carry[0] << 16) | ((uint32_t)carry[1] << 8) | carry[2];
+					putchar(base64_alphabet[(word >> 18) & 63]); putchar(base64_alphabet[(word >> 12) & 63]);
+					putchar(base64_alphabet[(word >> 6) & 63]); putchar(base64_alphabet[word & 63]);
+					carry_count = 0;
+				}
+			}
+		} else if (opts->hex_output) {
+			static const char hex[] = "0123456789abcdef";
+			for (size_t byte = 0; byte < written; ++byte) {
+				putchar(hex[encoded[byte] >> 4]); putchar(hex[encoded[byte] & 15]);
+			}
+		} else if (fwrite(encoded, 1, written, stdout) != written) { result = stdout_failure(); break; }
+		first = false;
+		if (ferror(stdout) || (opts->unbounded && fflush(stdout) == EOF)) { result = stdout_failure(); break; }
+	}
+	if (result == 0 && opts->binary_output && opts->base64_output && carry_count != 0) {
+		uint32_t word = (uint32_t)carry[0] << 16;
+		if (carry_count == 2) word |= (uint32_t)carry[1] << 8;
+		putchar(base64_alphabet[(word >> 18) & 63]); putchar(base64_alphabet[(word >> 12) & 63]);
+		putchar(carry_count == 2 ? base64_alphabet[(word >> 6) & 63] : '='); putchar('=');
+	}
+	if (result == 0 && (opts->binary_output ? opts->hex_output || opts->base64_output : strcmp(opts->delimiter, "\n") != 0))
+		putchar('\n');
+	free(encoded); free(scratch); free(text);
+	if (result == 0 && (fflush(stdout) == EOF || ferror(stdout))) result = stdout_failure();
+	return result;
+}
+
 static int write_arg_string(FILE *stream, bool *first, const char *key, const char *value)
 {
 	if (!*first && fputc(',', stream) == EOF) return 1;
@@ -2058,6 +2157,7 @@ static const char *distribution_name(distribution dist)
 	case DIST_NORMAL: return "normal";
 	case DIST_EXPONENTIAL: return "exponential";
 	case DIST_POISSON: return "poisson";
+	case DIST_GEOMETRIC: return "geometric";
 	case DIST_LOG_NORMAL: return "log-normal";
 	case DIST_BETA: return "beta";
 	case DIST_UNIFORM:
@@ -2103,6 +2203,8 @@ static int write_metadata(const options *opts, const randomz_drbg *drbg,
 				const char *lambda = opts->lambda_text != NULL ? opts->lambda_text :
 					(opts->mean_text != NULL ? opts->mean_text : "1");
 				if (write_arg_string(stream, &first, "lambda", lambda)) return 1;
+			} else if (opts->dist == DIST_GEOMETRIC) {
+				if (write_arg_string(stream, &first, "p", opts->probability_text != NULL ? opts->probability_text : "0.5")) return 1;
 			} else if (opts->dist == DIST_LOG_NORMAL) {
 				if (write_arg_string(stream, &first, "mean", opts->mean_text != NULL ? opts->mean_text : "0") ||
 					write_arg_string(stream, &first, "stddev", opts->stddev_text != NULL ? opts->stddev_text : "1")) return 1;
@@ -2152,6 +2254,7 @@ static randomz_distribution public_distribution(distribution dist)
 	case DIST_NORMAL: return RANDOMZ_DISTRIBUTION_NORMAL;
 	case DIST_EXPONENTIAL: return RANDOMZ_DISTRIBUTION_EXPONENTIAL;
 	case DIST_POISSON: return RANDOMZ_DISTRIBUTION_POISSON;
+	case DIST_GEOMETRIC: return RANDOMZ_DISTRIBUTION_GEOMETRIC;
 	case DIST_LOG_NORMAL: return RANDOMZ_DISTRIBUTION_LOG_NORMAL;
 	case DIST_BETA: return RANDOMZ_DISTRIBUTION_BETA;
 	case DIST_UNIFORM:
@@ -2181,6 +2284,12 @@ static int print_distribution_view(int argc, char **argv, const options *opts)
 		title = "Exponential";
 		first = opts->rate_set ? opts->rate : one;
 		axis = "Horizontal axis: 0 to 6/rate; vertical axis: relative probability density.";
+		break;
+	case DIST_GEOMETRIC:
+		title = "Geometric (failures before success)";
+		first = opts->probability;
+		if (!opts->probability_set) randomz_geometric_probability_parse("0.5", 3, &first);
+		axis = "Horizontal axis: failures from 0 to 6/probability; vertical axis: relative probability mass.";
 		break;
 	case DIST_POISSON:
 		title = "Poisson";
@@ -2214,6 +2323,8 @@ static int print_distribution_view(int argc, char **argv, const options *opts)
 	} else if (opts->dist == DIST_EXPONENTIAL) {
 		printf("Parameters: rate=%s.\n",
 			opts->rate_text != NULL ? opts->rate_text : "1");
+	} else if (opts->dist == DIST_GEOMETRIC) {
+		printf("Parameters: probability=%s.\n", opts->probability_text != NULL ? opts->probability_text : "0.5");
 	} else if (opts->dist == DIST_POISSON) {
 		const char *lambda_text = opts->lambda_text != NULL ? opts->lambda_text :
 			(opts->mean_text != NULL ? opts->mean_text : "1");
@@ -2359,7 +2470,9 @@ int main(int argc, char **argv)
 	}
 
 	int result;
-	if (opts.binary_output) {
+	if (opts.dist == DIST_GEOMETRIC) {
+		result = emit_geometric(&opts, &source, count);
+	} else if (opts.binary_output) {
 		bool direct = opts.dist == DIST_UNIFORM && start == 0 && end == 255;
 		if (direct) {
 			result = emit_binary(&opts, direct_binary_fill, &source, count,

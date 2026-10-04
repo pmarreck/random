@@ -1,5 +1,6 @@
 import Randoml.Decimal
 import Randoml.Chart
+import Randoml.Geometric
 
 namespace Randoml.CliOptions
 
@@ -10,6 +11,7 @@ inductive Mode
   | normal
   | exponential
   | poisson
+  | geometric
   | logNormal
   | beta
 deriving BEq, Repr
@@ -73,6 +75,7 @@ structure Options where
   stddev : Option NamedFixed := none
   rate : Option NamedFixed := none
   lambda : Option NamedFixed := none
+  probability : Option NamedFixed := none
   alpha : Option NamedFixed := none
   beta : Option NamedFixed := none
   view : Bool := false
@@ -218,6 +221,10 @@ def optionToExcept (message : ε) : Option α → Except ε α
   | none => throw message
 
 def setFixed (options : Options) (name text : String) : Except String Options := do
+  if name = "--probability" then
+    let value ← optionToExcept "--probability must be in (0,1] using decimal, scientific, or 2^N syntax"
+      (Geometric.parseProbability text)
+    return { options with probability := some { value, text } }
   if text.isEmpty then throw s!"{name} requires a number"
   let value ← optionToExcept s!"{name} value must be a number" (Decimal.parse text)
   let named := { value, text }
@@ -263,7 +270,7 @@ def startsJson (text : String) : Bool :=
 def requireText (bytes : ByteArray) : Except String String :=
   optionToExcept "arguments other than --random-source paths must be valid UTF-8" (text? bytes)
 
-def validate (options : Options) : Except String Options := do
+def validate (options : Options) (stateApplied : Bool := false) : Except String Options := do
   if options.modeCount > 1 then throw "only one distribution type can be specified"
   if options.operationCount > 1 then throw "only one stdin operation can be specified"
   if options.streaming ∧ options.operation != .generate then
@@ -293,6 +300,9 @@ def validate (options : Options) : Except String Options := do
     throw "--rate requires --exponential"
   if options.lambda.isSome ∧ options.mode != .poisson then
     throw "--lambda requires --poisson"
+  if options.probability.isSome ∧ options.mode != .geometric ∧
+      (options.state.isNone ∨ stateApplied) then
+    throw "--probability requires --geometric"
   if options.mode == .poisson ∧ options.lambda.isSome ∧ options.mean.isSome then
     throw "--lambda and --mean are aliases; specify only one"
   if options.alpha.isSome ∧ options.mode != .beta then
@@ -364,6 +374,7 @@ def parse (arguments : Array ByteArray) : Except String Options := do
     | "--normalized" | "-n" => options := selectMode options .normal
     | "--exponential" => options := selectMode options .exponential
     | "--poisson" => options := selectMode options .poisson
+    | "--geometric" => options := selectMode options .geometric
     | "--log-normal" => options := selectMode options .logNormal
     | "--choose" => options := selectOperation options .choose
     | "--shuffle" => options := selectOperation options .shuffle
@@ -415,7 +426,7 @@ def parse (arguments : Array ByteArray) : Except String Options := do
               request := .inline candidate
               nextIndex := cursor + 2
         options := { options with state := some request, deterministic := true, generationSeen := true }
-    | "--mean" | "--stddev" | "--rate" | "--lambda" | "--alpha" =>
+    | "--mean" | "--stddev" | "--rate" | "--lambda" | "--alpha" | "--probability" =>
         if arguments.size ≤ cursor + 1 then throw s!"{argument} requires a number"
         let value ← requireText arguments[cursor + 1]!
         options ← setFixed options argument value
@@ -457,7 +468,7 @@ def parse (arguments : Array ByteArray) : Except String Options := do
           options := { options with state := some (if value = "-" then .stdin else .inline value), deterministic := true, generationSeen := true }
         else
           let mut matched := false
-          for name in ["--mean", "--stddev", "--rate", "--lambda", "--alpha"] do
+          for name in ["--mean", "--stddev", "--rate", "--lambda", "--alpha", "--probability"] do
             if let some value := attached argument name then
               options ← setFixed options name value
               matched := true

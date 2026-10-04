@@ -17,6 +17,8 @@ pub enum Distribution {
 	Exponential,
 	/// Poisson probability mass.
 	Poisson,
+	/// Geometric failures-before-success probability mass.
+	Geometric,
 	/// Log-normal density.
 	LogNormal,
 	/// Beta density.
@@ -65,6 +67,13 @@ impl Curve {
 				poisson_curve(first, count)
 			}
 			Distribution::LogNormal => log_normal_curve(first, second, count),
+			Distribution::Geometric => {
+				crate::Geometric::new(first)?;
+				if !second.is_zero() {
+					return Err(Error::InvalidArgument);
+				}
+				geometric_curve(first, count)
+			}
 			Distribution::Beta => beta_curve(first, second, count),
 		}
 	}
@@ -182,6 +191,47 @@ fn poisson_curve(lambda: Fixed, capacity: usize) -> Result<Curve, Error> {
 		heights,
 		x_min: Fixed::from_i64(minimum),
 		x_max: Fixed::from_i64(maximum),
+	})
+}
+
+fn geometric_curve(p: Fixed, count: usize) -> Result<Curve, Error> {
+	let one = Fixed::from_i64(1);
+	let maximum = Fixed::from_i64(6).div(p)?;
+	let log_survival = if p == one {
+		Fixed::ZERO
+	} else if p.e() < -4 {
+		// Avoid cancellation: eight log1p terms leave exponent error
+		// <6*p^8/(9*(1-p)) <1.66e-10 for p<1/16 and x<=6/p.
+		let mut power = p;
+		let mut sum = p;
+		for n in 2..=8 {
+			power = power.mul(p)?;
+			sum = sum.add(power.div(Fixed::from_i64(n))?)?;
+		}
+		sum.neg()
+	} else {
+		one.sub(p)?.ln()?
+	};
+	let mut heights = vec![0; count];
+	for (index, item) in heights.iter_mut().enumerate() {
+		let x = maximum.mul(fraction(index, count - 1)?)?;
+		let k = if x.e() < 0 {
+			Fixed::ZERO
+		} else if x.e() < 62 {
+			Fixed::from_i64(x.m() >> (62 - x.e()))
+		} else {
+			x
+		};
+		*item = if p == one {
+			if k.is_zero() { u16::MAX } else { 0 }
+		} else {
+			height(log_survival.mul(k)?.exp()?)?
+		};
+	}
+	Ok(Curve {
+		heights,
+		x_min: Fixed::ZERO,
+		x_max: maximum,
 	})
 }
 

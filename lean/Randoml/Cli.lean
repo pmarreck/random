@@ -18,6 +18,7 @@ def streamChunk : Nat := 65535
 inductive Generated
   | integer (value : Int)
   | fixed (value : Value)
+  | count (value : Nat)
 
 def writeBytes (stream : IO.FS.Stream) (bytes : ByteArray) : IO Unit :=
   stream.write bytes
@@ -103,7 +104,7 @@ def firstSome (first second : Option α) : Option α :=
   | some value => some value
   | none => second
 
-def chartSpec (mode : Mode) (mean stddev rate lambda alpha beta : Option NamedFixed)
+def chartSpec (mode : Mode) (mean stddev rate lambda alpha beta probability : Option NamedFixed)
     (defaults : Bool) : Chart.Spec :=
   let zero := fromInt 0
   let one := fromInt 1
@@ -130,6 +131,12 @@ def chartSpec (mode : Mode) (mean stddev rate lambda alpha beta : Option NamedFi
         title := "Poisson"
         parameters := s!"Parameters: lambda={parameter.map (·.text) |>.getD "1"}."
         axis := "Horizontal axis: lambda +/- 6*sqrt(lambda), clipped at zero; vertical axis: probability mass." }
+  | .geometric =>
+      let parameter := chooseParameter defaults probability
+      { kind := .geometric, first := parameter.map (·.value) |>.getD (div one two), second := zero
+        title := "Geometric (failures before success)"
+        parameters := s!"Parameters: probability={parameter.map (·.text) |>.getD "0.5"}."
+        axis := "Horizontal axis: failures from 0 to 6/probability; vertical axis: relative probability mass." }
   | .logNormal =>
       let mean := chooseParameter defaults mean
       let stddev := chooseParameter defaults stddev
@@ -159,6 +166,7 @@ def selectedHelpMode (arguments : Array ByteArray) (program : String) : Mode := 
         | "--normalized" | "-n" => some .normal
         | "--exponential" => some .exponential
         | "--poisson" => some .poisson
+        | "--geometric" => some .geometric
         | "--log-normal" => some .logNormal
         | "--beta" => some .beta
         | _ => if argument.startsWith "--beta=" then some .beta else none
@@ -190,6 +198,7 @@ def embeddedKey : Mode → String
   | .normal => "normal"
   | .exponential => "exponential"
   | .poisson => "poisson"
+  | .geometric => "geometric"
   | .logNormal => "log_normal"
   | .beta => "beta"
   | .uniform => ""
@@ -266,6 +275,7 @@ def helpText (program : String) : String :=
     "  -n, --normalized    Normal (Gaussian) via Box-Muller",
     "      --exponential   Exponential distribution (use --rate)",
     "      --poisson       Poisson distribution (use --lambda or --mean)",
+    "      --geometric     Failures before success; default probability 0.5",
     "      --log-normal    Log-normal distribution",
     "      --beta[=B]      Beta distribution; optional B replaces default beta 2",
     "",
@@ -302,6 +312,7 @@ def helpText (program : String) : String :=
     "      --stddev S      Set stddev for normal/log-normal",
     "      --rate R        Set exponential rate",
     "      --lambda L      Set Poisson lambda (clearer alias for --mean)",
+    "      --probability P Set geometric success probability; accepts 1e-20 or 2^-100",
     "      --alpha A       Set alpha for beta distribution",
     "      --test          Run the test suite",
     "",
@@ -378,7 +389,7 @@ def generationBounds (options : Options) : Except String (Int × Int × Nat × B
   pure (start, stop, count, !options.binary ∧ options.range.isNone ∧ rangeScaled)
 
 def generate (options : Options) (source : CliSource.Source)
-    (start stop : Int) : IO (Except String (Generated × CliSource.Source)) := do
+    (start stop : Int) (prepared : Option Geometric.Prepared := none) : IO (Except String (Generated × CliSource.Source)) := do
   let one := fromInt 1
   let two := fromInt 2
   match options.mode with
@@ -405,6 +416,13 @@ def generate (options : Options) (source : CliSource.Source)
       match ← CliSource.poisson source lambda with
       | .error message => pure (.error message)
       | .ok (value, source) => pure (.ok (.integer value, source))
+  | .geometric =>
+      let prepared := prepared.orElse fun _ =>
+        Geometric.prepare (options.probability.map (·.value) |>.getD (div one two))
+      let some prepared := prepared | return .error "RNG core failed: invalid geometric probability"
+      match ← CliSource.geometric source prepared with
+      | .error message => pure (.error message)
+      | .ok (value, source) => pure (.ok (.count value, source))
   | .logNormal =>
       match ← CliSource.logNormal source (options.mean.map (·.value) |>.getD Value.zero)
           (options.stddev.map (·.value) |>.getD one) with
@@ -417,6 +435,7 @@ def generate (options : Options) (source : CliSource.Source)
       | .ok (value, source) => pure (.ok (.fixed value, source))
 
 def generatedText (options : Options) : Generated → Except String String
+  | .count value => pure (if options.encoding == .hex then String.ofList (Nat.toDigits 16 value) else toString value)
   | .integer value => pure (if options.encoding == .hex then intHex value else toString value)
   | .fixed value =>
       match Decimal.render value options.precision with
@@ -426,13 +445,15 @@ def generatedText (options : Options) : Generated → Except String String
 def emitText (options : Options) (initialSource : CliSource.Source)
     (start stop : Int) (count : Nat) : IO (Except String CliSource.Source) := do
   let stdout ← IO.getStdout
+  let prepared := if options.mode == .geometric then
+      Geometric.prepare (options.probability.map (·.value) |>.getD (div (fromInt 1) (fromInt 2))) else none
   let mut source := initialSource
   let unbounded := options.count.isNone ∧ (options.binary ∨ options.streaming)
   let mut remaining := count
   let mut first := true
   while unbounded ∨ remaining > 0 do
     if !first ∧ options.delimiter != "\n".toUTF8 then writeBytes stdout options.delimiter
-    match ← generate options source start stop with
+    match ← generate options source start stop prepared with
     | .error message => return .error message
     | .ok (value, next) =>
         source := next
@@ -448,26 +469,31 @@ def emitText (options : Options) (initialSource : CliSource.Source)
   pure (.ok source)
 
 def generatedByte : Generated → UInt8
+  | .count value => UInt8.ofNat (value % 256)
   | .integer value => UInt8.ofNat (value % 256).toNat
   | .fixed value => UInt8.ofNat (toIntTrunc value % 256).toNat
 
 def generatedBytes (options : Options) (initialSource : CliSource.Source)
-    (start stop : Int) (count : Nat) : IO (Except String (ByteArray × CliSource.Source)) := do
+    (start stop : Int) (count : Nat) (prepared : Option Geometric.Prepared := none) : IO (Except String (ByteArray × CliSource.Source)) := do
   if options.mode == .uniform ∧ start = 0 ∧ stop = 255 then
     return ← CliSource.fill initialSource count
   let mut source := initialSource
   let mut bytes := ByteArray.empty
   for _ in [0:count] do
-    match ← generate options source start stop with
+    match ← generate options source start stop prepared with
     | .error message => return .error message
     | .ok (value, next) =>
         source := next
-        bytes := bytes.push (generatedByte value)
+        bytes := match value with
+          | .count value => bytes ++ Geometric.unsignedBlip value
+          | value => bytes.push (generatedByte value)
   pure (.ok (bytes, source))
 
 def emitBinary (options : Options) (initialSource : CliSource.Source)
     (start stop : Int) (count : Nat) : IO (Except String CliSource.Source) := do
   let stdout ← IO.getStdout
+  let prepared := if options.mode == .geometric then
+      Geometric.prepare (options.probability.map (·.value) |>.getD (div (fromInt 1) (fromInt 2))) else none
   let mut source := initialSource
   let mut remaining := count
   let mut carry := ByteArray.empty
@@ -481,11 +507,11 @@ def emitBinary (options : Options) (initialSource : CliSource.Source)
   -- of three also prevents base64 padding between complete chunks.
   let chunkLimit := if unbounded ∧ !direct then 96 else streamChunk
   while unbounded ∨ remaining > 0 do
-    let mut amount := if unbounded then chunkLimit else min remaining streamChunk
+    let mut amount := if options.mode == .geometric then 1 else if unbounded then chunkLimit else min remaining streamChunk
     if unbounded ∧ direct then
       if let .deterministic generator := source then
         amount := min amount (max 1 (maxExactPosition - generator.state.position))
-    match ← generatedBytes options source start stop amount with
+    match ← generatedBytes options source start stop amount prepared with
     | .error message => return .error message
     | .ok (bytes, next) =>
         source := next
@@ -508,6 +534,7 @@ def modeName : Mode → String
   | .normal => "normal"
   | .exponential => "exponential"
   | .poisson => "poisson"
+  | .geometric => "geometric"
   | .logNormal => "log-normal"
   | .beta => "beta"
 
@@ -705,6 +732,8 @@ def canonicalArgs (options : Options) (bounds : Option (Int × Int × Nat)) :
   | .poisson =>
       fields := pushStringField fields "lambda"
         ((firstSome options.lambda options.mean).map (·.text) |>.getD "1")
+  | .geometric =>
+      fields := pushStringField fields "p" (options.probability.map (·.text) |>.getD "0.5")
   | .logNormal =>
       fields := pushStringField fields "mean" (options.mean.map (·.text) |>.getD "0")
       fields := pushStringField fields "stddev" (options.stddev.map (·.text) |>.getD "1")
@@ -813,7 +842,7 @@ def applyRequestedState (options : Options) : IO (Except String Options) := do
     return .error (match appliedResult with | .error message => message | _ => "state could not be applied")
   if fromStdin ∧ applied.operation != .generate then
     return .error "--choose, --shuffle, and --weighted require inline --state JSON"
-  pure (CliOptions.validate applied)
+  pure (CliOptions.validate applied true)
 
 def run (arguments : Array ByteArray) : IO (Except String Unit) := do
   let arguments ← effectiveArguments arguments
@@ -839,7 +868,7 @@ def run (arguments : Array ByteArray) : IO (Except String Unit) := do
   if options.view then
     return ← printChart arguments
       (chartSpec options.mode options.mean options.stddev options.rate options.lambda
-        options.alpha options.beta false) false
+        options.alpha options.beta options.probability false) false
   runGeneration options
 
 @[export randoml_cli_run]

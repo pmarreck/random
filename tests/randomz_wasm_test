@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixture-cleanup.sh"
 # Validate the shipped WASI reactor, its entropy import, and its deterministic
 # identity against the LuaJIT oracle.
 set -u
@@ -7,7 +8,7 @@ set -o pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 wasm="$root/zig-out/bin/randomz-wasi.wasm"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/randomz-wasm.XXXXXX")" || exit 1
-trap 'rm -rf -- "$tmp"' EXIT
+trap 'test_trash "$tmp"' EXIT
 
 zig build -Doptimize=ReleaseFast >/dev/null || exit 1
 wasm-tools validate "$wasm" || exit 1

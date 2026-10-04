@@ -1,4 +1,5 @@
 import Randoml.Distribution
+import Randoml.Geometric
 
 namespace Randoml.Curve
 
@@ -11,6 +12,7 @@ inductive Kind
   | normal
   | exponential
   | poisson
+  | geometric
   | logNormal
   | beta
 deriving BEq, Repr
@@ -119,6 +121,28 @@ private def logNormalScore (sigmaSquared xMaxScaled : Value)
   let shifted := add logarithm sigmaSquared
   pure (neg (div (mul shifted shifted) (mul (fromInt 2) sigmaSquared)))
 
+private def geometric (p : Value) (count : Nat) : Option Samples := do
+  let _ ← Geometric.Probability.create p
+  let one := fromInt 1
+  let maximum := div (fromInt 6) p
+  let logSurvival ← if compare p one = 0 then some Value.zero else
+    if p.e < -4 then
+      -- Eight log1p terms avoid cancellation. For p<1/16 and x<=6/p,
+      -- the omitted exponent is <6*p^8/(9*(1-p)) <1.66e-10.
+      let result := (List.range 7).foldl (fun state offset =>
+        let power := mul state.1 p
+        (power, add state.2 (div power (fromInt (Int.ofNat (offset + 2)))))) (p,p)
+      some (neg result.2)
+    else ln? (sub one p)
+  let heights ← (List.range count).mapM fun index => do
+    let x := mul maximum (fraction index (count - 1))
+    let k := if x.e < 0 then Value.zero else if x.e < 62 then
+      fromInt (x.m / Int.ofNat (2 ^ (62 - x.e).toNat)) else x
+    if compare p one = 0 then pure (if k.m = 0 then UInt16.ofNat 65535 else 0) else do
+      let relative ← exp? (mul logSurvival k)
+      pure (height relative)
+  pure { heights := heights.toArray, xMin := Value.zero, xMax := maximum }
+
 private def logNormal (mean stddev : Value) (count : Nat) : Option Samples := do
   if stddev.m ≤ 0 ∨ !exponentIn stddev (-1000000) 23 ∨
       !exponentIn mean (-1000000) 27 then none else pure ()
@@ -175,6 +199,8 @@ def sample (kind : Kind) (first second : Value) (count : Nat) : Option Samples :
       if second.m != 0 then none else exponential first count
   | .poisson =>
       if second.m != 0 then none else poisson first count
+  | .geometric =>
+      if second.m != 0 then none else geometric first count
   | .logNormal => logNormal first second count
   | .beta => beta first second count
 

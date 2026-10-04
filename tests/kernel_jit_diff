@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixture-cleanup.sh"
 # JIT-vs-interpreter differential control: see kernel_jit_diff.lua's
 # top-of-file comment for the full rationale (LuaJIT/LuaJIT#1499) and what
 # this actually checks. Runs the same deterministic whole-kernel digest
@@ -41,7 +42,7 @@ if ! command -v luajit >/dev/null 2>&1; then
 fi
 
 tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
+trap 'test_trash "$tmp"' EXIT
 
 echo "Diffing JIT-on vs JIT-off output over the whole kernel (LuaJIT/LuaJIT#1499 differential)..."
 echo "============================================"

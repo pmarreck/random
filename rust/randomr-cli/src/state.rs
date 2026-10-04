@@ -70,8 +70,8 @@ pub fn apply(options: &mut Options, text: &str, positional: &[String]) -> Result
 				| "range" | "count"
 				| "mean" | "stddev"
 				| "rate" | "lambda"
-				| "alpha" | "beta"
-				| "precision"
+				| "p" | "alpha"
+				| "beta" | "precision"
 				| "binary" | "encoding"
 				| "delim"
 		) {
@@ -96,6 +96,7 @@ pub fn apply(options: &mut Options, text: &str, positional: &[String]) -> Result
 				"normal" => Mode::Normal,
 				"exponential" => Mode::Exponential,
 				"poisson" => Mode::Poisson,
+				"geometric" => Mode::Geometric,
 				"log-normal" => Mode::LogNormal,
 				"beta" => Mode::Beta,
 				_ => return Err("state distribution is unsupported".to_owned()),
@@ -172,6 +173,15 @@ pub fn apply(options: &mut Options, text: &str, positional: &[String]) -> Result
 			Mode::Poisson => {
 				inherit_fixed(&mut options.mean, &mut args, "mean")?;
 				inherit_fixed(&mut options.lambda, &mut args, "lambda")?;
+			}
+			Mode::Geometric => {
+				if options.probability.is_none() {
+					if let Some(text) = take_optional_string(&mut args, "p")? {
+						let value = randomr::Geometric::parse_probability(&text)
+							.map_err(|_| "state p is invalid".to_owned())?;
+						options.probability = Some((value, text));
+					}
+				}
 			}
 			Mode::Beta => {
 				inherit_fixed(&mut options.alpha, &mut args, "alpha")?;

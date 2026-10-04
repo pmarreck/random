@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixture-cleanup.sh"
 # Compile-only portability gate. Execution identity lives in ./crossarch; this
 # suite ensures every promised OS/architecture frontend continues to compile.
 set -u
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/randomz-cross-compile.XXXXXX")"
-trap 'rm -rf -- "$tmp"' EXIT
+trap 'test_trash "$tmp"' EXIT
 
 targets=(
 	x86_64-linux-musl

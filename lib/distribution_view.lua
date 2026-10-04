@@ -138,6 +138,36 @@ local function poisson_curve(lambda, capacity)
 	return heights, count, fixed(minimum), fixed(maximum), integer_count <= capacity
 end
 
+local function geometric_curve(p, capacity)
+	require("geometric").prepare(unpack(p))
+	local maximum = div(SIX, p)
+	local certain = cmp(p, ONE) == 0
+	local log_survival
+	if certain then log_survival = ZERO
+	elseif p[2] < -4 then
+		-- log(1-p) loses relative accuracy when 1-p nearly rounds to one.
+		-- Eight terms avoid cancellation. For p<1/16 and x<=6/p, the
+		-- omitted exponent is <6*p^8/(9*(1-p)) <1.66e-10.
+		local power, sum = p, p
+		for n = 2, 8 do power = mul(power, p); sum = add(sum, div(power, fixed(n))) end
+		log_survival = neg(sum)
+	else log_survival = ln(sub(ONE, p)) end
+	local heights = {}
+	for i = 0, capacity - 1 do
+		local x = mul(maximum, fraction(i, capacity - 1))
+		local k = x
+		if x[2] < 0 then k = ZERO
+		elseif x[2] < 62 then
+			local divisor = 1LL
+			for _ = 1, 62 - x[2] do divisor = divisor * 2LL end
+			k = fixed(x[1] / divisor)
+		end
+		heights[i + 1] = certain and (k[1] == 0 and MAX_HEIGHT or 0) or
+			height(exp(mul(log_survival, k)))
+	end
+	return heights, capacity, ZERO, maximum, false
+end
+
 local function log_normal_score(sigma_squared, x_max_scaled, index, denominator)
 	local x = mul(x_max_scaled, fraction(index, denominator))
 	local shifted = add(ln(x), sigma_squared)
@@ -189,6 +219,7 @@ function M.curve(key, first, second, capacity)
 	if key == "normal" then return normal_curve(first, second, capacity) end
 	if key == "exponential" then return exponential_curve(first, capacity) end
 	if key == "poisson" then return poisson_curve(first, capacity) end
+	if key == "geometric" then return geometric_curve(first, capacity) end
 	if key == "log_normal" then return log_normal_curve(first, second, capacity) end
 	if key == "beta" then return beta_curve(first, second, capacity) end
 	error("unknown distribution view: " .. tostring(key))

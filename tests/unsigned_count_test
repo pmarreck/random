@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Test exact count formatting and BLIP encoding independently of samplers.
+set -u
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export LUA_PATH="$here/lib/?.lua;;"
+exec luajit "$here/tests/unsigned_count.lua"

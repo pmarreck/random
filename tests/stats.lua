@@ -323,6 +323,68 @@ local function evaluate_beta(values, alpha, beta_parameter, label, quiet)
   return failures == before
 end
 
+-- This oracle uses the ideal PMF/survival law, not the block sampler's math.
+local function evaluate_geometric(values, p, quiet)
+  local mean, variance = moments(values)
+  local bins, survivors, support = {}, {}, true
+  for k = 0, 9 do bins[k] = 0 end
+  for _, boundary in ipairs({1,4,5,9}) do survivors[boundary] = 0 end
+  for _, value in ipairs(values) do
+    if value < 0 or value ~= math.floor(value) then support = false
+    else bins[math.min(value, 9)] = bins[math.min(value, 9)] + 1 end
+    for boundary in pairs(survivors) do
+      if value >= boundary then survivors[boundary] = survivors[boundary] + 1 end
+    end
+  end
+  local n, chi = #values, 0
+  local before = failures
+  check(support, "geometric support", "negative/fractional count", quiet)
+  check(math.abs(mean - (1-p)/p) <= 6 * math.sqrt((1-p)/(p*p*n)),
+    "geometric mean", string.format("mean=%.6f", mean), quiet)
+  check(math.abs(variance - (1-p)/(p*p)) <= 0.20 * (1-p)/(p*p),
+    "geometric variance", string.format("var=%.6f", variance), quiet)
+  for k = 0, 9 do
+    local expected = n * (k == 9 and (1-p)^9 or p*(1-p)^k)
+    chi = chi + (bins[k] - expected)^2/expected
+  end
+  check(math.abs((chi-9)/math.sqrt(18)) <= 6, "geometric PMF bins",
+    string.format("chi2=%.3f", chi), quiet)
+  for boundary, observed in pairs(survivors) do
+    local probability = (1-p)^boundary
+    check(math.abs(observed/n-probability) <= 6*math.sqrt(probability*(1-probability)/n),
+      "geometric survival " .. boundary, string.format("observed=%.6f", observed/n), quiet)
+  end
+  local conditional = survivors[9]/math.max(1,survivors[4])
+  local target = (1-p)^5
+  check(math.abs(conditional-target) <= 6*math.sqrt(target*(1-target)/math.max(1,survivors[4])),
+    "geometric memorylessness", string.format("conditional=%.6f", conditional), quiet)
+  if not quiet then
+    print(string.format("  %-18s n=%d mean=%.5f var=%.5f chi2=%.2f %s",
+      "geometric(" .. p .. ")", n, mean, variance, chi, failures == before and "PASS" or "FAIL"))
+  end
+  return failures == before
+end
+
+local function evaluate_tiny_geometric()
+  local pipe = assert(io.popen(command(string.format(
+    "--seed 81010 --geometric --probability 1e-20 --count %d", sample_count)), "r"))
+  local scaled, odd, count = {}, 0, 0
+  for line in pipe:lines() do
+    assert(line:match("^%d+$"), "malformed arbitrary geometric count")
+    count = count + 1
+    scaled[count] = assert(tonumber(line)) * 1e-20
+    -- Inspect the exact decimal last digit BEFORE the statistical double
+    -- conversion; otherwise all counts beyond binary64 can look even.
+    odd = odd + tonumber(line:sub(-1)) % 2
+  end
+  check(pipe:close() and count == sample_count, "tiny geometric count", tostring(count))
+  local ok = evaluate_exponential(scaled, false)
+  check(math.abs(odd-count/2) <= 6*math.sqrt(count/4), "tiny geometric low-bit parity",
+    string.format("odd=%d/%d", odd,count))
+  print(string.format("  %-18s exact decimal parity odd=%d/%d", "geometric(1e-20)", odd,count))
+  return ok
+end
+
 print(string.format("sample sizes: raw=%d bytes/stream, distributions=%d values", raw_count, sample_count))
 print("raw streams:")
 read_raw("BLAKE3 seed 42", string.format("-d --seed 42 -b -c %d", raw_count))
@@ -354,6 +416,11 @@ evaluate_beta(beta, 2, 5, "beta(2,5)", false)
 local beta_u = read_numbers(string.format(
   "-d --seed 81007 --beta 0.75 --alpha 0.5 -c %d", sample_count))
 evaluate_beta(beta_u, 0.5, 0.75, "beta(0.5,0.75)", false)
+for index, p in ipairs({0.25,0.5}) do
+  evaluate_geometric(read_numbers(string.format(
+    "--seed %d --geometric --probability %s --count %d", 81007+index,p,sample_count)), p, false)
+end
+evaluate_tiny_geometric()
 
 -- Mechanically falsifiable controls: each synthetic defect is chosen so its
 -- mean can look plausible while its missing entropy/variance must be caught.
@@ -370,6 +437,7 @@ expect_rejected(evaluate_raw("all-zero control", zero_state, true))
 failures = before
 local constant_uniform, constant_normal, constant_exp, constant_poisson = {}, {}, {}, {}
 local constant_lognormal, constant_beta = {}, {}
+local constant_geometric = {}
 for i = 1, 5000 do
   constant_uniform[i] = 0
   constant_normal[i] = 5
@@ -377,6 +445,7 @@ for i = 1, 5000 do
   constant_poisson[i] = 5
   constant_lognormal[i] = 1
   constant_beta[i] = 2 / 7
+  constant_geometric[i] = 3
 end
 before = failures; expect_rejected(evaluate_uniform(constant_uniform, true)); failures = before
 before = failures; expect_rejected(evaluate_normal("constant normal", constant_normal, 5, 2, nil, true)); failures = before
@@ -385,11 +454,12 @@ before = failures; expect_rejected(evaluate_poisson(constant_poisson, true)); fa
 before = failures; expect_rejected(evaluate_normal("constant log-normal logs", constant_lognormal, 0, 1,
   function(value) return math.log(value), value > 0 end, true)); failures = before
 before = failures; expect_rejected(evaluate_beta(constant_beta, 2, 5, "constant beta", true)); failures = before
-checks = control_checks_before + 7
+before = failures; expect_rejected(evaluate_geometric(constant_geometric, 0.25, true)); failures = before
+checks = control_checks_before + 8
 failures = controls_before
 check(control_failures == 0, "known-bad sensitivity controls",
-  string.format("%d/7 bad generators escaped", control_failures))
-print(string.format("  %-18s all-zero raw + six constant-shaped distributions rejected  %s",
+  string.format("%d/8 bad generators escaped", control_failures))
+print(string.format("  %-18s all-zero raw + seven constant-shaped distributions rejected  %s",
   "sensitivity", control_failures == 0 and "PASS" or "FAIL"))
 
 if failures > 0 then

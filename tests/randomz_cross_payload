@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixture-cleanup.sh"
 # One byte-framed deterministic CLI payload for cross-target comparisons.
 set -u
 
@@ -15,7 +16,7 @@ run_cli() {
 }
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/randomz-cross-payload.XXXXXX")" || exit 1
-trap 'rm -rf -- "$tmp"' EXIT
+trap 'test_trash "$tmp"' EXIT
 
 emit_case() {
 	local output="$tmp/case.$case_no"
@@ -45,6 +46,9 @@ cases=(
 	"--beta 5 --alpha 2 -c 200"
 	"--poisson --mean 40 -c 200"
 	"--poisson --lambda 40 -c 200"
+	"--geometric --probability 0.25 -c 200"
+	"--geometric --probability 1e-20 -c 200"
+	"--geometric --probability 2^-100 -b -c 16"
 	"--normalized --mean 1000000 --stddev 250000 -c 200"
 	"--normalized --mean 1000000 -c 200"
 	"--normalized --stddev 250000 -c 200"

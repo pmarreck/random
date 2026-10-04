@@ -16,6 +16,7 @@ pub enum Mode {
 	Normal,
 	Exponential,
 	Poisson,
+	Geometric,
 	LogNormal,
 	Beta,
 }
@@ -53,6 +54,7 @@ pub struct Options {
 	pub stddev: Option<(Fixed, String)>,
 	pub rate: Option<(Fixed, String)>,
 	pub lambda: Option<(Fixed, String)>,
+	pub probability: Option<(Fixed, String)>,
 	pub alpha: Option<(Fixed, String)>,
 	pub beta: Option<(Fixed, String)>,
 }
@@ -92,6 +94,7 @@ impl Options {
 			stddev: None,
 			rate: None,
 			lambda: None,
+			probability: None,
 			alpha: None,
 			beta: None,
 		}
@@ -139,6 +142,7 @@ pub fn parse(args: &[String], program: &str) -> Result<Options, String> {
 			"--normalized" | "-n" => options.select(Mode::Normal),
 			"--exponential" => options.select(Mode::Exponential),
 			"--poisson" => options.select(Mode::Poisson),
+			"--geometric" => options.select(Mode::Geometric),
 			"--log-normal" => options.select(Mode::LogNormal),
 			"--stream" => {
 				options.stream = true;
@@ -242,7 +246,7 @@ pub fn parse(args: &[String], program: &str) -> Result<Options, String> {
 				}
 				options.deterministic = true;
 			}
-			"--mean" | "--stddev" | "--rate" | "--lambda" | "--alpha" => {
+			"--mean" | "--stddev" | "--rate" | "--lambda" | "--alpha" | "--probability" => {
 				let value = next(args, &mut index, &format!("{argument} requires a number"))?;
 				set_fixed(&mut options, argument, value)?;
 			}
@@ -425,6 +429,9 @@ pub fn parse(args: &[String], program: &str) -> Result<Options, String> {
 	if options.lambda.is_some() && options.mode != Mode::Poisson {
 		return Err("--lambda requires --poisson".to_owned());
 	}
+	if options.probability.is_some() && options.mode != Mode::Geometric {
+		return Err("--probability requires --geometric".to_owned());
+	}
 	if options.mode == Mode::Poisson && options.lambda.is_some() && options.mean.is_some() {
 		return Err("--lambda and --mean are aliases; specify only one".to_owned());
 	}
@@ -548,7 +555,14 @@ fn next<'a>(args: &'a [String], index: &mut usize, message: &str) -> Result<&'a 
 }
 
 fn attached_name(argument: &str) -> Option<(&str, &str)> {
-	for name in ["--mean", "--stddev", "--rate", "--lambda", "--alpha"] {
+	for name in [
+		"--mean",
+		"--stddev",
+		"--rate",
+		"--lambda",
+		"--alpha",
+		"--probability",
+	] {
 		if let Some(value) = argument
 			.strip_prefix(name)
 			.and_then(|tail| tail.strip_prefix('='))
@@ -560,6 +574,13 @@ fn attached_name(argument: &str) -> Option<(&str, &str)> {
 }
 
 fn set_fixed(options: &mut Options, name: &str, text: &str) -> Result<(), String> {
+	if name == "--probability" {
+		let value = randomr::Geometric::parse_probability(text).map_err(|_| {
+			"--probability must be in (0,1] using decimal, scientific, or 2^N syntax".to_owned()
+		})?;
+		options.probability = Some((value, text.to_owned()));
+		return Ok(());
+	}
 	if text.is_empty() {
 		return Err(format!("{name} requires a number"));
 	}

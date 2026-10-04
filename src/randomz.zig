@@ -6,6 +6,7 @@
 const std = @import("std");
 const fixed = @import("fixed");
 const fixed_simd = @import("fixed_simd");
+pub const geometric = @import("geometric.zig");
 
 const Blake3 = std.crypto.hash.Blake3;
 const kdf_context = "random drbg 2026-08-04 v1";
@@ -60,6 +61,7 @@ const Distribution = enum(c_int) {
     poisson = 3,
     log_normal = 4,
     beta = 5,
+    geometric = 6,
 };
 
 const RngError = error{
@@ -95,7 +97,7 @@ const Source = struct {
     fill: FillFn,
     context: ?*anyopaque,
 
-    fn bytes(self: Source, out: []u8) RngError!void {
+    pub fn bytes(self: Source, out: []u8) RngError!void {
         return switch (self.fill(self.context, out.ptr, out.len)) {
             0 => {},
             1 => error.InvalidArgument,
@@ -116,7 +118,7 @@ const Source = struct {
             @as(u32, bytes_out[3]);
     }
 
-    fn u64be(self: Source) RngError!u64 {
+    pub fn u64be(self: Source) RngError!u64 {
         var bytes_out: [8]u8 = undefined;
         try self.bytes(&bytes_out);
         var value: u64 = 0;
@@ -352,6 +354,33 @@ fn curveRelative(score: fixed.Fixed, maximum: fixed.Fixed) fixed.Fixed {
     return fixed.exp(difference);
 }
 
+fn geometricCurve(p: fixed.Fixed, heights: []u16, x_min: *Fixed, x_max: *Fixed) void {
+    const one = fixed.fromInt(1);
+    const maximum = fixed.div(fixed.fromInt(6), p);
+    const certain = fixed.cmp(p, one) == 0;
+    const log_survival = if (certain) fixed.Fixed.zero else if (p.e < -4) series: {
+        // Eight log1p terms avoid cancellation. With p<1/16 and x<=6/p,
+        // the omitted exponent is <6*p^8/(9*(1-p)) <1.66e-10.
+        var power = p;
+        var sum = p;
+        for (2..9) |n| {
+            power = fixed.mul(power, p);
+            sum = fixed.add(sum, fixed.div(power, fixed.fromInt(@intCast(n))));
+        }
+        break :series fixed.neg(sum);
+    } else fixed.ln(fixed.sub(one, p));
+    for (heights, 0..) |*height, index| {
+        const x = fixed.mul(maximum, curveFraction(index, heights.len - 1));
+        const k = if (x.e < 0) fixed.Fixed.zero else if (x.e < 62)
+            fixed.fromInt(x.m >> @as(u6, @intCast(62 - x.e)))
+        else
+            x;
+        height.* = if (certain) (if (k.m == 0) std.math.maxInt(u16) else 0) else curveHeight(fixed.exp(fixed.mul(log_survival, k)));
+    }
+    x_min.* = Fixed.fromInternal(fixed.Fixed.zero);
+    x_max.* = Fixed.fromInternal(maximum);
+}
+
 fn normalCurve(
     mean: fixed.Fixed,
     stddev: fixed.Fixed,
@@ -529,6 +558,27 @@ pub export fn randomz_drbg_init(
     kdf.update(seed[0..32]);
     kdf.final(&target.key);
     target.position = 0;
+    return @intFromEnum(Status.ok);
+}
+
+/// Geometric's arbitrary-width unsigned BLIP uses only caller-provided storage.
+/// Partial failures may consume callback bytes; written is zero unless complete.
+pub export fn randomz_geometric(
+    fill: ?FillFn,
+    context: ?*anyopaque,
+    probability: Fixed,
+    out: ?[*]u8,
+    capacity: usize,
+    written: ?*usize,
+) callconv(.c) c_int {
+    const callback = fill orelse return @intFromEnum(Status.invalid_argument);
+    const result = out orelse return @intFromEnum(Status.invalid_argument);
+    const length_out = written orelse return @intFromEnum(Status.invalid_argument);
+    const prepared = geometric.Prepared.init(probability.internal()) catch |err| return errorStatus(err);
+    length_out.* = 0;
+    if (capacity == 0) return @intFromEnum(Status.buffer_too_small);
+    const magnitude_length = geometric.sample(prepared, Source{ .fill = callback, .context = context }, result[0..capacity]) catch |err| return errorStatus(err);
+    length_out.* = geometric.encodeInPlace(result[0..capacity], magnitude_length) catch |err| return errorStatus(err);
     return @intFromEnum(Status.ok);
 }
 
@@ -928,6 +978,7 @@ pub export fn randomz_distribution_curve(
         3 => .poisson,
         4 => .log_normal,
         5 => .beta,
+        6 => .geometric,
         else => return @intFromEnum(Status.invalid_argument),
     };
     if (!validFixed(first) or !validFixed(second) or
@@ -941,6 +992,11 @@ pub export fn randomz_distribution_curve(
     output_count.* = capacity;
 
     switch (distribution) {
+        .geometric => {
+            if (second.m != 0) return errorStatus(error.InvalidArgument);
+            _ = geometric.Prepared.init(first.internal()) catch |err| return errorStatus(err);
+            geometricCurve(first.internal(), samples, minimum, maximum);
+        },
         .normal => {
             if (second.m <= 0) return @intFromEnum(Status.invalid_argument);
             if (!exponentIn(first, -1_000_000, 1_000_000) or
@@ -1009,6 +1065,26 @@ pub export fn randomz_fixed_parse(
         return @intFromEnum(Status.invalid_argument);
     output.* = Fixed.fromInternal(parsed);
     return @intFromEnum(Status.ok);
+}
+
+pub export fn randomz_geometric_probability_parse(text: ?[*]const u8, length: usize, out: ?*Fixed) callconv(.c) c_int {
+    const input = text orelse return errorStatus(error.InvalidArgument);
+    const output = out orelse return errorStatus(error.InvalidArgument);
+    const parsed = geometric.parseProbability(input[0..length]) orelse return errorStatus(error.InvalidArgument);
+    output.* = Fixed.fromInternal(parsed);
+    return 0;
+}
+
+pub export fn randomz_count_format(input: ?[*]const u8, length: usize, radix: u8, scratch: ?[*]u32, scratch_capacity: usize, out: ?[*]u8, capacity: usize, written: ?*usize) callconv(.c) c_int {
+    const encoded = input orelse return errorStatus(error.InvalidArgument);
+    const workspace = scratch orelse return errorStatus(error.InvalidArgument);
+    const output = out orelse return errorStatus(error.InvalidArgument);
+    const output_length = written orelse return errorStatus(error.InvalidArgument);
+    _ = geometric.magnitude(encoded[0..length]) catch |err| return errorStatus(err);
+    if (radix != 10 and radix != 16) return errorStatus(error.InvalidArgument);
+    output_length.* = 0;
+    output_length.* = geometric.formatCount(encoded[0..length], radix, workspace[0..scratch_capacity], output[0..capacity]) catch |err| return errorStatus(err);
+    return 0;
 }
 
 pub export fn randomz_fixed_parse_int_safe(
