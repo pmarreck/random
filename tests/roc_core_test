@@ -363,3 +363,65 @@ if [ "$codec_checks" -ne 969 ]; then
 	echo "Roc core test FAILED: incomplete decimal/probability corpus ($codec_checks)" >&2
 	exit 1
 fi
+
+# Test canonical model data before any terminal/pixel codec. The same Lua
+# geometry oracle that backs the shared CLI charts supplies exact witnesses.
+chart_corpus="$(env LIB_ROOT="$root/lib" luajit - <<'LUA'
+package.path=os.getenv('LIB_ROOT')..'/?.lua;'..package.path
+local f,v,g=require('fixed'),require('distribution_view'),require('geometric')
+local function integer(n)return tostring(n):gsub('LL$','')end
+local shapes={
+	{'normal','-1','0.125'},{'normal','0','1'},{'normal','5','2.5'},
+	{'exponential','0.125','0'},{'exponential','1','0'},{'exponential','8','0'},
+	{'poisson','0.000001','0'},{'poisson','0.5','0'},{'poisson','3','0'},
+	{'poisson','50','0'},{'poisson','500000','0'},
+	{'log_normal','-2','0.5'},{'log_normal','0','1'},
+	{'log_normal','5','3'},{'log_normal','0','10'},
+	{'beta','0.25','0.5'},{'beta','1','1'},{'beta','1','3'},
+	{'beta','2','2'},{'beta','3','4'},{'beta','1048576','0.125'},
+	{'geometric','1','0'},{'geometric','0.99','0'},{'geometric','0.5','0'},
+	{'geometric','0.0625','0'},{'geometric','0.05','0'},
+	{'geometric','2^-64','0'},{'geometric','2^-1000000','0'},
+}
+for _,shape in ipairs(shapes) do
+	local am,ae
+	if shape[1]=='geometric' then am,ae=g.parse_probability(shape[2])
+	else am,ae=f.parse(shape[2]) end
+	local bm,be=f.parse(shape[3])
+	for _,capacity in ipairs({2,3,5,17,96,310,4096}) do
+		local heights,count,lo,hi,discrete=v.curve(shape[1],{am,ae},{bm,be},capacity)
+		local expected=integer(lo[1])..','..lo[2]..';'..integer(hi[1])..','..hi[2]..';'..tostring(discrete)..'|'..table.concat(heights,',')
+		print(table.concat(shape,' ')..' '..capacity..'\t'..expected)
+	end
+end
+LUA
+)" || exit 1
+chart_checks=0
+while IFS=$'\t' read -r arguments expected; do
+	[ -n "$arguments" ] || continue
+	read -r -a argv <<<"$arguments"
+	actual="$("$roc_kernel" chart "${argv[@]}")" || exit 1
+	actual="${actual//$'\n'/|}"
+	if [ "$actual" != "$expected" ]; then
+		echo "Roc canonical chart mismatch: $arguments" >&2
+		exit 1
+	fi
+	chart_checks=$((chart_checks+1))
+done <<<"$chart_corpus"
+if [ "$chart_checks" -ne 196 ]; then
+	echo "Roc core test FAILED: incomplete chart corpus ($chart_checks)" >&2
+	exit 1
+fi
+for bad in 'normal 0 1 1' 'normal 0 1 4097' 'normal 0 0 2' \
+	'exponential 0 0 2' 'exponential 1 1 2' 'poisson 0 0 2' \
+	'poisson 1048576 0 2' 'geometric 0 0 2' 'geometric 1 1 2' \
+	'geometric 2 0 2' 'geometric 2^-1000001 0 2' \
+	'log_normal 0 0 2' 'beta 0 1 2' 'beta 0.0000001 1 2'; do
+	read -r -a argv <<<"$bad"
+	error="$("$roc_kernel" chart "${argv[@]}" 2>&1)"
+	if [ "$?" -eq 0 ] || [ -n "$error" ]; then
+		echo "Roc chart refusal failed: $bad" >&2
+		exit 1
+	fi
+done
+echo "Roc canonical charts: $chart_checks exact height/bounds/stem witnesses and 14 refusal controls passed."

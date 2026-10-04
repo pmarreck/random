@@ -1,4 +1,27 @@
-# Code review — Roc native platform and ELF packaging
+# Code review — Roc canonical chart model
+
+2026-10-04 · Codex, with fresh-context reviewer `/root/roc_chart_review` ·
+base `e4d6fd7`, staged chart checkpoint. No confirmed findings in this scope.
+The reviewer read all six curve operations, their admission/arithmetic bounds,
+the existing Lua geometry oracle, changed tests and installed consumers.
+It independently checked the exact installed modules and empty source-package
+reference set, and corroborated the full 37-suite FAST run and 138 Roc expects.
+
+The maintained gate compares 196 exact height/bounds/stem witnesses and 14
+refusals. The reviewer added 29 isolated direct-Fixed boundary predicates,
+passing both expectations and optimized Linux x86_64 execution with a
+runtime-supplied extreme exponent. A deliberately false chart expectation
+failed with status 1. The reviewed diff hash stayed unchanged throughout.
+
+Limits: these are finite compatibility and boundary witnesses, not independent
+density-accuracy proofs. The deep-mode `kernel_jit_diff` was not run. Production
+Roc CLI/public ABI, chart surfaces/codecs, cryptographic proofs and other-platform
+execution were excluded. The shared Bash CLI assertions and expected values
+remain unchanged; core coverage does not substitute for them.
+
+---
+
+# Previous review — Roc native platform and ELF packaging
 
 2026-10-04 · Codex, with fresh-context reviewer
 `/root/roc_native_platform_review` · base `f1ee208`, staged native checkpoint.

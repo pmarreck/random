@@ -55,6 +55,7 @@ annotate=[
 	nix/roc-elf-relro.patch = Narrow upstream Roc ELF pointer-constant RELRO fix for shared-library linking
 	nix/roc-toolchain.nix = Official upstream Roc compiler packaging with a bounded build-only CPU affinity workaround
 	roc/Blake3.roc = Independent checked single-block BLAKE3 and seekable keyed-XOF core for Roc
+	roc/Chart.roc = Pure canonical distribution chart heights, axis bounds, domain checks and stem-rendering hint
 	roc/Codec.roc = Pure exact unsigned-256 seed grammar and hexadecimal byte codecs for Roc
 	roc/Count.roc = Exact arbitrary-width unsigned Roc counts, decimal conversion and canonical BLIP encoding
 	roc/Decimal.roc = Pure ASCII decimal/probability codecs and oracle-identical 18-place truncating output

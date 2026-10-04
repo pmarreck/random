@@ -7,10 +7,42 @@ import Sampler
 import Count
 import Geometric
 import Decimal
+import Chart
 
 main! : List(Str) => Try({}, [BadNumStr, Exit(I8), Invalid])
 main! = |args| {
 	match args {
+		["chart", operation, a, b, count] => {
+			kind : Chart.Kind
+			kind = match operation {
+				"normal" => Normal
+				"exponential" => Exponential
+				"poisson" => Poisson
+				"geometric" => Geometric
+				"log_normal" => LogNormal
+				"beta" => Beta
+				_ => return Err(Exit(1.I8))
+			}
+			first = match if operation == "geometric" Decimal.probability(a) else Decimal.parse(a) {
+				Ok(value) => value
+				Err(_) => return Err(Exit(1.I8))
+			}
+			second = match Decimal.parse(b) {
+				Ok(value) => value
+				Err(_) => return Err(Exit(1.I8))
+			}
+			model = match Chart.sample(kind, first, second, U64.from_str(count) ?? 0) {
+				Ok(value) => value
+				Err(_) => return Err(Exit(1.I8))
+			}
+			(lo, hi) = model.bounds()
+			(lm, le) = lo.parts()
+			(hm, he) = hi.parts()
+			discrete = if model.discrete() "true" else "false"
+			echo!("${lm.to_str()},${le.to_str()};${hm.to_str()},${he.to_str()};${discrete}\n")
+			echo!(Str.join_with(model.heights().map(|height| height.to_str()), ","))
+			return Ok({})
+		}
 		["integer_parse", text] => {
 			value = Decimal.integer(text)?
 			echo!(value.to_str())
@@ -396,3 +428,38 @@ expect Decimal.integer_bytes([255]) == Err(Invalid)
 expect Decimal.integer_bytes([49, 0]) == Err(Invalid)
 expect Decimal.probability_bytes([255]) == Err(Invalid)
 expect Decimal.probability_bytes([49, 0]) == Err(Invalid)
+
+# Canonical model contracts and external frozen height witnesses; encodings
+# and terminal effects are not part of this pure geometry boundary.
+expect match Chart.sample(Normal, Fixed.zero, Fixed.from_int(1), 5) {
+	Ok(model) => model.heights() == [21, 8869, 65535, 8869, 21] and
+		model.bounds() == (Fixed.from_int(-4), Fixed.from_int(4)) and !model.discrete()
+	Err(_) => Bool.False
+}
+expect match Chart.sample(Exponential, Fixed.from_int(1), Fixed.zero, 5) {
+	Ok(model) => model.heights() == [65535, 14622, 3262, 728, 162]
+	Err(_) => Bool.False
+}
+expect match Chart.sample(Beta, Fixed.from_int(1), Fixed.from_int(1), 5) {
+	Ok(model) => model.heights() == [65535, 65535, 65535, 65535, 65535]
+	Err(_) => Bool.False
+}
+expect match Chart.sample(Geometric, Fixed.from_int(1), Fixed.zero, 8) {
+	Ok(model) => model.heights() == [65535, 65535, 0, 0, 0, 0, 0, 0]
+	Err(_) => Bool.False
+}
+expect match Chart.sample(Poisson, Fixed.from_int(3), Fixed.zero, 2) {
+	Ok(model) => model.heights() == [14563, 0] and
+		model.bounds() == (Fixed.zero, Fixed.from_int(14)) and !model.discrete()
+	Err(_) => Bool.False
+}
+expect match Chart.sample(LogNormal, Fixed.zero, Fixed.from_int(1), 2) {
+	Ok(model) => model.heights() == [0, 65535] and
+		model.bounds() == (Fixed.zero, Fixed.from_parts(5855018517369714258, 2) ?? Fixed.zero)
+	Err(_) => Bool.False
+}
+expect Chart.sample(Normal, Fixed.zero, Fixed.from_int(1), 1) == Err(Invalid)
+expect Chart.sample(Normal, Fixed.zero, Fixed.from_int(1), 4097) == Err(Invalid)
+expect Chart.sample(Normal, Fixed.zero, Fixed.zero, 2) == Err(Invalid)
+expect Chart.sample(Exponential, Fixed.from_int(1), Fixed.from_int(1), 2) == Err(Invalid)
+expect Chart.sample(Beta, Fixed.power_of_two(-21), Fixed.from_int(1), 2) == Err(Numeric)
