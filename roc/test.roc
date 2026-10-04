@@ -6,10 +6,43 @@ import Draw
 import Sampler
 import Count
 import Geometric
+import Decimal
 
 main! : List(Str) => Try({}, [BadNumStr, Exit(I8), Invalid])
 main! = |args| {
 	match args {
+		["integer_parse", text] => {
+			value = Decimal.integer(text)?
+			echo!(value.to_str())
+			return Ok({})
+		}
+		["parse", text] => {
+			value = match Decimal.parse(text) {
+				Ok(result) => result
+				Err(_) => return Err(Exit(1.I8))
+			}
+			(m, e) = value.parts()
+			echo!("${m.to_str()},${e.to_str()}")
+			return Ok({})
+		}
+		["probability", text] => {
+			value = match Decimal.probability(text) {
+				Ok(result) => result
+				Err(_) => return Err(Exit(1.I8))
+			}
+			(m, e) = value.parts()
+			echo!("${m.to_str()},${e.to_str()}")
+			return Ok({})
+		}
+		["render", ms, es, ps] => {
+			value = Fixed.from_parts(I64.from_str(ms)?, I32.from_str(es)?)?
+			text = match Decimal.render(value, U64.from_str(ps)?) {
+				Ok(result) => result
+				Err(_) => return Err(Exit(1.I8))
+			}
+			echo!(text)
+			return Ok({})
+		}
 		["hash", text] => {
 			bytes = Codec.unhex(text)?
 			echo!(Codec.hex(Blake3.hash32(bytes)?))
@@ -317,3 +350,49 @@ expect Count.from_bytes([0, 1]).append_low_bits([255], 3)?.to_decimal() == "2055
 expect Count.from_bytes([1]).append_low_bits([], 0)?.to_decimal() == "1"
 expect Count.from_bytes([1]).append_low_bits([], 1) == Err(Invalid)
 expect Count.from_bytes([1]).append_low_bits([1], 1000001) == Err(Invalid)
+
+# Decimal/probability contracts preceded implementation, then were checked
+# again through optimized native runtime oracles in the Bash gate.
+expect Decimal.parse("0.5") == Ok(Fixed.power_of_two(-1))
+expect Decimal.parse("-.5") == Ok(Fixed.power_of_two(-1).neg())
+expect Decimal.parse(" +42 \n") == Ok(Fixed.from_int(42))
+expect Decimal.parse("1.") == Ok(Fixed.from_int(1))
+expect Decimal.parse(".") == Err(Invalid)
+expect Decimal.parse("1e-3") == Err(Invalid)
+expect Decimal.parse("1.2.3") == Err(Invalid)
+expect Decimal.parse("1x") == Err(Invalid)
+expect Decimal.parse("1 2") == Err(Invalid)
+expect Decimal.parse("+") == Err(Invalid)
+expect Decimal.parse(" 1") == Err(Invalid)
+expect Decimal.parse("123456789012345678") == Ok(Fixed.from_int(123456789012345678))
+expect Decimal.parse(Str.repeat("9", 2001)) == Err(Invalid)
+expect Decimal.parse(Str.repeat("0", 2001)) == Ok(Fixed.zero)
+expect Decimal.integer("9007199254740992") == Ok(9007199254740992)
+expect Decimal.integer("-9007199254740992") == Ok(-9007199254740992)
+expect Decimal.integer("9007199254740993") == Err(Invalid)
+expect Decimal.integer("-9007199254740993") == Err(Invalid)
+expect Decimal.integer("1.") == Err(Invalid)
+expect Decimal.integer("--1") == Err(Invalid)
+expect Decimal.render(Fixed.zero, 18) == Ok("0.000000000000000000")
+expect Decimal.render(Fixed.from_int(-1), 0) == Ok("-1")
+expect Decimal.render(Fixed.power_of_two(-1), 18) == Ok("0.500000000000000000")
+expect Decimal.render(Fixed.power_of_two(63), 0) == Ok("9223372036854775808")
+expect Decimal.render(Fixed.power_of_two(2147483647), 18) == Err(Numeric)
+expect Decimal.render(Fixed.zero, 19) == Err(Invalid)
+expect Decimal.probability("2^-1000000") == Ok(Fixed.power_of_two(-1000000))
+expect Decimal.probability("1e-20").is_ok()
+expect Decimal.probability("1E+0") == Ok(Fixed.from_int(1))
+expect Decimal.probability("0") == Err(Invalid)
+expect Decimal.probability("-0.1") == Err(Invalid)
+expect Decimal.probability("2^-1000001") == Err(Invalid)
+expect Decimal.probability("2^1") == Err(Invalid)
+expect Decimal.probability("1e--3") == Err(Invalid)
+expect Decimal.probability("-1e-3") == Err(Invalid)
+expect Decimal.probability(" 2^-2 ") == Err(Invalid)
+expect Decimal.probability(Str.repeat("0", 2001)) == Err(Invalid)
+expect Decimal.parse_bytes([255]) == Err(Invalid)
+expect Decimal.parse_bytes([49, 0]) == Err(Invalid)
+expect Decimal.integer_bytes([255]) == Err(Invalid)
+expect Decimal.integer_bytes([49, 0]) == Err(Invalid)
+expect Decimal.probability_bytes([255]) == Err(Invalid)
+expect Decimal.probability_bytes([49, 0]) == Err(Invalid)

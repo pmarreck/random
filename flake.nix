@@ -34,7 +34,7 @@
           installPhase = ''
             runHook preInstall
             mkdir -p $out/lib/roc/random $out/share/licenses/random-roc-lib
-            for module in main Fixed Codec Blake3 Drbg Draw Sampler Count Geometric; do
+            for module in main Fixed Codec Blake3 Drbg Draw Sampler Count Geometric Decimal; do
               install -m644 roc/"$module".roc $out/lib/roc/random/
             done
             install -m644 LICENSE $out/share/licenses/random-roc-lib/LICENSE

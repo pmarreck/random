@@ -292,3 +292,74 @@ if [ "$custom_checks" -ne 600 ]; then
 	exit 1
 fi
 printf 'Roc native custom samplers: %s exact values/cursors passed, including alpha<1.\n' "$custom_checks"
+
+# ASCII codecs preserve the exact existing Fixed parser/formatter order.
+codec_corpus="$(luajit - <<'LUA'
+package.path='./lib/?.lua;'..package.path
+local f,g,b=require('fixed'),require('geometric'),require('blake3')
+local texts={'0','1','-1','+42',' 42 ','\t.125\n','1.','-.5',
+'9007199254740992','9007199254740993','-9007199254740992','-9007199254740993',
+'123456789012345678','9223372036854775807','9223372036854775808',
+'18446744073709551616','-18446744073709551616',
+'0.123456789012345678901234567890','1.9999999999999999999',
+'', '.', '+', '-', '1e-3', '1.2.3', '1x','1 2', ' 1',
+string.rep('9',2000),string.rep('9',2001),string.rep('0',2001)}
+for length=1,40 do
+	texts[#texts+1]=string.rep('9',length)
+	texts[#texts+1]='0.'..string.rep('9',length)
+	texts[#texts+1]='-0.'..string.rep('0',length)..'1'
+end
+local function pair(m,e) return (tostring(m):gsub('LL$',''))..','..e end
+for _,s in ipairs(texts) do
+	local m,e=f.parse(s)
+	print('parse\t'..(s=='' and '@' or b.bin_to_hex(s))..'\t'..(m and pair(m,e) or 'INVALID'))
+	local integer=f.parse_int_safe(s)
+	print('integer_parse\t'..(s=='' and '@' or b.bin_to_hex(s))..'\t'..(integer and string.format('%.0f',integer) or 'INVALID'))
+end
+local ps={'1','0.5','0.999','.125','1e-20','2^-100','2^-1000000',
+	'1e-300000','1e-301029','1e-301030','1e-1000000','1e-1000001',
+	'1E+0','0e3','-1e-3','+1e-3',' 2^-2 ',' 1e-2 ','2^1',
+	'2^-1000001','2^--3','1e--3','0','-0.1','2','1.2','1.2.3'}
+for _,s in ipairs(ps) do
+	local m,e=g.parse_probability(s)
+	print('probability\t'..b.bin_to_hex(s)..'\t'..(m and pair(m,e) or 'INVALID'))
+end
+for _,m in ipairs({0x4000000000000000LL,0x4000000000000001LL,
+	0x6000000000000003LL,0x7fffffffffffffffLL}) do
+	for _,e in ipairs({-1000000,-1000,-63,-30,-3,-1,0,1,3,20,53,61,62,63,100,2043}) do
+		for _,sign in ipairs({1LL,-1LL}) do
+			for _,places in ipairs({0,1,6,17,18}) do
+				print('render\t'..pair(m*sign,e):gsub(',',' ')..' '..places..'\t'..f.tostring(m*sign,e,places))
+			end
+		end
+	end
+end
+LUA
+)" || exit 1
+codec_checks=0
+while IFS=$'\t' read -r op arguments expected; do
+	if [ "$op" = render ]; then
+		read -r -a argv <<<"$arguments"
+	else
+		if [ "$arguments" = @ ]; then input=""
+		else input="$(printf '%s' "$arguments" | xxd -r -p)"; fi
+		argv=("$input")
+	fi
+	actual="$("$roc_kernel" "$op" "${argv[@]}")"
+	status=$?
+	if [ "$expected" = INVALID ]; then
+		if [ "$status" -eq 0 ]; then
+			printf 'FAIL: %s %q accepted\n' "$op" "$arguments" >&2
+			exit 1
+		fi
+	elif [ "$status" -ne 0 ] || [ "$actual" != "$expected" ]; then
+		printf 'FAIL: %s %q => %s status %s; expected %s\n' "$op" "$arguments" "$actual" "$status" "$expected" >&2
+		exit 1
+	fi
+	codec_checks=$((codec_checks+1))
+done <<<"$codec_corpus"
+printf 'Roc decimal/probability codec: %s independent runtime cases passed.\n' "$codec_checks"
+if [ "$codec_checks" -ne 969 ]; then
+	echo "Roc core test FAILED: incomplete decimal/probability corpus ($codec_checks)" >&2
+	exit 1
+fi

@@ -7,8 +7,8 @@ app [main!] {
 import pf.Echo
 import random.Codec
 import random.Drbg
-import random.Fixed
 import random.Geometric
+import random.Decimal
 
 main! = |args| {
 	seed = args.first() ?? "42"
@@ -23,7 +23,7 @@ main! = |args| {
 
 sample = |seed| {
 	state = Drbg.new(Codec.seed(seed)?)?
-	prepared = Geometric.new(Fixed.power_of_two(-100))?
+	prepared = Geometric.new(Decimal.probability("2^-100")?)?
 	(count, next) = prepared.sample().run_with(state, |rng, size| rng.bytes(size))?
 	Ok((count.to_blip(), next.position()))
 }

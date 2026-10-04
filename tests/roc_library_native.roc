@@ -2,8 +2,8 @@
 # host. The declared-package consumer is checked separately with its platform.
 import Codec
 import Drbg
-import Fixed
 import Geometric
+import Decimal
 
 main! = |args| {
 	seed = args.first() ?? "42"
@@ -18,7 +18,7 @@ main! = |args| {
 
 sample = |seed| {
 	state = Drbg.new(Codec.seed(seed)?)?
-	prepared = Geometric.new(Fixed.power_of_two(-100))?
+	prepared = Geometric.new(Decimal.probability("2^-100")?)?
 	(count, next) = prepared.sample().run_with(state, |rng, size| rng.bytes(size))?
 	Ok((count.to_blip(), next.position()))
 }

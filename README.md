@@ -478,8 +478,11 @@ Roc is an in-development fifth implementation, not a shipped CLI. On Linux,
 Declare that path as a Roc package dependency and import its exported modules,
 for example `import random.Drbg` and `import random.Geometric`. The core uses
 explicit caller-owned state and pure byte-request continuations, with integer
-math and arbitrary-width geometric counts. A native C ABI, production CLI,
-decimal/chart surfaces and full shared CLI acceptance are still unfinished.
+math and arbitrary-width geometric counts. `import random.Decimal` supplies
+ASCII decimal/safe-integer parsing, geometric decimal/scientific/`2^N`
+probabilities and CLI-facing output truncated to 0–18 fractional places.
+A native C ABI, production CLI, charts and full shared CLI acceptance remain
+unfinished.
 `nix develop .#roc -c bash tests/roc_core_test` runs its native kernel
 differentials; `nix build .#checks.x86_64-linux.roc-core` additionally checks
 installed-package imports and native execution of an isolated source-overlay

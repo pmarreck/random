@@ -56,6 +56,7 @@ annotate=[
 	roc/Blake3.roc = Independent checked single-block BLAKE3 and seekable keyed-XOF core for Roc
 	roc/Codec.roc = Pure exact unsigned-256 seed grammar and hexadecimal byte codecs for Roc
 	roc/Count.roc = Exact arbitrary-width unsigned Roc counts, decimal conversion and canonical BLIP encoding
+	roc/Decimal.roc = Pure ASCII decimal/probability codecs and oracle-identical 18-place truncating output
 	roc/Draw.roc = Pure byte-request continuations with bounded history and functional source interpreter
 	roc/Drbg.roc = Pure caller-owned Roc BLAKE3 DRBG, exact cursor and unbiased bounded integer sampler
 	roc/Fixed.roc = Independent portable integer-only Roc software-number core

@@ -1,4 +1,20 @@
-# Code review — independent Roc core milestone
+# Code review — independent Roc core and decimal codecs
+
+The 2026-10-04 Decimal follow-up found no confirmed new defect. It checked the
+pure parser/formatter, probability grammar, safe-integer bounds, test admission
+controls and installed source-package imports. All 3,072 raw-byte substitution
+cases matched LuaJIT, including valid specificity cases, NUL and malformed
+UTF-8. Additional formatting boundaries and refusal controls passed. Six input
+growth witnesses through two million bytes passed; their startup-inclusive
+resource measurements are diagnostics, not a leak or complexity proof.
+
+The default gate runs 127 expectations and 969 native codec comparisons alongside
+the existing core checks; the current full 35-suite snapshot passed. The
+source-library closure still has no references. This follow-up uses the same
+LuaJIT compatibility oracle and establishes Linux x86_64 execution only.
+Production Roc CLI/C ABI and shared CLI acceptance remain open.
+
+## Initial pure-core review
 
 2026-10-04 · Codex, with fresh-context reviewer `/root/roc_core_review` · base
 `ab6fa76`, staged official-upstream Roc core. No confirmed new defect in the
