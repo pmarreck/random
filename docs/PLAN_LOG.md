@@ -90,3 +90,4 @@ Completed PLAN.md items retired by plan-retire, oldest retirement first.
 - [x] [Now: geometric distribution] Validate geometric with independent mathematical/statistical controls, shared differentials, benchmarks, Lean invariants, and fresh review before shipping (done 2026-10-04 15:10 EDT; commit b7ed718).
 - [x] [Now: upstream Roc and standalone packages] Pin and verify the official upstream Roc toolchain with no fork/source substitution (done 2026-10-04 17:07 EDT; commit 77ff529).
 - [x] [Now: upstream Roc and standalone packages] Implement and review the independent pure Roc core and CLI-free importable source package with native runtime oracles and installed consumers (done 2026-10-04 17:07 EDT; commit 77ff529).
+- [x] [Now: upstream Roc and standalone packages] Complete pure Roc decimal/probability codecs with native oracle comparisons, installed-library consumers and independent review (done 2026-10-04 17:34 EDT, commit 863db5a).
