@@ -4,9 +4,10 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    roc-upstream.url = "github:roc-lang/roc/1a4df199210309bbb6befb1322f7435361bd01e1?dir=src";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs, flake-utils, roc-upstream }:
     # Enumerate the supported native systems explicitly. flake-utils' default
     # still includes x86_64-darwin, which nixpkgs 26.11 has dropped and this
     # project no longer promises; Windows remains a Zig/Rust cross target.
@@ -18,6 +19,33 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         kaniVerifier = pkgs.callPackage ./nix/kani.nix { };
+        rocToolchain = import ./nix/roc-toolchain.nix {
+          inherit pkgs;
+          upstream = roc-upstream.packages.${system}.roc;
+        };
+        rocSupported = nixpkgs.lib.hasSuffix "-linux" system;
+        rocTools = pkgs.lib.optionals rocSupported [ rocToolchain ];
+        randomRocLib = pkgs.stdenvNoCC.mkDerivation {
+          pname = "random-roc-lib";
+          version = "0.3.0";
+          src = ./.;
+          strictDeps = true;
+          dontBuild = true;
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/lib/roc/random $out/share/licenses/random-roc-lib
+            for module in main Fixed Codec Blake3 Drbg Draw Sampler Count Geometric; do
+              install -m644 roc/"$module".roc $out/lib/roc/random/
+            done
+            install -m644 LICENSE $out/share/licenses/random-roc-lib/LICENSE
+            runHook postInstall
+          '';
+          meta = {
+            description = "Independent pure Roc source library; native C ABI and CLI are still in development";
+            license = pkgs.lib.licenses.mit;
+            platforms = pkgs.lib.platforms.linux;
+          };
+        };
 
         # LuaJIT/LuaJIT#1499 (https://github.com/LuaJIT/LuaJIT/issues/1499):
         # nixpkgs-unstable's own pkgs.luajit still pins a pre-fix commit
@@ -529,6 +557,9 @@
         # force `pkgs`. eachDefaultSystem still enumerates x86_64-darwin, which
         # nixpkgs 26.11 has dropped -- forcing `pkgs` for that system throws at
         # evaluation time and takes the whole flake down, including on Linux.
+        } // nixpkgs.lib.optionalAttrs (nixpkgs.lib.hasSuffix "-linux" system) {
+          roc-toolchain = rocToolchain;
+          random-roc-lib = randomRocLib;
         } // nixpkgs.lib.optionalAttrs crossSupported {
           # Only meaningful on x86_64-linux: pkgsCross/pkgsMusl and qemu-user are
           # what make the aarch64 and musl legs buildable from this host at all.
@@ -560,11 +591,13 @@
         # tests/random_test, so fixed_test/golden_test/kernel_bc_sweep are
         # actually exercised here too, not just the CLI-behavior suite.
         checks.random-test = pkgs.runCommand "random-test"
-          {
-            nativeBuildInputs = runtimeTools ++ testTools ++ zigTools ++ rustTools ++ leanTools;
+          ({
+            nativeBuildInputs = runtimeTools ++ testTools ++ zigTools ++ rustTools ++ leanTools ++ rocTools;
             cargoDeps = rustCargoDeps;
             RANDOM_GMP_LIBRARY = "${pkgs.gmp}/lib/libgmp${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
-          } ''
+          } // pkgs.lib.optionalAttrs rocSupported {
+            RANDOM_ROC_COMPILER = "${rocToolchain}/bin/roc";
+          }) ''
             cp -r ${./.} work
             chmod -R u+w work
             cd work
@@ -599,6 +632,46 @@
             FAST=1 bash ./test
             touch $out
           '';
+
+        checks.roc-core = if rocSupported then pkgs.runCommand "random-roc-core"
+          {
+            nativeBuildInputs = runtimeTools ++ testTools ++ rocTools;
+            RANDOM_ROC_COMPILER = "${rocToolchain}/bin/roc";
+          } ''
+            cp -r ${./.} work
+            chmod -R u+w work
+            cd work
+            export ROC_CACHE_DIR="$TMPDIR/roc-cache"
+            export XDG_CACHE_HOME="$TMPDIR/roc-xdg-cache"
+            mkdir -p "$ROC_CACHE_DIR" "$XDG_CACHE_HOME"
+            patchShebangs bin tests
+            bash tests/roc_core_test
+            mkdir consumer
+            cp tests/roc_library_consumer.roc consumer/main.roc
+            ln -s ${randomRocLib}/lib/roc/random consumer/library
+            ln -s ${rocToolchain.src}/src/echo_platform/platform consumer/platform
+            substituteInPlace consumer/main.roc \
+              --replace-fail '__RANDOM_ROC_LIBRARY__' './library/main.roc' \
+              --replace-fail '__RANDOM_ROC_ECHO_PLATFORM__' './platform/main.roc'
+            "$RANDOM_ROC_COMPILER" check consumer/main.roc
+            # The upstream Echo declaration has no external native target
+            # manifest: only headerless apps get its bundled host. Check the
+            # actual package imports above; execute the installed source
+            # overlay in an isolated headerless consumer below. Do not claim
+            # this is execution of a custom platform or of our future C ABI.
+            mkdir native-consumer
+            cp ${randomRocLib}/lib/roc/random/*.roc native-consumer/
+            cp tests/roc_library_native.roc native-consumer/consumer.roc
+            "$RANDOM_ROC_COMPILER" check native-consumer/consumer.roc
+            "$RANDOM_ROC_COMPILER" build native-consumer/consumer.roc --opt=speed --output="$PWD/native-consumer/run"
+            actual="$(native-consumer/run 42)"
+            expected="$(zig-out/bin/roc-core-test geometric 42 4611686018427387904 -100 1)"
+            expected="''${expected//$'\n'pos=/:}"
+            test "$actual" = "$expected"
+            test ! -e ${randomRocLib}/bin
+            test ! -e ${randomRocLib}/lib/roc/random/test.roc
+            touch $out
+          '' else pkgs.runCommand "random-roc-core-not-applicable" { } "touch $out";
 
         checks.stats-smoke = pkgs.runCommand "random-stats-smoke"
           {
@@ -911,12 +984,19 @@
           else pkgs.runCommand "random-windows-x64-smoke-not-applicable" { } "touch $out";
 
         devShells = {
-          default = pkgs.mkShell {
-            packages = runtimeTools ++ testTools ++ zigTools ++ leanTools ++
+          default = pkgs.mkShell ({
+            packages = runtimeTools ++ testTools ++ zigTools ++ leanTools ++ rocTools ++
               [ pkgs.cargo pkgs.clippy pkgs.rustc pkgs.rustfmt pkgs.openssh pkgs.rsync pkgs.hyperfine ];
             # The geometric accuracy oracle uses exact rational arithmetic;
             # resolve its library from the derivation, never by store searches.
             RANDOM_GMP_LIBRARY = "${pkgs.gmp}/lib/libgmp${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
+          } // pkgs.lib.optionalAttrs rocSupported {
+            RANDOM_ROC_COMPILER = "${rocToolchain}/bin/roc";
+          });
+        } // nixpkgs.lib.optionalAttrs (nixpkgs.lib.hasSuffix "-linux" system) {
+          roc = pkgs.mkShell {
+            packages = runtimeTools ++ testTools ++ rocTools;
+            RANDOM_ROC_COMPILER = "${rocToolchain}/bin/roc";
           };
         } // nixpkgs.lib.optionalAttrs crossSupported {
           kani = pkgs.mkShell {

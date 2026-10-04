@@ -1,4 +1,34 @@
-# Deep code review — BLAKE3 DRBG milestone
+# Code review — independent Roc core milestone
+
+2026-10-04 · Codex, with fresh-context reviewer `/root/roc_core_review` · base
+`ab6fa76`, staged official-upstream Roc core. No confirmed new defect in the
+inspected core, kernel tests or pure-source package. This does not approve an
+unfinished Roc production CLI or C ABI.
+
+All eight production modules were read and rechecked against live source.
+Independent runtime oracles pin Fixed values, official BLAKE3 vectors, DRBG
+seeks, nonlinear and integer samplers, arbitrary-width geometric BLIP and byte
+cursors. Custom beta shapes cover gamma's `alpha<1` branch. Source-package
+references were empty: no runtime compiler or CLI dependency.
+
+Reviewer probes checked malformed source replies, pre-read parameter validation,
+BLIP length boundaries through 125,000 bytes, magnitudes through `2^128`, and
+DRBG bytes around the `2^38` block-counter carry and `2^53` cursor ceiling.
+Forced rejection probes through 800,000 retries retained about 1 MiB process
+RSS and exact read counts. These are finite, startup-inclusive diagnostic
+observations, not formal proofs, allocator leak proofs or historical benchmarks.
+The useful 22 source/domain/count controls now also run in the default core gate.
+
+Limits: native execution is Linux x86_64 only. Production Roc CLI/C ABI, entropy,
+charts, all-direction continuation, statistics and end-to-end benchmarks remain
+open. Decimal count conversion is known quadratic. Existing scalar cosine and
+capped fraction-conversion behavior were not mistaken for new Roc regressions.
+Roc CLI acceptance must run the same Bash assertions and expected results as
+every other implementation; kernel coverage is additional, not a substitute.
+
+---
+
+# Historical review — BLAKE3 DRBG milestone
 
 **Date:** 2026-08-04
 **Scope:** the repository after the LuaJIT BLAKE3/OS-entropy migration, with

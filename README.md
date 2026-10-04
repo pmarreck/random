@@ -472,6 +472,19 @@ retains exact release-build resolution. The MSRV and pinned build toolchain are
 Rust 1.97.1. The workspace's release profile uses Cargo's `strip = "symbols"`
 policy.
 
+Roc is an in-development fifth implementation, not a shipped CLI. On Linux,
+`.#random-roc-lib` exports the independent pure source package under
+`lib/roc/random/main.roc`; its closure contains neither a compiler nor a CLI.
+Declare that path as a Roc package dependency and import its exported modules,
+for example `import random.Drbg` and `import random.Geometric`. The core uses
+explicit caller-owned state and pure byte-request continuations, with integer
+math and arbitrary-width geometric counts. A native C ABI, production CLI,
+decimal/chart surfaces and full shared CLI acceptance are still unfinished.
+`nix develop .#roc -c bash tests/roc_core_test` runs its native kernel
+differentials; `nix build .#checks.x86_64-linux.roc-core` additionally checks
+installed-package imports and native execution of an isolated source-overlay
+consumer. Those checks do not establish execution of a custom Roc platform.
+
 For Lean, `(cd lean && lake build)` with Lean 4.30.0 builds and checks the
 importable `Randoml` library. Build the byte-preserving production executable
 with `lean/build-owned-cli zig-out/bin/randoml`; no Zig binary or library is

@@ -7,6 +7,9 @@
 # run, and the mitigation it guards is already covered deterministically in the
 # default run by fixed_test's jit.attach check).
 checks.x86_64-linux.random-test
+# Independent Roc native kernel and installed pure-source library consumer.
+# This is not yet acceptance of the unfinished Roc production CLI/C ABI.
+checks.x86_64-linux.roc-core
 checks.x86_64-linux.stats-smoke
 checks.x86_64-linux.package-smoke
 checks.x86_64-linux.library-packages
