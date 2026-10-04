@@ -4,9 +4,9 @@ Completed work: [log](docs/PLAN_LOG.md). Historical directives and deferred risk
 
 ## Now: upstream Roc and standalone packages
 
-- [ ] Pin and verify the upstream Roc toolchain, then implement an independent pure core with an I/O-only CLI adapter (context: docs/plan_context/legacy_decisions.md).
+- [ ] Complete Roc decimal/probability codecs, canonical chart model, C ABI and I/O-only production CLI adapter (context: docs/plan_context/legacy_decisions.md).
 - [ ] Extend the shared CLI/library oracles and cross-implementation continuation tests to Roc, including geometric.
-- [ ] Export separate Roc CLI and importable library Nix packages; verify standalone consumers and CLI-free library closures for every language.
+- [ ] Export the Roc production CLI and native C ABI as separate Nix packages alongside the pure source library; verify consumers and CLI-free closures for every language.
 
 ## Correctness and verification
 
