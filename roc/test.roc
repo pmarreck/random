@@ -12,6 +12,15 @@ import Chart
 main! : List(Str) => Try({}, [BadNumStr, Exit(I8), Invalid])
 main! = |args| {
 	match args {
+		["count", encoded] => {
+			input = Codec.unhex(encoded)?
+			value = match Count.from_blip(input) {
+				Ok(count) => count
+				Err(_) => return Err(Exit(1.I8))
+			}
+			echo!("${value.to_hex()},${value.to_decimal()},${Codec.hex(value.to_blip())}")
+			return Ok({})
+		}
 		["chart", operation, a, b, count] => {
 			kind : Chart.Kind
 			kind = match operation {
@@ -463,3 +472,31 @@ expect Chart.sample(Normal, Fixed.zero, Fixed.from_int(1), 4097) == Err(Invalid)
 expect Chart.sample(Normal, Fixed.zero, Fixed.zero, 2) == Err(Invalid)
 expect Chart.sample(Exponential, Fixed.from_int(1), Fixed.from_int(1), 2) == Err(Invalid)
 expect Chart.sample(Beta, Fixed.power_of_two(-21), Fixed.from_int(1), 2) == Err(Numeric)
+expect Count.from_blip([0]) == Ok(Count.zero)
+expect Count.from_blip([127]) == Count.from_decimal("127")
+expect Count.from_blip([129, 128]) == Count.from_decimal("128")
+expect Count.from_blip([130, 0, 1]) == Count.from_decimal("256")
+expect Count.from_blip([129, 255]) == Count.from_decimal("255")
+expect Count.from_blip([160, 1].concat(List.repeat(255.U8, 32))) == Ok(Count.from_bytes(List.repeat(255.U8, 32)))
+expect Count.from_blip([161, 1].concat(List.repeat(255.U8, 33))) == Ok(Count.from_bytes(List.repeat(255.U8, 33)))
+expect Count.from_blip([160, 128, 1].concat(List.repeat(255.U8, 4096))) == Ok(Count.from_bytes(List.repeat(255.U8, 4096)))
+expect Count.from_blip([]) == Err(Invalid)
+expect Count.from_blip([0, 0]) == Err(Invalid)
+expect Count.from_blip([128]) == Err(Invalid)
+expect Count.from_blip([129, 0]) == Err(Invalid)
+expect Count.from_blip([129, 127]) == Err(Invalid)
+expect Count.from_blip([130, 128, 0]) == Err(Invalid)
+expect Count.from_blip([130, 255]) == Err(Invalid)
+expect Count.from_blip([129, 255, 1]) == Err(Invalid)
+expect Count.from_blip([160, 0]) == Err(Invalid)
+expect Count.from_blip([160, 129, 0].concat(List.repeat(255.U8, 32))) == Err(Invalid)
+expect Count.from_blip([160, 128]) == Err(Invalid)
+expect Count.from_blip([160].concat(List.repeat(255.U8, 8)).append(128)) == Err(Invalid)
+expect Count.from_blip([160].concat(List.repeat(255.U8, 8)).append(8)) == Err(Invalid)
+expect Count.from_blip([192, 1]) == Err(Invalid)
+expect Count.from_blip([255]) == Err(Invalid)
+expect Count.zero.to_hex() == "0"
+expect (Count.from_decimal("15") ?? Count.zero).to_hex() == "f"
+expect (Count.from_decimal("16") ?? Count.zero).to_hex() == "10"
+expect (Count.from_decimal("256") ?? Count.zero).to_hex() == "100"
+expect (Count.from_decimal("18446744073709551616") ?? Count.zero).to_hex() == "10000000000000000"

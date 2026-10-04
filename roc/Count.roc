@@ -1,3 +1,5 @@
+import Codec
+
 # Exact unsigned arbitrary-width counts, canonical little-endian magnitudes.
 # Empty bytes is the unique internal zero; binary output is unsigned BLIP v1.2.
 Count :: { magnitude : List(U8) }.{
@@ -81,6 +83,62 @@ Count :: { magnitude : List(U8) }.{
 		[] => [0]
 		[byte] => if byte < 128 [byte] else [129, byte]
 		_ => blip_envelope(value.magnitude)
+	}
+
+	# Decode exactly one shortest unsigned BLIP, never a native-width count.
+	# The length prefix is bounded by U64; the magnitude itself is not narrowed.
+	from_blip : List(U8) -> Try(Count, [Invalid])
+	from_blip = |input| {
+		first = match input.first() {
+			Ok(byte) => byte
+			Err(_) => return Err(Invalid)
+		}
+		if first < 128 {
+			if input.len() != 1 return Err(Invalid)
+			return Ok(from_bytes(input))
+		}
+		if first >= 192 return Err(Invalid)
+		var $length = first.bitwise_and(31).to_u64()
+		var $header = 1.U64
+		if first.bitwise_and(32) != 0 {
+			var $shift = 5.U8
+			while Bool.True {
+				if $shift >= 64 return Err(Invalid)
+				byte = match input.get($header) {
+					Ok(value) => value
+					Err(_) => return Err(Invalid)
+				}
+				$header = $header + 1
+				low = byte.bitwise_and(127).to_u64()
+				if low > U64.shr_wrap(18446744073709551615, $shift) return Err(Invalid)
+				$length = $length.bitwise_or(low.shl_wrap($shift))
+				if byte.bitwise_and(128) == 0 {
+					if low == 0 return Err(Invalid)
+					break
+				}
+				$shift = $shift + 7
+			}
+		}
+		if $length == 0 or $length != input.len() - $header return Err(Invalid)
+		magnitude = input.drop_first($header)
+		last = match magnitude.last() {
+			Ok(byte) => byte
+			Err(_) => return Err(Invalid)
+		}
+		if last == 0 or ($length == 1 and last < 128) return Err(Invalid)
+		Ok({ magnitude: magnitude })
+	}
+
+	# Numeric hexadecimal digits, without a BLIP envelope or 0x prefix.
+	to_hex : Count -> Str
+	to_hex = |value| {
+		if value.magnitude.is_empty() {
+			"0"
+		} else {
+			text = Codec.hex(value.magnitude.rev())
+			first = value.magnitude.last() ?? 0
+			if first < 16 text.drop_prefix("0") else text
+		}
 	}
 
 	to_decimal : Count -> Str

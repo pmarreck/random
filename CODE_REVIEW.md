@@ -1,4 +1,27 @@
-# Code review — Roc canonical chart model
+# Code review — Roc canonical unsigned count codecs
+
+2026-10-04 · Codex, with fresh-context reviewer `/root/roc_count_codec_review` ·
+base `b08dc43`, five staged codec/test paths. No actionable findings in scope.
+The maintained gate passed 166 expectations and 2,115 comparisons against the
+actual Zig Count C ABI, including exactly 192 accepted encodings. The complete
+37-suite FAST run and installed source/native consumers passed; the source
+library has no runtime references.
+
+The reviewer independently exhausted all 65,792 one- and two-byte inputs,
+checked exact numeric hex for a 32,768-byte magnitude and refused overflowing
+U64 length prefixes. Its deliberately wrong consumer expectation failed with
+status 1 and no output. The parent reran these native controls and verified
+the unchanged reviewed diff and byte-identical installed Count module.
+
+Limits: this is finite codec evidence, not a cryptographic proof or public Roc
+CLI/C ABI clearance. Decimal conversion remains width-dependent and potentially
+quadratic. The malformed shell corpus requires quiet nonzero rejection, not
+exactly status 1; direct expectations separately check Invalid returns.
+Native execution is Linux x86_64 only. Shared Bash CLI expectations are unchanged.
+
+---
+
+# Previous review — Roc canonical chart model
 
 2026-10-04 · Codex, with fresh-context reviewer `/root/roc_chart_review` ·
 base `e4d6fd7`, staged chart checkpoint. No confirmed findings in this scope.

@@ -6,6 +6,7 @@ import Geometric
 import Decimal
 import Chart
 import Fixed
+import Count
 
 main! = |args| {
 	seed = args.first() ?? "42"
@@ -21,6 +22,8 @@ main! = |args| {
 sample = |seed| {
 	chart = Chart.sample(Normal, Fixed.zero, Fixed.from_int(1), 5)?
 	if chart.heights() != [21, 8869, 65535, 8869, 21] return Err(Invalid)
+	decoded_count = Count.from_blip([130, 0, 1])?
+	if decoded_count.to_hex() != "100" return Err(Invalid)
 	state = Drbg.new(Codec.seed(seed)?)?
 	prepared = Geometric.new(Decimal.probability("2^-100")?)?
 	(count, next) = prepared.sample().run_with(state, |rng, size| rng.bytes(size))?

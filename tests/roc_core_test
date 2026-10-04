@@ -425,3 +425,68 @@ for bad in 'normal 0 1 1' 'normal 0 1 4097' 'normal 0 0 2' \
 	fi
 done
 echo "Roc canonical charts: $chart_checks exact height/bounds/stem witnesses and 14 refusal controls passed."
+
+# The production count codec consumes one canonical unsigned BLIP. Pin both
+# acceptance and formatted values against the real Zig C ABI, not a Roc
+# encoder/decoder round trip alone. Rebuild the oracle to avoid stale artifacts.
+zig build library -Doptimize=ReleaseFast || exit 1
+corpus="$(luajit - <<'LUA'
+local ffi = require('ffi')
+local counts = require('lib.unsigned_count')
+ffi.cdef[[int randomz_count_format(const uint8_t *, size_t, uint8_t, uint32_t *, size_t, char *, size_t, size_t *);]]
+local library = ffi.load('./zig-out/lib/librandomz.so')
+local scratch, text, size = ffi.new('uint32_t[12500]'), ffi.new('char[40000]'), ffi.new('size_t[1]')
+local function hex(s) return (s:gsub('.',function(c)return string.format('%02x',c:byte())end)) end
+local function emit(input)
+	local status = library.randomz_count_format(input, #input, 16, scratch, 12500, text, 40000, size)
+	local expected = '-'
+	if status == 0 then
+		local hx = ffi.string(text,size[0])
+		assert(library.randomz_count_format(input,#input,10,scratch,12500,text,40000,size)==0)
+		expected = hx .. ',' .. ffi.string(text,size[0]) .. ',' .. hex(input)
+	end
+	assert(status == 0 or status == 1)
+	print((#input == 0 and '-' or hex(input)) .. '\t' .. status .. '\t' .. expected)
+end
+for first = 0,255 do
+	for _, suffix in ipairs({'','\0','\127','\128','\255','\255\255',string.rep('\255',32), '\1'..string.rep('\255',32)}) do
+		emit(string.char(first)..suffix)
+	end
+end
+emit('')
+for _,length in ipairs({2,3,7,8,9,16,31,32,33,63,64,65,127,128,129,255,256,4095,4096,4097}) do
+	for _, top in ipairs({1,15,255}) do
+		local magnitude = string.rep('\255',length-1)..string.char(top)
+		emit(counts.to_blip(magnitude))
+	end
+end
+for _, malformed in ipairs({'\160\0','\160\129\0'..string.rep('\255',32),
+	'\160'..string.rep('\255',8)..'\8', '\160'..string.rep('\255',8)..'\128',
+	'\160'..string.rep('\255',9)..'\1', '\160\128\128\128\128\128\128\128\128\0'}) do emit(malformed) end
+LUA
+)" || exit 1
+checks=0
+valid=0
+while IFS=$'\t' read -r encoded expected_status expected; do
+	[ "$encoded" = - ] && encoded=""
+	actual="$("$roc_kernel" count "$encoded" 2>&1)"
+	status=$?
+	if [ "$expected_status" = 0 ]; then
+		if [ "$status" -ne 0 ] || [ "$actual" != "$expected" ]; then
+			echo "Count codec failed at $checks (status $status), expected '$expected', got '$actual'" >&2
+			exit 1
+		fi
+		valid=$((valid + 1))
+	else
+		if [ "$status" -eq 0 ] || [ -n "$actual" ]; then
+			echo "Count codec accepted malformed input at $checks (status $status)" >&2
+			exit 1
+		fi
+	fi
+	checks=$((checks + 1))
+done <<<"$corpus"
+if [ "$checks" -ne 2115 ] || [ "$valid" -ne 192 ]; then
+	echo "Count codec vacuous/incomplete corpus: $checks/$valid" >&2
+	exit 1
+fi
+printf 'Roc count codec: %s Zig C ABI oracle cases, %s accepted cases passed.\n' "$checks" "$valid"
