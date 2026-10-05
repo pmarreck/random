@@ -3,15 +3,15 @@
 # is accumulated, no host callback is falsely declared pure, and no reservoir
 # can alter the specified source-read order.
 Draw(a) :: {
-	step : [Done(a), Need({ count : U64, after : List(U8) -> Draw(a) }), Failed([Invalid, Numeric, DivisionByZero, Source])],
+	step : [Done(a), Need({ count : U64, after : List(U8) -> Draw(a) }), Failed([Invalid, Numeric, DivisionByZero, Source, BufferTooSmall])],
 }.{
 	succeed : a -> Draw(a)
 	succeed = |value| { step: Done(value) }
 
-	fail : [Invalid, Numeric, DivisionByZero, Source] -> Draw(a)
+	fail : [Invalid, Numeric, DivisionByZero, Source, BufferTooSmall] -> Draw(a)
 	fail = |problem| { step: Failed(problem) }
 
-	from_try : Try(a, [Invalid, Numeric, DivisionByZero, Source]) -> Draw(a)
+	from_try : Try(a, [Invalid, Numeric, DivisionByZero, Source, BufferTooSmall]) -> Draw(a)
 	from_try = |result| match result {
 		Ok(value) => succeed(value)
 		Err(problem) => fail(problem)
@@ -33,7 +33,7 @@ Draw(a) :: {
 		}
 	}
 
-	view : Draw(a) -> [Done(a), Need({ count : U64, after : List(U8) -> Draw(a) }), Failed([Invalid, Numeric, DivisionByZero, Source])]
+	view : Draw(a) -> [Done(a), Need({ count : U64, after : List(U8) -> Draw(a) }), Failed([Invalid, Numeric, DivisionByZero, Source, BufferTooSmall])]
 	view = |program| program.step
 
 	and_then : Draw(a), (a -> Draw(b)) -> Draw(b)
@@ -54,7 +54,7 @@ Draw(a) :: {
 	# The functional interpreter advances a supplied source value explicitly.
 	# An effectful platform instead inspects view and supplies each requested
 	# byte chunk once, then invokes request.after with that result.
-	run_with : Draw(a), state, (state, U64 -> Try((List(U8), state), [Invalid, Numeric, DivisionByZero, Source])) -> Try((a, state), [Invalid, Numeric, DivisionByZero, Source])
+	run_with : Draw(a), state, (state, U64 -> Try((List(U8), state), [Invalid, Numeric, DivisionByZero, Source, BufferTooSmall])) -> Try((a, state), [Invalid, Numeric, DivisionByZero, Source, BufferTooSmall])
 	run_with = |program, initial, reader| {
 		var $current = program
 		var $source = initial

@@ -27,12 +27,12 @@ Sampler :: [].{
 
 	normal : Fixed, Fixed -> Draw(Fixed)
 	normal = |mean, stddev| {
-		if !parameter(mean, -1000000, 1000000, Bool.False) or
-			!parameter(stddev, -1000000, 1000000, Bool.True) {
-			Draw.fail(Invalid)
-		} else {
-			uniform().and_then(|u1| uniform().and_then(|u2|
-				Draw.from_try(normal_value(mean, stddev, u1, u2))))
+		match parameters(mean, stddev, -1000000, 1000000, -1000000, 1000000, Bool.False, Bool.True) {
+			Err(problem) => Draw.fail(problem)
+			Ok(_) => {
+				uniform().and_then(|u1| uniform().and_then(|u2|
+					Draw.from_try(normal_value(mean, stddev, u1, u2))))
+			}
 		}
 	}
 
@@ -49,23 +49,25 @@ Sampler :: [].{
 
 	exponential : Fixed -> Draw(Fixed)
 	exponential = |rate| {
-		if !parameter(rate, -1000000, 1000000, Bool.True) Draw.fail(Invalid)
-		else uniform().and_then(|u| Draw.from_try(exponential_value(rate, u)))
+		match parameters(rate, Fixed.zero, -1000000, 1000000, 0, 0, Bool.True, Bool.False) {
+			Err(problem) => Draw.fail(problem)
+			Ok(_) => uniform().and_then(|u| Draw.from_try(exponential_value(rate, u)))
+		}
 	}
 
 	poisson : Fixed -> Draw(I64)
 	poisson = |lambda| {
-		if !parameter(lambda, -1000000, 19, Bool.True) Draw.fail(Invalid)
-		else poisson_loop(lambda, Fixed.zero, 0)
+		match parameters(lambda, Fixed.zero, -1000000, 19, 0, 0, Bool.True, Bool.False) {
+			Err(problem) => Draw.fail(problem)
+			Ok(_) => poisson_loop(lambda, Fixed.zero, 0)
+		}
 	}
 
 	log_normal : Fixed, Fixed -> Draw(Fixed)
 	log_normal = |mean, stddev| {
-		if !parameter(mean, -1000000, 27, Bool.False) or
-			!parameter(stddev, -1000000, 23, Bool.True) {
-			Draw.fail(Invalid)
-		} else {
-			normal(mean, stddev).and_then(|value| Draw.from_try(value.exp()))
+		match parameters(mean, stddev, -1000000, 27, -1000000, 23, Bool.False, Bool.True) {
+			Err(problem) => Draw.fail(problem)
+			Ok(_) => normal(mean, stddev).and_then(|value| Draw.from_try(value.exp()))
 		}
 	}
 
@@ -73,33 +75,32 @@ Sampler :: [].{
 	# planned feature and is not implied by this library method.
 	gamma : Fixed -> Draw(Fixed)
 	gamma = |alpha| {
-		if !parameter(alpha, -20, 20, Bool.True) {
-			Draw.fail(Invalid)
-		} else if alpha.compare(one) < 0 {
-			uniform().and_then(
-				|u| {
-					match one.add(alpha) {
-						Err(problem) => Draw.fail(problem)
-						Ok(larger) => gamma(larger).and_then(|value|
-							Draw.from_try(gamma_small(alpha, value, nonzero(u))))
-					}
-				},
-			)
-		} else {
-			match gamma_parameters(alpha) {
-				Ok((d, c)) => gamma_loop(d, c)
-				Err(problem) => Draw.fail(problem)
+		match parameters(alpha, Fixed.zero, -20, 20, 0, 0, Bool.True, Bool.False) {
+			Err(problem) => Draw.fail(problem)
+			Ok(_) => if alpha.compare(one) < 0 {
+				uniform().and_then(
+					|u| {
+						match one.add(alpha) {
+							Err(problem) => Draw.fail(problem)
+							Ok(larger) => gamma(larger).and_then(|value|
+								Draw.from_try(gamma_small(alpha, value, nonzero(u))))
+						}
+					},
+				)
+			} else {
+				match gamma_parameters(alpha) {
+					Ok((d, c)) => gamma_loop(d, c)
+					Err(problem) => Draw.fail(problem)
+				}
 			}
 		}
 	}
 
 	beta : Fixed, Fixed -> Draw(Fixed)
 	beta = |alpha, beta_shape| {
-		if !parameter(alpha, -20, 20, Bool.True) or
-			!parameter(beta_shape, -20, 20, Bool.True) {
-			Draw.fail(Invalid)
-		} else {
-			gamma(alpha).and_then(|x| gamma(beta_shape).and_then(|y|
+		match parameters(alpha, beta_shape, -20, 20, -20, 20, Bool.True, Bool.True) {
+			Err(problem) => Draw.fail(problem)
+			Ok(_) => gamma(alpha).and_then(|x| gamma(beta_shape).and_then(|y|
 				Draw.from_try(beta_value(x, y))))
 		}
 	}
@@ -108,11 +109,16 @@ Sampler :: [].{
 one : Fixed
 one = Fixed.from_int(1)
 
-parameter : Fixed, I32, I32, Bool -> Bool
-parameter = |value, minimum, maximum, positive| {
-	(m, e) = value.parts()
-	value.is_valid() and (!positive or m > 0) and
-		(m == 0 or (e >= minimum and e <= maximum))
+parameters : Fixed, Fixed, I32, I32, I32, I32, Bool, Bool -> Try({}, [Invalid, Numeric])
+parameters = |a, b, low_a, high_a, low_b, high_b, positive_a, positive_b| {
+	(am, ae) = a.parts()
+	(bm, be) = b.parts()
+	if !a.is_valid() or !b.is_valid() or (positive_a and am <= 0) or (positive_b and bm <= 0) {
+		Err(Invalid)
+	} else if (am != 0 and (ae < low_a or ae > high_a)) or
+		(bm != 0 and (be < low_b or be > high_b)) {
+		Err(Numeric)
+	} else Ok({})
 }
 
 nonzero : Fixed -> Fixed

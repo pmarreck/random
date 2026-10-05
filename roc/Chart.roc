@@ -28,6 +28,7 @@ Chart :: { heights : List(U16), x_min : Fixed, x_max : Fixed, discrete : Bool }.
 		}
 		match kind {
 			Normal => {
+				if second.parts().0 <= 0 return Err(Invalid)
 				check_parameter(first, -1000000, 1000000, Bool.False)?
 				check_parameter(second, -1000000, 1000000, Bool.True)?
 				normal(first, second, capacity)
@@ -48,11 +49,13 @@ Chart :: { heights : List(U16), x_min : Fixed, x_max : Fixed, discrete : Bool }.
 				geometric(first, capacity)
 			}
 			LogNormal => {
+				if second.parts().0 <= 0 return Err(Invalid)
 				check_parameter(first, -1000000, 27, Bool.False)?
 				check_parameter(second, -1000000, 23, Bool.True)?
 				log_normal(first, second, capacity)
 			}
 			Beta => {
+				if first.parts().0 <= 0 or second.parts().0 <= 0 return Err(Invalid)
 				check_parameter(first, -20, 20, Bool.True)?
 				check_parameter(second, -20, 20, Bool.True)?
 				beta(first, second, capacity)

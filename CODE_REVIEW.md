@@ -1,4 +1,28 @@
-# Code review — Roc canonical unsigned count codecs
+# Code review — Roc bounded sampling and admission
+
+2026-10-04 · Codex, with fresh-context reviewer `/root/roc_boundary_review` ·
+base `5dcd84f`, five staged source/test paths. No actionable findings in scope.
+The complete 37-suite FAST run and installed consumers passed. The reviewer
+independently reran 178 repository expectations, seven additional pure controls,
+1,372 native geometric comparisons, 108 sampler-admission cases and 83 chart
+cases. Deliberately false expectations and a perturbed verdict failed.
+
+The parent reran the full 1,574-assertion native campaign, verified the unchanged
+reviewed diff, and checked that all four installed production modules matched
+the reviewed source exactly. Geometry checks include capacity refusals, precise
+request traces, source failures, late BLIP headers and arbitrary-width results;
+admission checks distinguish invalid parameters from unsupported numeric domains.
+
+Limits: capacity bounds storage, not rejection work or exact allocator peak.
+`Draw.run_with` does not return the advanced source on error; effectful adapters
+must retain actual consumption per request. Selected dynamic capacity witnesses
+must join the maintained native gate. This does not clear the separate prototype
+ABI, CLI, Batch or Selection code, cryptographic correctness, or other platforms.
+Shared Bash CLI assertions and expected results remain unchanged.
+
+---
+
+# Previous review — Roc canonical unsigned count codecs
 
 2026-10-04 · Codex, with fresh-context reviewer `/root/roc_count_codec_review` ·
 base `b08dc43`, five staged codec/test paths. No actionable findings in scope.

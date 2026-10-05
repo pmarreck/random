@@ -372,12 +372,12 @@ expect Draw.read(0).run_with({}, |_state, _size| Err(Source)) == Ok(([], {}))
 expect Draw.read(1048577).run_with({}, |_state, _size| Err(Source)) == Err(Invalid)
 expect Sampler.normal_int(9007199254740993, 9007199254740993).run_with({}, |_state, _size| Err(Source)) == Err(Invalid)
 expect Sampler.range(-9007199254740992, 0).run_with({}, |_state, _size| Err(Source)) == Err(Invalid)
-expect Sampler.beta(Fixed.power_of_two(-21), Fixed.from_int(1)).run_with({}, |_state, _size| Err(Source)) == Err(Invalid)
-expect Sampler.beta(Fixed.from_int(1), Fixed.power_of_two(21)).run_with({}, |_state, _size| Err(Source)) == Err(Invalid)
-expect Sampler.poisson(Fixed.power_of_two(20)).run_with({}, |_state, _size| Err(Source)) == Err(Invalid)
+expect Sampler.beta(Fixed.power_of_two(-21), Fixed.from_int(1)).run_with({}, |_state, _size| Err(Source)) == Err(Numeric)
+expect Sampler.beta(Fixed.from_int(1), Fixed.power_of_two(21)).run_with({}, |_state, _size| Err(Source)) == Err(Numeric)
+expect Sampler.poisson(Fixed.power_of_two(20)).run_with({}, |_state, _size| Err(Source)) == Err(Numeric)
 expect Sampler.exponential(Fixed.zero).run_with({}, |_state, _size| Err(Source)) == Err(Invalid)
-expect Sampler.log_normal(Fixed.power_of_two(28), Fixed.from_int(1)).run_with({}, |_state, _size| Err(Source)) == Err(Invalid)
-expect Sampler.log_normal(Fixed.zero, Fixed.power_of_two(24)).run_with({}, |_state, _size| Err(Source)) == Err(Invalid)
+expect Sampler.log_normal(Fixed.power_of_two(28), Fixed.from_int(1)).run_with({}, |_state, _size| Err(Source)) == Err(Numeric)
+expect Sampler.log_normal(Fixed.zero, Fixed.power_of_two(24)).run_with({}, |_state, _size| Err(Source)) == Err(Numeric)
 expect Geometric.new(Fixed.power_of_two(-1000001)) == Err(Invalid)
 expect Geometric.new(Fixed.from_int(2)) == Err(Invalid)
 expect Drbg.restore(List.repeat(0.U8, 32), 9007199254740993) == Err(Invalid)
@@ -495,6 +495,33 @@ expect Count.from_blip([160].concat(List.repeat(255.U8, 8)).append(128)) == Err(
 expect Count.from_blip([160].concat(List.repeat(255.U8, 8)).append(8)) == Err(Invalid)
 expect Count.from_blip([192, 1]) == Err(Invalid)
 expect Count.from_blip([255]) == Err(Invalid)
+
+# Native-boundary contracts: errors are decided in the pure core, before
+# callbacks whenever admission/capacity can be checked without sampling.
+expect {
+	prepared = Geometric.new(Fixed.from_int(1))?
+	prepared.sample_bounded(1).run_with({}, |_state, _size| Err(Source)) == Ok((Count.zero, {}))
+}
+expect {
+	prepared = Geometric.new(Fixed.from_int(1))?
+	prepared.sample_bounded(0).run_with({}, |_state, _size| Err(Source)) == Err(BufferTooSmall)
+}
+expect {
+	prepared = Geometric.new(Fixed.power_of_two(-100))?
+	prepared.sample_bounded(1).run_with({}, |_state, _size| Err(Source)) == Err(BufferTooSmall)
+}
+expect {
+	prepared = Geometric.new(Fixed.power_of_two(-1))?
+	prepared.sample_bounded(0).run_with({}, |_state, _size| Err(Source)) == Err(BufferTooSmall)
+}
+expect Chart.sample(Normal, Fixed.power_of_two(1000001), Fixed.zero, 17) == Err(Invalid)
+expect Chart.sample(LogNormal, Fixed.power_of_two(1000001), Fixed.zero, 17) == Err(Invalid)
+expect Chart.sample(Beta, Fixed.power_of_two(1000001), Fixed.zero, 17) == Err(Invalid)
+expect Sampler.normal(Fixed.power_of_two(-1000001), Fixed.from_int(1)).run_with({}, |_state, _size| Err(Source)) == Err(Numeric)
+expect Sampler.normal(Fixed.zero, Fixed.power_of_two(1000001)).run_with({}, |_state, _size| Err(Source)) == Err(Numeric)
+expect Sampler.exponential(Fixed.power_of_two(-1000001)).run_with({}, |_state, _size| Err(Source)) == Err(Numeric)
+expect Sampler.beta(Fixed.power_of_two(21), Fixed.zero).run_with({}, |_state, _size| Err(Source)) == Err(Invalid)
+expect Sampler.normal(Fixed.power_of_two(-1000001), Fixed.zero).run_with({}, |_state, _size| Err(Source)) == Err(Invalid)
 expect Count.zero.to_hex() == "0"
 expect (Count.from_decimal("15") ?? Count.zero).to_hex() == "f"
 expect (Count.from_decimal("16") ?? Count.zero).to_hex() == "10"
