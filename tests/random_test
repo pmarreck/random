@@ -1838,7 +1838,7 @@ verycommon:100"
 			"$here/../src/randomz_cli.c" "$here/../src/distribution_view.c" | \
 			grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|/\*|\*)' || true)
 	fi
-	if [ -z "${RANDOM_TEST_CLI:-}" ]; then
+	if [ -z "${RANDOM_TEST_CLI:-}" ] || [ "${RANDOM_TEST_CLI_KIND:-}" = luajit ]; then
 		libm_hits=$(grep -nE 'math\.(log|cos|sin|exp|pow|sqrt|pi)|tonumber\(argv|string\.format\("%\.?[0-9]*f' \
 			"$(command -v random)" | grep -v '^[0-9]*:--' || true)
 	else

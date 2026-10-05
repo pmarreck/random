@@ -22,8 +22,18 @@ if [ -z "${RELEASE_STRIP_LEAN_CLI:-}" ]; then
 	"$root/lean/build-owned-cli" "$lean_cli" || exit 1
 fi
 
+specs=("Zig/C:$zig_cli" "Rust:$rust_cli" "Lean:$lean_cli")
+if [ "$(uname -s)" = Linux ] || [ -n "${RELEASE_STRIP_ROC_CLI:-}" ]; then
+	roc_cli="${RELEASE_STRIP_ROC_CLI:-}"
+	if [ -z "$roc_cli" ]; then
+		source "$root/tests/roc_native_setup.sh"
+		roc_native_setup || exit 1
+		roc_cli="$RANDOM_ROC_NATIVE_DIR/bin/randomroc"
+	fi
+	specs+=("Roc:$roc_cli")
+fi
 fails=0
-for spec in "Zig/C:$zig_cli" "Rust:$rust_cli" "Lean:$lean_cli"; do
+for spec in "${specs[@]}"; do
 	label="${spec%%:*}"
 	path="${spec#*:}"
 	if [ ! -x "$path" ]; then
@@ -53,4 +63,4 @@ if [ "$fails" -ne 0 ]; then
 	exit 1
 fi
 
-echo "release strip test PASSED: Zig, Rust, and Lean build stripped release executables"
+echo "release strip test PASSED: ${#specs[@]} implementations build stripped release executables"

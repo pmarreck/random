@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared continuation-state contract for the LuaJIT, Zig/C, Rust, and Lean CLIs.
+# Shared continuation-state contract for every CLI implementation.
 # No temporary files: deterministic commands are replayed when stdout and
 # stderr need to be observed separately.
 set -u
@@ -28,6 +28,16 @@ export RANDOML_BACKEND="${RANDOML_BACKEND:-$zig_cli}"
 
 labels=(luajit zig rust lean)
 clis=("$lua_cli" "$zig_cli" "$rust_cli" "$lean_cli")
+if [ "$(uname -s)" = Linux ] || [ -n "${STATE_TEST_ROC_CLI:-}" ]; then
+	roc_cli="${STATE_TEST_ROC_CLI:-}"
+	if [ -z "$roc_cli" ]; then
+		source "$root/tests/roc_native_setup.sh"
+		roc_native_setup || exit 1
+		roc_cli="$RANDOM_ROC_NATIVE_DIR/bin/randomroc"
+	fi
+	labels+=(roc)
+	clis+=("$roc_cli")
+fi
 fails=0
 checks=0
 

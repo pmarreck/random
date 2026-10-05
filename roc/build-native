@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Official Roc algorithm archive, shared C ABI, and the common C I/O frontend.
+# All build artifacts stay in the chosen output directory. No RNG payload files.
+set -euo pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+output="${1:-$root/roc-out}"
+mode="${2:---all}"
+case "$mode" in --all|--library-only|--cli-only) ;; *) echo "invalid Roc build mode: $mode" >&2; exit 2;; esac
+case "$(uname -s)/$(uname -m)" in
+	Linux/x86_64) roc_target=x64v1glibc; native_target=x86_64-linux-gnu; cli_target=x86_64-linux-musl ;;
+	Linux/aarch64) roc_target=arm64glibc; native_target=aarch64-linux-gnu; cli_target=aarch64-linux-musl ;;
+	*) echo "Roc native packaging currently supports Linux x86_64/aarch64 only" >&2; exit 1 ;;
+esac
+mkdir -p "$output"
+output="$(cd "$output" && pwd)"
+mkdir -p "$output/include" "$output/lib" "$output/bin"
+install -m644 "$root/include/randomroc.h" "$output/include/randomroc.h"
+archive="${RANDOM_ROC_NATIVE_LIBRARY:-$output/lib/librandomroc.a}"
+
+if [ "$mode" != --cli-only ]; then
+	: "${RANDOM_ROC_COMPILER:?Use the declared Roc development shell}"
+	: "${RANDOM_ROC_SOURCE_DIR:?Use the declared official Roc source path}"
+	mkdir -p "$output/share/licenses/random-roc-ffi"
+	install -m644 "$root/LICENSE" "$output/share/licenses/random-roc-ffi/LICENSE"
+	install -m644 "$RANDOM_ROC_SOURCE_DIR/LICENSE" "$output/share/licenses/random-roc-ffi/Roc-UPL"
+	work="$output/build"
+	mkdir -p "$work/platform/targets/$roc_target"
+	for module in main Batch Blake3 Chart Codec Count Decimal Draw Drbg Fixed Geometric Sampler Selection; do
+		cp "${RANDOM_ROC_LIBRARY_DIR:-$root/roc}/$module.roc" "$work/"
+	done
+	cp "$root/roc/native.roc" "$work/native.roc"
+	cp "$root/roc/platform/"*.roc "$work/platform/"
+	cp "$root/roc/platform/host.c" "$work/platform/host.c"
+	"$RANDOM_ROC_COMPILER" check "$work/native.roc" --no-cache --jobs=4
+	"$RANDOM_ROC_COMPILER" glue "$RANDOM_ROC_SOURCE_DIR/src/glue/src/CGlue.roc" \
+		"$work/platform" "$work/platform/main.roc" --opt=speed --no-cache
+	zig cc -target "$native_target" -mcpu=baseline -std=c11 -O2 -fPIC -fvisibility=hidden \
+		-Wall -Wextra -Werror -c "$work/platform/host.c" -o "$work/platform/host.o"
+	ar rcs "$work/platform/targets/$roc_target/libhost.a" "$work/platform/host.o"
+	"$RANDOM_ROC_COMPILER" build "$work/native.roc" --opt=speed \
+		--target="$roc_target" --jobs=4 --output="$output/lib/librandomroc.a"
+	# Native Archive code is not PIC in this upstream revision. Build the
+	# Shared variant explicitly rather than weakening ELF loader protection.
+	sed -i 's/output: Archive/output: Shared/g' "$work/platform/main.roc"
+	"$RANDOM_ROC_COMPILER" build "$work/native.roc" --opt=speed \
+		--target="$roc_target" --jobs=4 --no-cache --output="$output/lib/librandomroc.so"
+	strip --strip-unneeded "$output/lib/librandomroc.so"
+fi
+
+if [ "$mode" != --library-only ]; then
+	: "${RANDOM_ROC_MUSL_LICENSE:?Use the declared Zig musl notice path}"
+	mkdir -p "$output/share/licenses/random-roc"
+	install -m644 "$root/LICENSE" "$output/share/licenses/random-roc/LICENSE"
+	install -m644 "$(dirname "$archive")/../share/licenses/random-roc-ffi/Roc-UPL" \
+		"$output/share/licenses/random-roc/Roc-UPL"
+	install -m644 "$RANDOM_ROC_MUSL_LICENSE" "$output/share/licenses/random-roc/musl-COPYRIGHT"
+	zig cc -target "$cli_target" -mcpu=baseline -std=c11 -O2 -static \
+		-Wall -Wextra -Werror -Wl,--strip-all \
+		-include "$root/roc/platform/cli-compat.h" -I"$root/include" -I"$root/src" \
+		"$root/src/randomz_cli.c" "$root/src/distribution_view.c" "$root/src/state_json.c" \
+		"$archive" -o "$output/bin/randomroc"
+	ln -sfn randomroc "$output/bin/nrandomroc"
+	ln -sfn randomroc "$output/bin/drandomroc"
+fi

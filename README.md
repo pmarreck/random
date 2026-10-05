@@ -9,10 +9,11 @@ normal, exponential, Poisson, geometric, log-normal, and beta distributions. Tru
 mode instead draws fresh entropy from the operating system CSPRNG and is
 intentionally not reproducible.
 
-The project ships four independent matching implementations: the original
+The project provides five independent matching implementations: the original
 [LuaJIT](https://luajit.org/) oracle, a Zig core exposed through a public C ABI
-and dogfooded by a C CLI, a pure-core Rust library with a separate Rust CLI, and
-a Lean 4 implementation with a byte-preserving native launcher. `randoml` owns
+and dogfooded by a C CLI, a pure-core Rust library with a separate Rust CLI,
+a Lean 4 implementation with a byte-preserving native launcher, and an upstream
+Roc pure core with a C I/O frontend (currently Linux only). `randoml` owns
 its BLAKE3 DRBG, integer-only numeric kernel, distributions, state parser,
 formatting, stdin operations, and canonical chart model; it does not launch or
 link another implementation. Lean's kernel additionally checks selected
@@ -21,10 +22,11 @@ A seeded BLAKE3 keyed XOF powers cross-platform-identical deterministic streams;
 stdin operations and multiple output encodings make the same small tool useful
 beyond number generation.
 
-It ships four equivalent command families: `random`/`nrandom`/`drandom` use
+The equivalent command families are: `random`/`nrandom`/`drandom` use
 LuaJIT, `randomz`/`nrandomz`/`drandomz` use the C frontend over Zig, and
 `randomr`/`nrandomr`/`drandomr` use Rust. `randoml`/`nrandoml`/`drandoml` use
-the independent Lean implementation described above. The invocation name selects normalized or
+the independent Lean implementation described above; Linux additionally supplies
+`randomroc`/`nrandomroc`/`drandomroc`. The invocation name selects normalized or
 deterministic mode in every family.
 
 ## Features
@@ -225,7 +227,7 @@ Use `--precision N` or its `--truncate N` alias to truncate (never round) to
 
 ### Continuous output
 
-Across all four implementations, `-b`/`--binaryoutput` without a count keeps
+Across all implementations, `-b`/`--binaryoutput` without a count keeps
 streaming until its consumer closes, an I/O error occurs, or a deterministic
 cursor reaches its shared 2^53-byte limit. This replaces the old implicit
 1,024-byte count. Use `-c 1024` to retain that finite behavior. This policy is
@@ -349,8 +351,8 @@ omitted. Explicit CLI arguments override inherited `args`; `--state` and
 `--weighted` use stdin for their populations, those operations require state
 inline. The LuaJIT CLI uses
 `DRANDOM_SEED`; the C/FFI CLI uses `DRANDOMZ_SEED`; the Rust CLI uses
-`DRANDOMR_SEED`; and the Lean frontend uses `DRANDOML_SEED`. Each frontend
-ignores the other three namespaces.
+`DRANDOMR_SEED`; the Lean frontend uses `DRANDOML_SEED`; and Roc uses
+`DRANDOMROC_SEED`. Each frontend ignores the other implementations' namespaces.
 An inherited frontend-specific seed variable makes a plain invocation
 deterministic, so security-sensitive callers should use `--true-random`, which
 overrides that frontend's environment variable and rejects deterministic flags.
@@ -369,10 +371,13 @@ nix run github:pmarreck/random#random-luajit  # LuaJIT oracle only
 nix run github:pmarreck/random#random-zig     # C CLI over the Zig core
 nix run github:pmarreck/random#random-rust    # Rust CLI
 nix run github:pmarreck/random#random-lean    # Lean CLI
+nix run github:pmarreck/random#random-roc     # Roc core / C I/O CLI (Linux)
 nix build github:pmarreck/random#random-luajit-lib
 nix build github:pmarreck/random#random-zig-lib
 nix build github:pmarreck/random#random-rust-lib
 nix build github:pmarreck/random#random-lean-lib
+nix build github:pmarreck/random#random-roc-lib # Pure Roc import package (Linux)
+nix build github:pmarreck/random#random-roc-ffi # Static/shared C ABI only (Linux)
 nix profile install github:pmarreck/random#random-all
 ```
 
@@ -380,12 +385,13 @@ Each language-specific package closes over only the runtime and build tools
 needed by that implementation. Blocking checks prove that `random-luajit`
 has no Zig, Rust/Cargo, Lean, or other implementation package among its direct
 derivation inputs or transitive installed closure. `random-all` is the explicit
-aggregate; the unqualified flake default remains an alias for it for backwards
+aggregate (all five on Linux, four elsewhere); the unqualified flake default
+remains an alias for it for backwards
 compatibility. The older
 `random`, `randomz`, `randomr`, and `randoml` output names remain compatibility
 aliases for the aggregate, Zig, Rust, and Lean packages respectively.
 
-The four `*-lib` outputs are independently consumable and contain no CLI:
+The original four `*-lib` outputs are independently consumable and contain no CLI:
 `random-luajit-lib/lib` holds the Lua modules; `random-zig-lib` exposes the Zig
 package source at `src`, the C header at `include/randomz.h`, and static/shared
 libraries under `lib`; `random-rust-lib/src/rust/randomr` is a standalone Cargo
@@ -472,8 +478,9 @@ retains exact release-build resolution. The MSRV and pinned build toolchain are
 Rust 1.97.1. The workspace's release profile uses Cargo's `strip = "symbols"`
 policy.
 
-Roc is an in-development fifth implementation, not a shipped CLI. On Linux,
-`.#random-roc-lib` exports the independent pure source package under
+On Linux, Roc has three separate outputs: `.#random-roc` supplies only the CLI
+family, `.#random-roc-ffi` supplies `include/randomroc.h` and static/shared
+`lib/librandomroc` artifacts, and `.#random-roc-lib` exports the pure source package under
 `lib/roc/random/main.roc`; its closure contains neither a compiler nor a CLI.
 Declare that path as a Roc package dependency and import its exported modules,
 for example `import random.Drbg` and `import random.Geometric`. The core uses
@@ -483,14 +490,29 @@ ASCII decimal/safe-integer parsing, geometric decimal/scientific/`2^N`
 probabilities and CLI-facing output truncated to 0–18 fractional places.
 `import random.Chart` provides a pure sampled curve model: relative heights
 from 0–65535, exact Fixed axis bounds and a stem-rendering hint. Its terminal
-encoders, the production C ABI/CLI and full shared CLI acceptance remain
-unfinished.
+encoders are I/O adapters over that model. `import random.Batch` supplies
+bounded sequential normal-integer plans; `import random.Selection` owns weight
+admission, weighted selection and Fisher-Yates index permutations.
 `nix develop .#roc -c bash tests/roc_core_test` runs its native kernel
 differentials; `nix build .#checks.x86_64-linux.roc-core` additionally checks
 installed-package imports, a source-overlay consumer, and a real custom-platform
 shared library through LuaJIT FFI. The native platform fixture checks exact
 numeric/DRBG/sampler results, owned-byte transport, allocation canaries and ELF
-RELRO protections. It remains a test fixture, not the production C ABI or CLI.
+RELRO protections. `nix build .#checks.x86_64-linux.roc-native` exercises the
+installed production C ABI through LuaJIT FFI, a static consumer with reentrant
+and concurrent callbacks, and the same Bash CLI oracle used by every backend.
+Both Roc library outputs enforce empty runtime reference sets: consumers do
+not inherit a compiler or CLI. The public ABI documents allocation/error
+semantics, arbitrary-width BLIP counts, and 0–18-place decimal formatting.
+Its AUTO batch mode is currently scalar, with no prefetch or SIMD promise.
+The archive is non-PIC: use a static consumer or `-no-pie`, or link the PIC
+shared library for a PIE/shared consumer. The CLI is a stripped static ELF.
+Compiled packages include upstream Roc's UPL notice; the static CLI also
+includes musl's copyright/license notice. The project's own source remains MIT.
+LuaJIT consumers supplying Lua entropy callbacks must keep their foreign-call
+boundary out of JIT compilation; see [LuaJIT's callback rules](https://luajit.org/ext_ffi_semantics.html#callback).
+Native execution has been verified on x86_64 Linux; aarch64 target declarations
+and object-writer fixtures are not evidence of aarch64 native execution.
 The pinned official compiler carries a small ELF pointer-constant section patch;
 its negative/positive object-writer tests cover x86_64 and aarch64 emission.
 
@@ -605,17 +627,17 @@ A dev shell with LuaJIT and the test tooling is provided:
 direnv allow      # or: nix develop
 ./test            # FAST mode (quick, quiet on success)
 FAST= ./test      # full statistical run
-./stats           # separate, deeper sanity analysis of all four command families
-nix flake check   # hermetic CI check (runs all 34 suites, but FORCES FAST=1 --
+./stats           # separate, deeper sanity analysis of all available command families
+nix flake check   # hermetic CI check (40 Linux suites, but FORCES FAST=1 --
                    # kernel_jit_diff's 60000-iteration deep JIT differential
                    # is deep-mode-only by design and is SKIPPED here, not run;
                    # run `FAST= ./test` locally for the full non-FAST suite)
 ```
 
 `./test` runs every suite under `tests/` (official BLAKE3 vectors, an independent
-Zig DRBG reference check, the same 85-check Bash CLI contract against all four
-command families, an 80-output byte-exact four-way help/chart contract, the
-independent LuaJIT-vs-Zig/Rust/Lean exact frontend matrices, Rust
+Zig DRBG reference check, the same 85-check Bash CLI contract and complete
+186-case frontend matrix against all five implementations on Linux, a
+100-output byte-exact five-way help/chart contract, Rust
 mutation/downstream-library controls, a C-compiled public-ABI conformance
 test, Lean trust-zero elaboration/frozen vectors/proof axiom audits, isolated
 Zig-package reconstruction, 11-target Zig cross-compilation
@@ -625,6 +647,9 @@ the `bc` sweep, the all-directions continuation
 matrix, and the deep-mode-only JIT differential).
 Set `RANDOM_TEST_CLI` to
 run `tests/random_test` or `tests/drbg_test` against another compatible binary.
+Run `CANDIDATE_CLI=/path/to/cli CANDIDATE_KIND=lean tests/frontend_differential`
+for the complete shared CLI acceptance path; the kinds are `luajit`, `zig`,
+`rust`, `lean`, and `roc`.
 The suites are hermetic and concurrency-safe.
 Cold `./test` and Nix runs are dominated by ReleaseFast compilation and the
 multi-target artifact gates, not by the pure arithmetic checks themselves.
@@ -640,7 +665,7 @@ preserves its earlier baseline. These are not whole-library or CSPRNG-security p
 `./stats` is intentionally separate from the correctness suite. It streams raw
 bytes and distribution samples without writing them to disk, checks obvious
 bias/shape failures, and first proves its thresholds reject deliberately bad
-generators. Use `./stats --lua`, `./stats --c`, `./stats --rust`, `./stats --lean`, or
+generators. Use `./stats --lua`, `./stats --c`, `./stats --rust`, `./stats --lean`, `./stats --roc`, or
 `./stats --cli PATH`; `FAST=1`
 reduces sample sizes. A pass is a statistical smoke test, not a cryptographic
 security certification. The sensitivity set rejects eight deliberately bad
@@ -648,10 +673,10 @@ generators: an all-zero byte stream plus constant uniform, normal,
 exponential, Poisson, geometric, log-normal, and beta samples. Geometric checks
 also cover ideal PMF bins, survival/memorylessness, and sparse-count low bits.
 
-`./bm` compares release-built LuaJIT, Zig/C, Rust, and Lean command payloads
+`./bm` compares release-built LuaJIT, Zig/C, Rust, Lean, and Linux Roc command payloads
 over raw, encoded, uniform, and every nonlinear distribution. Before timing,
 it streams every seeded workload through SHA-256 and requires matching digests
-across all four packaged CLIs and the unwrapped Rust payload; generated bytes
+across all available packaged CLIs and the unwrapped Rust payload; generated bytes
 are never written to disk. Rust timing bypasses only the Nix
 Bash wrapper that makes installed `--test` self-contained, so wrapper startup
 is not misreported as core computation. Hyperfine runs with `--shell=none`, so

@@ -25,10 +25,7 @@ if [ ! -x "$lean_cli" ] || [ ! -x "$zig_cli" ]; then
 	exit 1
 fi
 
-RANDOML_BACKEND="$zig_cli" RANDOM_TEST_CLI="$lean_cli" \
-	RANDOM_TEST_CLI_KIND=lean RANDOM_TEST_DEPTH=0 "$root/tests/random_test" || exit 1
 CANDIDATE_CLI="$lean_cli" CANDIDATE_KIND=lean ORACLE_CLI="$root/bin/random" \
-	RANDOMZ_DIFFERENTIAL_ONLY=1 \
 	"$root/tests/frontend_differential" || exit 1
 
 lean_sixel=$(env -u TMUX "$lean_cli" --normalized --view --sixel 2>/dev/null | sha256sum | cut -d' ' -f1)

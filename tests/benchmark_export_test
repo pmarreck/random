@@ -45,4 +45,14 @@ for mutation in 'del(.results[0].mean)' '.results[0].median = "1"' \
 	fi
 done
 if [ "$fails" -ne 0 ]; then exit 1; fi
+# The same classifier must admit the five-way Linux run and reject a run
+# missing Roc; it must not silently record four results as complete.
+expected='["luajit","zig","rust","lean","roc"]'
+five=$(with_timings <<< '{"results":[{"command":"luajit"},{"command":"zig"},{"command":"rust"},{"command":"lean"},{"command":"roc"}]}')
+actual=$(jq -cse --argjson expected "$expected" -f "$root/tools/hyperfine_results.jq" <<< "$five") || exit 1
+if [ "$(wc -l <<< "$actual")" -ne 5 ]; then exit 1; fi
+if jq -cse --argjson expected "$expected" -f "$root/tools/hyperfine_results.jq" <<< "$final" >/dev/null 2>&1; then
+	echo 'benchmark export FAILED: five-way run accepted a missing Roc result' >&2
+	exit 1
+fi
 echo 'Benchmark export PASSED: final snapshot only, exact implementation set, malformed input rejected'

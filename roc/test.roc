@@ -8,6 +8,8 @@ import Count
 import Geometric
 import Decimal
 import Chart
+import Batch
+import Selection
 
 main! : List(Str) => Try({}, [BadNumStr, Exit(I8), Invalid])
 main! = |args| {
@@ -527,3 +529,34 @@ expect (Count.from_decimal("15") ?? Count.zero).to_hex() == "f"
 expect (Count.from_decimal("16") ?? Count.zero).to_hex() == "10"
 expect (Count.from_decimal("256") ?? Count.zero).to_hex() == "100"
 expect (Count.from_decimal("18446744073709551616") ?? Count.zero).to_hex() == "10000000000000000"
+
+# Production batch/selection contracts, including pre-read admission.
+expect Sampler.normal_int(-9007199254740992, 9007199254740992).run_with({}, |_state, _size| Err(Source)) == Err(Source)
+expect Sampler.normal_int(0, 9007199254740992).run_with({}, |_state, _size| Err(Source)) == Err(Source)
+expect Selection.new([]) == Err(Empty)
+expect Selection.new([0.I64, 0]) == Err(ZeroTotal)
+expect Selection.new([-1.I64, 3]) == Err(InvalidWeight)
+expect Selection.new([9007199254740992.I64, 1]) == Err(TotalTooLarge)
+expect Selection.new([1.I64, 3, 0])?.total() == 4
+expect Selection.add_weight(0, 0) == Ok(0.I64)
+expect Selection.add_weight(9007199254740992, 1) == Err(TotalTooLarge)
+expect Selection.add_weight(-1, 0) == Err(InvalidWeight)
+expect {
+	prepared = Selection.new([1.I64, 3, 0])?
+	prepared.weighted().run_with({}, |_state, _count| Ok(([0.U8, 0, 0, 0], {}))) == Ok((0.I64, {}))
+}
+expect {
+	prepared = Selection.new([1.I64, 3, 0])?
+	prepared.weighted().run_with({}, |_state, _count| Ok(([0.U8, 0, 0, 3], {}))) == Ok((1.I64, {}))
+}
+expect Selection.shuffle(0).run_with({}, |_state, _count| Err(Source)) == Ok(([], {}))
+expect Selection.shuffle(1).run_with({}, |_state, _count| Err(Source)) == Ok(([0.I64], {}))
+expect Selection.shuffle(3).run_with({}, |_state, count| Ok((List.repeat(0.U8, count), {}))) == Ok(([1.I64, 2, 0], {}))
+expect Selection.shuffle(9007199254740993).run_with({}, |_state, _count| Err(Source)) == Err(Invalid)
+expect (Batch.normal(0, 9, 0, 1) ?? crash "valid batch").view() == Finished
+expect {
+	match Batch.normal(0, 9, 1, 2) {
+		Err(Invalid) => Bool.True
+		_ => Bool.False
+	}
+}

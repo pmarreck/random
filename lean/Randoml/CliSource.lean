@@ -29,6 +29,16 @@ private def liftCanonical (deterministic : Deterministic) :
       .ok (value.value, .deterministic { deterministic with state := state })
   | none => .error "RNG core failed: numeric or position failure"
 
+/-- Entropy I/O errors retain their source context, including initial seeding. -/
+def fillEntropy (source : Native.EntropySource) (count : Nat) : IO ByteArray := do
+  let bytes ← try
+      Native.sourceFill source (USize.ofNat count)
+    catch error =>
+      throw (IO.userError ("entropy " ++ error.toString))
+  if bytes.size != count then
+    throw (IO.userError "entropy source returned an incomplete read")
+  pure bytes
+
 def fill (source : Source) (count : Nat) : IO (Result ByteArray) :=
   match source with
   | .deterministic value =>
@@ -37,11 +47,8 @@ def fill (source : Source) (count : Nat) : IO (Result ByteArray) :=
           pure (.ok (bytes, .deterministic { value with state := state }))
       | none => pure (.error "RNG core failed: position overflow")
   | .entropy value => do
-      let bytes ← Native.sourceFill value (USize.ofNat count)
-      if bytes.size != count then
-        pure (.error "entropy source returned an incomplete read")
-      else
-        pure (.ok (bytes, source))
+      let bytes ← fillEntropy value count
+      pure (.ok (bytes, source))
 
 def readU32 (source : Source) : IO (Result UInt32) := do
   match ← fill source 4 with

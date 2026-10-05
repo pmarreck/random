@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixture-cleanup.sh"
-# Shared executable selector for the LuaJIT, Zig/C, Rust, and Lean CLI contract suites.
+# Shared executable selector for every implementation's Bash CLI contract suites.
 #
 # Set RANDOM_TEST_CLI to an executable path to run that implementation under
 # the historical random/nrandom/drandom invocation names. Unset means the
@@ -12,26 +12,33 @@ cli_test_setup() {
 	CLI_TEST_LEAN=0
 	RANDOM_TEST_SEED_ENV="DRANDOM_SEED"
 	RANDOM_TEST_OTHER_SEED_ENV="DRANDOMZ_SEED"
-	RANDOM_TEST_OTHER_SEED_ENVS="DRANDOMZ_SEED DRANDOMR_SEED DRANDOML_SEED"
+	RANDOM_TEST_OTHER_SEED_ENVS="DRANDOMZ_SEED DRANDOMR_SEED DRANDOML_SEED DRANDOMROC_SEED"
 	if [ -z "${RANDOM_TEST_CLI:-}" ]; then
 		return 0
 	fi
 	case "${RANDOM_TEST_CLI_KIND:-zig}" in
+		luajit)
+			;;
 		zig)
 			RANDOM_TEST_SEED_ENV="DRANDOMZ_SEED"
 			RANDOM_TEST_OTHER_SEED_ENV="DRANDOM_SEED"
-			RANDOM_TEST_OTHER_SEED_ENVS="DRANDOM_SEED DRANDOMR_SEED DRANDOML_SEED"
+			RANDOM_TEST_OTHER_SEED_ENVS="DRANDOM_SEED DRANDOMR_SEED DRANDOML_SEED DRANDOMROC_SEED"
 			;;
 		rust)
 			RANDOM_TEST_SEED_ENV="DRANDOMR_SEED"
 			RANDOM_TEST_OTHER_SEED_ENV="DRANDOM_SEED"
-			RANDOM_TEST_OTHER_SEED_ENVS="DRANDOM_SEED DRANDOMZ_SEED DRANDOML_SEED"
+			RANDOM_TEST_OTHER_SEED_ENVS="DRANDOM_SEED DRANDOMZ_SEED DRANDOML_SEED DRANDOMROC_SEED"
 			;;
 		lean)
 			CLI_TEST_LEAN=1
 			RANDOM_TEST_SEED_ENV="DRANDOML_SEED"
 			RANDOM_TEST_OTHER_SEED_ENV="DRANDOM_SEED"
-			RANDOM_TEST_OTHER_SEED_ENVS="DRANDOM_SEED DRANDOMZ_SEED DRANDOMR_SEED"
+			RANDOM_TEST_OTHER_SEED_ENVS="DRANDOM_SEED DRANDOMZ_SEED DRANDOMR_SEED DRANDOMROC_SEED"
+			;;
+		roc)
+			RANDOM_TEST_SEED_ENV="DRANDOMROC_SEED"
+			RANDOM_TEST_OTHER_SEED_ENV="DRANDOM_SEED"
+			RANDOM_TEST_OTHER_SEED_ENVS="DRANDOM_SEED DRANDOMZ_SEED DRANDOMR_SEED DRANDOML_SEED"
 			;;
 		*)
 			echo "unknown RANDOM_TEST_CLI_KIND: $RANDOM_TEST_CLI_KIND" >&2
@@ -49,6 +56,16 @@ cli_test_setup() {
 	fi
 	cli_dir="$(cd -P -- "$(dirname -- "$cli_candidate")" && pwd)" || return 1
 	CLI_TEST_TARGET="$cli_dir/$(basename -- "$cli_candidate")"
+	if [ "${RANDOM_TEST_CLI_KIND:-zig}" = luajit ]; then
+		# Lua module lookup is relative to the script's invoked path. Keep its
+		# real adjacent aliases instead of relocating it into a shim directory.
+		export PATH="$cli_dir:$PATH"
+		if [ "$(command -v random)" != "$CLI_TEST_TARGET" ]; then
+			echo "RANDOM_TEST_CLI selector did not take control of random" >&2
+			return 1
+		fi
+		return 0
+	fi
 	CLI_TEST_SHIM_DIR="$(mktemp -d "${TMPDIR:-/tmp}/random-cli-test.XXXXXX")" || return 1
 	if [ "$CLI_TEST_LEAN" -eq 1 ]; then
 		printf '#!%s\nRANDOML_INVOKED_AS=randoml exec %q "$@"\n' \

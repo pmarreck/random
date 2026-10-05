@@ -4,7 +4,7 @@
 #
 # `result/` is a symlink into the read-only nix store whose target changes on
 # every rebuild, so we also copy the CLIs into `zig-out/bin/` (gitignored) for
-# stable, writable `random`, `randomz`, `randomr`, and `randoml` paths.
+# stable, writable CLI paths (including `randomroc` on supported Linux hosts).
 #
 # Usage: ./build                 # ReleaseFast, all optimizations (default)
 #        ./build --print-build-logs   # any extra args pass through to `nix build`
@@ -34,6 +34,9 @@ install -m755 result/bin/randomz zig-out/bin/randomz
 install -m755 result/bin/random  zig-out/bin/random
 install -m755 result/bin/randomr zig-out/bin/randomr
 install -m755 result/bin/randoml zig-out/bin/randoml
+if [ -x result/bin/randomroc ]; then
+	install -m755 result/bin/randomroc zig-out/bin/randomroc
+fi
 # `randomr` is wrapped only to make its installed `--test` self-contained.
 # Benchmarks use the identical unwrapped ELF so Nix's Bash/PATH setup is not
 # charged to Rust's deterministic core on every measured invocation.
@@ -54,3 +57,6 @@ echo "  $here/zig-out/bin/randomz   ($("$here/zig-out/bin/randomz" --about 2>/de
 echo "  $here/zig-out/bin/random    (LuaJIT frontend)"
 echo "  $here/zig-out/bin/randomr   ($("$here/zig-out/bin/randomr" --about 2>/dev/null))"
 echo "  $here/zig-out/bin/randoml   ($("$here/zig-out/bin/randoml" --about 2>/dev/null))"
+if [ -x result/bin/randomroc ]; then
+	echo "  $here/zig-out/bin/randomroc ($("$here/zig-out/bin/randomroc" --about 2>/dev/null))"
+fi

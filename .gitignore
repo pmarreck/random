@@ -11,5 +11,8 @@ HANDOFF*
 zig-out
 .zig-cache
 
+# Roc native build outputs
+roc-out
+
 # Lean/Lake build outputs
 lean/.lake

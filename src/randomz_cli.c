@@ -34,6 +34,20 @@
 #define STREAM_CHUNK 65536
 #define SAMPLED_STREAM_CHUNK 96
 
+/* The same I/O frontend can dogfood a different core without changing its
+ * grammar, formatting, terminal behavior or Bash acceptance expectations. */
+#ifndef RANDOM_CLI_NAME
+#define RANDOM_CLI_NAME "randomz"
+#define RANDOM_CLI_NORMAL_NAME "nrandomz"
+#define RANDOM_CLI_DETERMINISTIC_NAME "drandomz"
+#define RANDOM_CLI_SEED_ENV "DRANDOMZ_SEED"
+#define RANDOM_CLI_SEED_HELP "  DRANDOMZ_SEED     "
+#define RANDOM_CLI_KIND "zig"
+#endif
+#ifndef RANDOM_CLI_ROC
+#define RANDOM_CLI_ROC 0
+#endif
+
 /* Distinct from failure: do not emit success metadata after consumer closure. */
 enum { OUTPUT_CLOSED = 2 };
 
@@ -153,8 +167,8 @@ typedef struct item_list {
 	size_t storage_length;
 } item_list;
 
-static const char *program_name = "randomz";
-static const char *program_path = "randomz";
+static const char *program_name = RANDOM_CLI_NAME;
+static const char *program_path = RANDOM_CLI_NAME;
 static entropy_source *active_entropy;
 static bool default_range_notice;
 static const char *debug_warning;
@@ -243,7 +257,8 @@ static bool normal_invocation(const char *name)
 		(name[length - 2] == 'x' || name[length - 2] == 'X') &&
 		(name[length - 1] == 'e' || name[length - 1] == 'E')) length -= 4;
 	return (length == 7 && strncmp(name, "nrandom", length) == 0) ||
-		(length == 8 && strncmp(name, "nrandomz", length) == 0);
+		(length == strlen(RANDOM_CLI_NORMAL_NAME) &&
+			strncmp(name, RANDOM_CLI_NORMAL_NAME, length) == 0);
 }
 
 static bool deterministic_invocation(const char *name)
@@ -254,7 +269,8 @@ static bool deterministic_invocation(const char *name)
 		(name[length - 2] == 'x' || name[length - 2] == 'X') &&
 		(name[length - 1] == 'e' || name[length - 1] == 'E')) length -= 4;
 	return (length == 7 && strncmp(name, "drandom", length) == 0) ||
-		(length == 8 && strncmp(name, "drandomz", length) == 0);
+		(length == strlen(RANDOM_CLI_DETERMINISTIC_NAME) &&
+			strncmp(name, RANDOM_CLI_DETERMINISTIC_NAME, length) == 0);
 }
 
 static const char *platform_name(void)
@@ -467,7 +483,7 @@ static void print_help(distribution dist, chart_renderer renderer)
 	puts("  -c, --count N       Output N numbers/bytes (default: 1; -b keeps streaming)");
 	puts("      --stream        Keep streaming; an explicit --count supplies a finite cap");
 	puts("  -d, --deterministic Use the cross-platform-identical BLAKE3 keyed XOF");
-	puts("      --true-random   Force fresh OS/source CSPRNG entropy; ignore DRANDOMZ_SEED");
+	puts("      --true-random   Force fresh OS/source CSPRNG entropy; ignore " RANDOM_CLI_SEED_ENV);
 	puts("      --delimiter S   Set delimiter; empty means individual input bytes");
 	puts("      --precision N   Truncate fractional output to 0..18 places (default: 18)");
 	puts("      --truncate N    Alias for --precision");
@@ -494,11 +510,11 @@ static void print_help(distribution dist, chart_renderer renderer)
 	puts("      --test          Run the test suite");
 	puts("");
 	puts("Symlink behavior:");
-	puts("  'nrandomz' -> implies --normalized");
-	puts("  'drandomz' -> implies --deterministic");
+	puts("  '" RANDOM_CLI_NORMAL_NAME "' -> implies --normalized");
+	puts("  '" RANDOM_CLI_DETERMINISTIC_NAME "' -> implies --deterministic");
 	puts("");
 	puts("Environment variables:");
-	puts("  DRANDOMZ_SEED     Unsigned decimal or 0x-prefixed seed (implies -d)");
+	puts(RANDOM_CLI_SEED_HELP "Unsigned decimal or 0x-prefixed seed (implies -d)");
 	puts("  RANDOMZ_CHART_TYPE  utf8, kitty, or sixel; command-line flags override it");
 	puts("");
 	puts("Deterministic mode never persists state. A seed starts at stream position");
@@ -602,6 +618,7 @@ static int run_test_suite(void)
 	_putenv_s("FAST", "1");
 	_putenv_s("RANDOM_TEST_DEPTH", "0");
 	_putenv_s("RANDOM_TEST_CLI", program_path);
+	_putenv_s("RANDOM_TEST_CLI_KIND", RANDOM_CLI_KIND);
 	intptr_t status = _spawnlp(_P_WAIT, "bash", "bash", path, NULL);
 	free(owned_path);
 	if (status == -1) print_error("could not run test suite (bash is required on Windows)");
@@ -612,6 +629,7 @@ static int run_test_suite(void)
 		(void)setenv("FAST", "1", 1);
 		(void)setenv("RANDOM_TEST_DEPTH", "0", 1);
 		(void)setenv("RANDOM_TEST_CLI", program_path, 1);
+		(void)setenv("RANDOM_TEST_CLI_KIND", RANDOM_CLI_KIND, 1);
 		execl(path, path, (char *)NULL);
 		_exit(127);
 	}
@@ -1417,14 +1435,14 @@ static int parse_arguments(int argc, char **argv, options *opts)
 		return 1;
 	}
 	if (opts->force_true_random && opts->deterministic) {
-		print_error("--true-random cannot be combined with --deterministic, --seed, or drandomz");
+		print_error("--true-random cannot be combined with --deterministic, --seed, or " RANDOM_CLI_DETERMINISTIC_NAME);
 		return 1;
 	}
 	if (opts->dist == DIST_POISSON && opts->mean_set && opts->mean.m <= 0) {
 		print_error("--mean must be positive for --poisson (it is the rate parameter)");
 		return 1;
 	}
-	const char *env_seed = getenv("DRANDOMZ_SEED");
+	const char *env_seed = getenv(RANDOM_CLI_SEED_ENV);
 	if (!opts->force_true_random && !opts->deterministic && env_seed != NULL && *env_seed != '\0') {
 		opts->deterministic = true;
 	}
@@ -1781,6 +1799,14 @@ static int handle_stdin_operation(const options *opts, rng_source *source)
 			fputc('\n', stdout);
 		}
 	} else if (opts->shuffle) {
+#if RANDOM_CLI_ROC
+		int64_t *indices = list.count <= SIZE_MAX / sizeof(*indices) ?
+			malloc(list.count * sizeof(*indices)) : NULL;
+		size_t written = 0;
+		status = indices == NULL ? RANDOMZ_BUFFER_TOO_SMALL :
+			randomroc_shuffle_indices(source->fill, source->context,
+				indices, list.count, &written);
+#else
 		for (size_t i = list.count; i > 1 && status == RANDOMZ_OK; --i) {
 			int64_t index;
 			status = rng_range(source, 1, (int64_t)i, &index);
@@ -1790,13 +1816,24 @@ static int handle_stdin_operation(const options *opts, rng_source *source)
 				list.items[index - 1] = temporary;
 			}
 		}
+#endif
 		if (status == RANDOMZ_OK) {
 			for (size_t i = 0; i < list.count; ++i) {
 				if (i > 0) fputs(opts->delimiter, stdout);
-				fwrite(list.items[i].data, 1, list.items[i].length, stdout);
+				item_span item = list.items[
+#if RANDOM_CLI_ROC
+					indices[i]
+#else
+					i
+#endif
+				];
+				fwrite(item.data, 1, item.length, stdout);
 			}
 			fputc('\n', stdout);
 		}
+#if RANDOM_CLI_ROC
+		free(indices);
+#endif
 	} else {
 		int64_t *weights = calloc(list.count, sizeof(*weights));
 		int64_t total = 0;
@@ -1821,20 +1858,47 @@ static int handle_stdin_operation(const options *opts, rng_source *source)
 				status = RANDOMZ_INVALID_ARGUMENT;
 				break;
 			}
-			if (weights[i] > MAX_EXACT_INTEGER - total) {
+			if (
+#if RANDOM_CLI_ROC
+				randomroc_weight_add(total, weights[i], &total) != RANDOMZ_OK
+#else
+				weights[i] > MAX_EXACT_INTEGER - total
+#endif
+			) {
 				print_error("total weighted-item weight must be no larger than 2^53");
 				status = RANDOMZ_INVALID_ARGUMENT;
 				break;
 			}
+#if !RANDOM_CLI_ROC
 			total += weights[i];
+#endif
 			*colon = '\0';
 			list.items[i].length = (size_t)(colon - list.items[i].data);
 		}
+#if RANDOM_CLI_ROC
+		uint8_t reason = 0;
+		if (status == RANDOMZ_OK) {
+			status = randomroc_weighted_total(weights, list.count, &total, &reason);
+			if (reason == 2) print_error("total weighted-item weight must be no larger than 2^53");
+			else if (reason == 3) print_error("total weighted-item weight must be positive");
+		}
+#else
 		if (status == RANDOMZ_OK && total == 0) {
 			print_error("total weighted-item weight must be positive");
 			status = RANDOMZ_INVALID_ARGUMENT;
 		}
+#endif
 		if (status == RANDOMZ_OK) {
+#if RANDOM_CLI_ROC
+			int64_t index;
+			status = randomroc_weighted_index(source->fill, source->context,
+				weights, list.count, &index, &reason);
+			if (status == RANDOMZ_OK) {
+				item_span item = list.items[index];
+				fwrite(item.data, 1, item.length, stdout);
+				fputc('\n', stdout);
+			}
+#else
 			int64_t pick;
 			status = rng_range(source, 1, total, &pick);
 			int64_t cumulative = 0;
@@ -1846,6 +1910,7 @@ static int handle_stdin_operation(const options *opts, rng_source *source)
 					break;
 				}
 			}
+#endif
 		}
 		free(weights);
 	}
@@ -2368,7 +2433,7 @@ int main(int argc, char **argv)
 		debug_warning = "randomz: DEBUG build (use -Doptimize=ReleaseFast for shipped output)";
 	}
 #endif
-	program_path = argc > 0 ? argv[0] : "randomz";
+	program_path = argc > 0 ? argv[0] : RANDOM_CLI_NAME;
 	program_name = base_name(program_path);
 	options opts;
 	if (parse_arguments(argc, argv, &opts) != 0) return 1;
@@ -2388,10 +2453,10 @@ int main(int argc, char **argv)
 		if (opts.seed_set) {
 			memcpy(seed, opts.seed, 32);
 		} else {
-			const char *env_seed = getenv("DRANDOMZ_SEED");
+			const char *env_seed = getenv(RANDOM_CLI_SEED_ENV);
 			if (env_seed != NULL && *env_seed != '\0') {
 				if (!parse_seed(env_seed, seed)) {
-					print_errorf("DRANDOMZ_SEED must be an unsigned decimal or "
+					print_errorf(RANDOM_CLI_SEED_ENV " must be an unsigned decimal or "
 						"0x-prefixed hexadecimal integer smaller than 2^256, got: %s", env_seed);
 					return 1;
 				}

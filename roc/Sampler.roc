@@ -39,8 +39,7 @@ Sampler :: [].{
 	normal_int : I64, I64 -> Draw(I64)
 	normal_int = |first, last| {
 		if first < -9007199254740992 or first > 9007199254740992 or
-			last < -9007199254740992 or last > 9007199254740992 or last < first or
-				last.to_i128() - first.to_i128() >= 9007199254740992 {
+			last < -9007199254740992 or last > 9007199254740992 or last < first {
 			Draw.fail(Invalid)
 		} else {
 			normal_int_loop(first, last)

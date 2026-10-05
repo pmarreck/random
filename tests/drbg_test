@@ -152,6 +152,14 @@ if [ "$rc" -eq 0 ] || [[ "$err" != *"entropy"* ]]; then
 	fail "empty explicit random source did not fail closed with an entropy error"
 fi
 
+# Initial automatic seeding must fail just as closed as direct source reads.
+tests=$((tests + 1))
+out='' err='' rc=0
+capture random -d --random-source=/dev/null --count 1
+if [ "$rc" -eq 0 ] || [ -n "$out" ] || [[ "$err" != *"entropy"* ]]; then
+	fail "empty auto-seed source did not fail closed with an entropy error"
+fi
+
 # State environment variables are now inert compatibility debris: neither an
 # explicit nor auto seed may create anything beneath the supplied directory.
 tests=$((tests + 1))

@@ -1,4 +1,49 @@
-# Code review — Roc bounded sampling and admission
+# Code review — Roc production CLI, native ABI and five-way acceptance
+
+2026-10-04 · Codex, with fresh-context reviewer `/root/roc_production_review` ·
+base `eb81a21`, 53 staged paths plus a separately reviewed one-line test fix.
+No confirmed production correctness/security finding in the inspected scope.
+The reviewer inspected all staged paths and independently checked installed
+FFI reentry/refusal behavior, Lean/Roc entropy and sink failures, source/header
+identity, ELF protection and empty library runtime reference sets.
+
+The review identified one validation weakness: explicitly selected Lua scripts
+went through a compiled-artifact no-libm inspection. The parent corrected the
+shared Bash branch. A live, unused `math.log(1)` fixture passed all 85 assertions
+before the correction and failed only that audit afterward. The reviewer
+independently checked the actual selector/source scan. Clean LuaJIT, Zig, Rust,
+Lean and Roc then each passed the same 85 assertions, 12 DRBG controls and full
+186-case matrix, with no implementation-specific numerical expectations.
+
+The complete serial Nix gate passed all 40 FAST suites and all 11 CI-manifest
+targets plus `package-split` before that test-only follow-up. The parent also
+reran the complete default root suite afterward: all 40 suites passed against
+the current installed production artifacts. The separate deep kernel
+JIT/interpreter comparison matched over 60,000 iterations.
+Additional maintained controls cover 196 Roc expectations, 5,461 native FFI
+assertions plus 193 forced-hot callback checks, static four-thread/reentrant
+consumers, optimized allocation guards, 100 help cases, 1,870 continuation
+checks across all 25 implementation directions and 275 streaming checks.
+The 13 benchmark workloads passed five-way output digests; concurrent-build
+timings are diagnostic only and support no throughput claim.
+
+Peter's shared-test reminder exposed three Lean I/O failures hidden by its
+previous reduced path: empty entropy lacked source context, and buffered about
+and chart writes could report success on `/dev/full`. The strengthened common
+body caught those failures without changing its expected results; the I/O
+adapter fixes now pass it. Supplementary FFI/proof tests remain additive.
+
+Limits: native Roc execution is Linux x86_64 only; ARM64 packaging is not runtime
+certification. AUTO batching is currently scalar, and Roc's allocator remains
+fail-stop on OOM. Capacity bounds storage, not rejection work; decimal conversion
+can be quadratic. No cryptographic proof, sanitizer campaign or new performance
+claim follows from this review. One reviewer `nix develop` attempt failed before
+execution with a transient space error; direct installed-artifact checks passed.
+Exact pushed-commit CI is required after this local review.
+
+---
+
+# Previous review — Roc bounded sampling and admission
 
 2026-10-04 · Codex, with fresh-context reviewer `/root/roc_boundary_review` ·
 base `5dcd84f`, five staged source/test paths. No actionable findings in scope.

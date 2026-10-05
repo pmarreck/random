@@ -21,8 +21,13 @@ mkdir_args= move_args=
 test_trash "$fixture" "$trash" || exit 1
 check test "$mkdir_args" = "-p $trash"
 check test "$move_args" = "-- $fixture $trash/random-fixture.mock/"
-test_trash "$fixture" || exit 1
+RANDOM_TEST_TRASH_DIR= test_trash "$fixture" || exit 1
 check test "$mkdir_args" = "-p ${HOME:?}/.Trash"
+RANDOM_TEST_TRASH_DIR="$trash" test_trash "$fixture" || exit 1
+check test "$mkdir_args" = "-p $trash"
+check test "$move_args" = "-- $fixture $trash/random-fixture.mock/"
+RANDOM_TEST_TRASH_DIR=/unused-test-Trash test_trash "$fixture" "$trash" || exit 1
+check test "$mkdir_args" = "-p $trash"
 move_args=
 if test_trash / "$trash" 2>/dev/null; then exit 1; fi
 check test -z "$move_args"

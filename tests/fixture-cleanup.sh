@@ -2,7 +2,7 @@
 # Keep generated test fixtures recoverable; never permanently delete them.
 test_trash() {
 	local target="${1:?test fixture path required}" destination
-	local trash="${2:-${HOME:?}/.Trash}"
+	local trash="${2:-${RANDOM_TEST_TRASH_DIR:-${HOME:?}/.Trash}}"
 	case "$target" in
 		/|"${HOME:?}"|"${HOME:?}/"|.|..) echo "refusing broad fixture target: $target" >&2; return 1 ;;
 	esac

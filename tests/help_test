@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Four-way CLI help contract for LuaJIT, Zig/C, Rust, and Lean.
+# Shared CLI help contract, including an explicitly selected Roc frontend.
 #
 # Intentional implementation namespaces are normalized to the LuaJIT spelling;
 # every other byte of stdout is part of the shared contract. Commands are
@@ -15,6 +15,12 @@ rust_target="$(cd "$root" && cargo metadata --no-deps --format-version 1 |
 	sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')"
 rust_cli="${HELP_TEST_RUST_CLI:-$rust_target/release/randomr}"
 lean_cli="${HELP_TEST_LEAN_CLI:-$root/zig-out/bin/randoml}"
+roc_cli="${HELP_TEST_ROC_CLI:-}"
+if [ -z "$roc_cli" ] && [ "$(uname -s)" = Linux ]; then
+	source "$root/tests/roc_native_setup.sh"
+	roc_native_setup || exit 1
+	roc_cli="$RANDOM_ROC_NATIVE_DIR/bin/randomroc"
+fi
 
 if [ -z "${HELP_TEST_ZIG_CLI:-}" ]; then
 	(cd "$root" && zig build -Doptimize=ReleaseFast) || exit 1
@@ -28,6 +34,10 @@ fi
 
 labels=(luajit zig rust lean)
 clis=("$lua_cli" "$zig_cli" "$rust_cli" "$lean_cli")
+if [ -n "$roc_cli" ]; then
+	labels+=(roc)
+	clis+=("$roc_cli")
+fi
 for index in "${!clis[@]}"; do
 	if [ ! -x "${clis[index]}" ]; then
 		echo "help test RED: ${labels[index]} CLI is not executable: ${clis[index]}" >&2
@@ -41,10 +51,13 @@ checks=0
 normalize_help()
 {
 	sed \
+		-e 's/^  DRANDOMROC_SEED   /  DRANDOM_SEED      /' \
 		-e 's/^  DRANDOM[ZRL]_SEED     /  DRANDOM_SEED      /' \
+		-e 's/DRANDOMROC_SEED/DRANDOM_SEED/g' \
 		-e 's/DRANDOMZ_SEED/DRANDOM_SEED/g' \
 		-e 's/DRANDOMR_SEED/DRANDOM_SEED/g' \
 		-e 's/DRANDOML_SEED/DRANDOM_SEED/g' \
+		-e 's/randomroc/random/g' \
 		-e 's/randomz/random/g' \
 		-e 's/randomr/random/g' \
 		-e 's/randoml/random/g'
@@ -94,7 +107,7 @@ compare_case()
 	done
 }
 
-echo "Testing the complete four-way CLI help contract..."
+echo "Testing the complete cross-implementation CLI help contract..."
 compare_case "--help" --help
 compare_case "-h" -h
 for distribution in --normalized --exponential --poisson --log-normal --beta --geometric; do

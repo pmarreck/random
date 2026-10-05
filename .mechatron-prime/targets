@@ -8,8 +8,9 @@
 # default run by fixed_test's jit.attach check).
 checks.x86_64-linux.random-test
 # Independent Roc native kernel and installed pure-source library consumer.
-# This is not yet acceptance of the unfinished Roc production CLI/C ABI.
 checks.x86_64-linux.roc-core
+# Installed standalone Roc C ABI and the same Bash CLI oracle.
+checks.x86_64-linux.roc-native
 checks.x86_64-linux.stats-smoke
 checks.x86_64-linux.package-smoke
 checks.x86_64-linux.library-packages
@@ -17,9 +18,8 @@ checks.x86_64-linux.random-crossarch
 checks.x86_64-linux.randomr-cross-compile
 checks.x86_64-linux.windows-x64-smoke
 
-# The combined package: proves the Lua CLI, C CLI, static Zig library and public
-# header install together.
+# The explicit aggregate installs all five Linux command families.
 packages.x86_64-linux.default
 
-# Explicit C-CLI package surface (same combined output, randomz app entrypoint).
+# Separate Zig/C package surface and randomz app entrypoint.
 packages.x86_64-linux.randomz

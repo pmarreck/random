@@ -17,6 +17,15 @@ if [ -z "${STATE_TEST_LEAN_CLI:-}" ]; then
 	"$root/lean/build-owned-cli" "$lean_cli" || exit 1
 fi
 clis=("${STATE_TEST_LUA_CLI:-$root/bin/random}" "$zig_cli" "$rust_cli" "$lean_cli")
+if [ "$(uname -s)" = Linux ] || [ -n "${STATE_TEST_ROC_CLI:-}" ]; then
+	roc_cli="${STATE_TEST_ROC_CLI:-}"
+	if [ -z "$roc_cli" ]; then
+		source "$root/tests/roc_native_setup.sh"
+		roc_native_setup || exit 1
+		roc_cli="$RANDOM_ROC_NATIVE_DIR/bin/randomroc"
+	fi
+	clis+=("$roc_cli")
+fi
 oracle="${clis[0]}"
 fails=0
 checks=0

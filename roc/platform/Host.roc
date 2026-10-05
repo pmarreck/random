@@ -1,0 +1,19 @@
+Host := [].{
+	source! : U64 => List(U8)
+	status! : () => U8
+	numeric! : I64, I32 => {}
+	integer! : I64 => {}
+	begin! : () => {}
+	output! : List(U8) => List(U8)
+	input! : () => List(U8)
+	state! : List(U8), U64 => List(U8)
+	chunk! : List(U8), U64 => List(U8)
+	u32! : U32 => {}
+	u64! : U64 => {}
+	count! : U64 => {}
+	curve! : List(U16), I64, I32, I64, I32 => List(U16)
+	item! : I64, U64, U64 => {}
+	weights! : () => List(I64)
+	reason! : U8 => {}
+	permutation! : List(I64) => List(I64)
+}

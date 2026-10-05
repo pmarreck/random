@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Native library controls supplement, never replace, the shared CLI oracle.
+set -u
+set -o pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ "$(uname -s)" != Linux ]; then
+	echo "Roc native ABI: pinned upstream packaging currently supports Linux only."
+	exit 0
+fi
+source "$root/tests/roc_native_setup.sh"
+source "$root/tests/fixture-cleanup.sh"
+roc_native_setup || exit 1
+cd "$root" || exit 1
+zig build library -Doptimize=ReleaseFast || exit 1
+export RANDOM_PROJECT_ROOT="$root"
+export RANDOM_ROC_SHARED_LIBRARY="$RANDOM_ROC_NATIVE_DIR/lib/librandomroc.so"
+export RANDOM_ROC_ORACLE_LIBRARY="${RANDOM_ROC_ORACLE_LIBRARY:-$root/zig-out/lib/librandomz.so}"
+fixtures=0
+for fixture in "$root/tests/roc_native/"*.lua; do
+	luajit "$fixture" "$RANDOM_ROC_SHARED_LIBRARY" || exit 1
+	fixtures=$((fixtures + 1))
+done
+if [ "$fixtures" -ne 10 ]; then echo "Roc ABI test RED: missing native fixture" >&2; exit 1; fi
+# Force compilation after the initially callback-free 0/1-item shuffle cases.
+# The isolated foreign-call helper must still permit later Lua callbacks.
+luajit -Ohotloop=1 -Ohotexit=1 "$root/tests/roc_native/selection-ffi-probe.lua" || exit 1
+
+work="$(mktemp -d "${TMPDIR:-/tmp}/random-roc-consumer.XXXXXX")" || exit 1
+trap 'test_trash_on_exit "$work" "${RANDOM_TEST_TRASH_DIR:-${TMPDIR:-/tmp}/random-test-Trash}"' EXIT
+case "$(uname -m)" in x86_64) target=x86_64-linux-musl;; aarch64) target=aarch64-linux-musl;; *) exit 1;; esac
+zig cc -target "$target" -mcpu=baseline -O2 -DNDEBUG -static -pthread -Wl,--strip-all \
+	-I"$RANDOM_ROC_NATIVE_DIR/include" "$root/tests/roc_native/archive-consumer.c" \
+	"$RANDOM_ROC_NATIVE_DIR/lib/librandomroc.a" -o "$work/consumer" || exit 1
+"$work/consumer" || exit 1
+negative="$("$work/consumer" bad-vector 2>&1)"
+status=$?
+if [ "$status" -ne 1 ] || [ -n "$negative" ]; then echo "Roc archive negative vector did not fail quietly" >&2; exit 1; fi
+guard="$(ulimit -c 0; "$work/consumer" guard 2>&1)"
+status=$?
+if [ "$status" -ne 134 ]; then echo "Roc optimized allocator guard did not abort (status $status): $guard" >&2; exit 1; fi
+
+# Inspect actual ELF artifacts, not their producer's claimed build flags.
+segments="$(readelf -lW "$RANDOM_ROC_SHARED_LIBRARY")" || exit 1
+dynamic="$(readelf -dW "$RANDOM_ROC_SHARED_LIBRARY")" || exit 1
+if [[ "$dynamic" == *TEXTREL* ]] || [[ "$segments" == *' RWE '* ]] ||
+   [[ "$segments" != *GNU_RELRO* ]]; then echo "Roc shared ABI ELF protection failed" >&2; exit 1; fi
+# Hosted allocation/context helpers are private. Only the public header and
+# the three compiler-generated platform entrypoints may be exported.
+exports="$(readelf --dyn-syms -W "$RANDOM_ROC_SHARED_LIBRARY" |
+	awk '$5 ~ /^(GLOBAL|WEAK)$/ && $7 != "UND" { print $8 }' | sort)" || exit 1
+expected_exports="$(
+	sed -n 's/^RANDOMROC_API .* \(randomroc_[a-z0-9_]*\)(.*/\1/p' "$RANDOM_ROC_NATIVE_DIR/include/randomroc.h"
+	printf '%s\n' randomroc_owned_bytes randomroc_owned_i64 randomroc_run
+)" || exit 1
+expected_exports="$(printf '%s\n' "$expected_exports" | sort)" || exit 1
+if [ "$exports" != "$expected_exports" ]; then
+	echo "Roc shared ABI exports differ from the public surface" >&2
+	exit 1
+fi
+sections="$(readelf -SW "$RANDOM_ROC_NATIVE_DIR/bin/randomroc")" || exit 1
+cli_segments="$(readelf -lW "$RANDOM_ROC_NATIVE_DIR/bin/randomroc")" || exit 1
+cli_dynamic="$(readelf -dW "$RANDOM_ROC_NATIVE_DIR/bin/randomroc")" || exit 1
+if [[ "$cli_segments" == *INTERP* ]] || [[ "$cli_dynamic" == *NEEDED* ]] ||
+   [[ "$sections" == *'.symtab'* ]] || [[ "$sections" == *'.debug_'* ]]; then
+	echo "Roc CLI is not a stripped standalone static artifact" >&2; exit 1
+fi
+echo "Roc native ABI passed; optimized guard/negative vectors fired, shared ELF protected, CLI static/stripped."

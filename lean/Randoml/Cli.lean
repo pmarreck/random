@@ -368,7 +368,7 @@ def makeSource (options : Options) : IO (Except String (Options × CliSource.Sou
       | some seed => pure seed
       | none => do
           let entropy ← openEntropy options
-          Native.sourceFill entropy 32
+          CliSource.fillEntropy entropy 32
     let some state := Drbg.init seed | return .error "RNG core failed: invalid seed"
     let some state := state.seek options.position | return .error "RNG core failed: invalid position"
     pure (.ok ({ options with seed := some seed }, .deterministic { seed, state }))
@@ -875,7 +875,11 @@ def run (arguments : Array ByteArray) : IO (Except String Unit) := do
 def runRaw (arguments : Array ByteArray) : IO UInt32 := do
   try
     match ← run arguments with
-    | .ok () => pure (0 : UInt32)
+    | .ok () =>
+        -- Small help/about/chart writes can remain buffered. Flush before
+        -- reporting success so a full or closed destination is observed.
+        (← IO.getStdout).flush
+        pure (0 : UInt32)
     | .error message =>
         writeBytes (← IO.getStderr) (errorJson message).toUTF8
         pure (1 : UInt32)

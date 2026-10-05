@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# The original CLI runs the same complete Bash acceptance body as every port.
+set -u
+set -o pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CANDIDATE_CLI="$root/bin/random" CANDIDATE_KIND=luajit \
+	"$root/tests/frontend_differential"

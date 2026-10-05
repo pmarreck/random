@@ -2,12 +2,6 @@
 
 Completed work: [log](docs/PLAN_LOG.md). Historical directives and deferred risks: [context](docs/plan_context/legacy_decisions.md).
 
-## Now: upstream Roc and standalone packages
-
-- [ ] Complete the Roc production C ABI and I/O-only CLI adapter, including terminal rendering from the pure chart model (context: docs/plan_context/legacy_decisions.md).
-- [ ] Run the same Bash CLI bodies and expected results against every implementation, adding Roc to library oracles and cross-implementation continuation tests, including geometric.
-- [ ] Export the Roc production CLI and native C ABI as separate Nix packages alongside the pure source library; verify consumers and CLI-free closures for every language.
-
 ## Correctness and verification
 
 - [ ] Fix tiny-negative scalar cosine wrapping to quadrant four with coordinated language tests; preserve existing sampler streams outside that bug (context: docs/plan_context/legacy_decisions.md).
@@ -18,6 +12,7 @@ Completed work: [log](docs/PLAN_LOG.md). Historical directives and deferred risk
 
 ## Platform coverage
 
+- [ ] Execute the Roc CLI/C ABI on native aarch64 Linux and extend official-platform packaging beyond Linux before widening runtime support claims.
 - [ ] Produce and execute Solaris/illumos and DragonFly artifacts before claiming runtime support; source selectors alone are not execution evidence.
 - [ ] Add native Lean aarch64 Linux/macOS runtime/digest legs and determine a supported Windows Lean toolchain.
 - [ ] Build comparable Zig/Rust WASI artifacts and measure size, startup, DRBG, and nonlinear throughput under one runtime before choosing shipped variants.
@@ -27,7 +22,7 @@ Completed work: [log](docs/PLAN_LOG.md). Historical directives and deferred risk
 - [ ] Expose `--gamma`, reusing the Marsaglia-Tsang sampler already required by beta.
 - [ ] Add `--weibull` for lifetime and latency models.
 - [ ] Add `--pareto` and discrete `--zipf` for heavy-tailed values/frequencies.
-- [ ] Add discrete `--binomial` count distributions after geometric ships.
+- [ ] Add discrete `--binomial` count distributions.
 - [ ] Add outlier-heavy `--cauchy` and `--student-t` distributions.
 - [ ] Add fuzzing-oriented `--edge-biased` integers concentrated on zero, ±1, both bounds, powers of two, and powers-of-two ±1.
 - [ ] Add fuzzing-oriented `--log-uniform` sizes spanning orders of magnitude.
@@ -47,6 +42,7 @@ Completed work: [log](docs/PLAN_LOG.md). Historical directives and deferred risk
 
 ## Integration and maintenance
 
+- [ ] Specify and add parameterized bounded-integer, sparse distinct, checked u64 geometric and weighted-index consumer APIs with Zig-native entrypoints and construction IDs (context: docs/plan_context/consumer_sampling.md).
 - [ ] Locate or deliver the outstanding password-generator entropy assessment with source/range/security/fork/partial-read evidence and a known-green commit; no dotfiles changes.
 - [ ] Remove `luajitFixed` only when locked nixpkgs LuaJIT includes the verified #1499 fix (roll ≥1785606157); enforce toolchain/mitigation threshold alignment.
 - [ ] Consider optional I/O-edge output pacing without changing sampled values or claiming improved entropy/statistical quality.

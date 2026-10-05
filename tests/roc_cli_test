@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Same CLI body and expected results as Zig/C, Rust, Lean and the LuaJIT oracle.
+set -u
+set -o pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ "$(uname -s)" != Linux ]; then
+	echo "Roc native CLI: pinned upstream packaging currently supports Linux only."
+	exit 0
+fi
+source "$root/tests/roc_native_setup.sh"
+roc_native_setup || exit 1
+CANDIDATE_KIND=roc CANDIDATE_CLI="$RANDOM_ROC_NATIVE_DIR/bin/randomroc" \
+	"$root/tests/frontend_differential"

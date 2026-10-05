@@ -13,10 +13,10 @@ lean_cli="$root/zig-out/bin/randoml"
 
 usage() {
 	cat <<'EOF'
-Usage: ./stats [--all | --lua | --c | --rust | --lean | --cli PATH]
+Usage: ./stats [--all | --lua | --c | --rust | --lean | --roc | --cli PATH]
 
 Runs raw-stream and distribution sanity checks without writing sample data to
-disk. Default: the LuaJIT oracle, C CLI over the Zig FFI, Rust, and Lean.
+disk. Default: all available implementations, including Roc on Linux.
 
 Environment:
   RANDOM_STATS_BYTES=N       raw bytes per stream (default 4194304)
@@ -38,6 +38,8 @@ case "${1:---all}" in
 		targets=("Rust core / CLI:$rust_cli") ;;
 	--lean)
 		targets=("Lean core / native CLI:$lean_cli") ;;
+	--roc)
+		targets=() ;;
 	--cli)
 		if [ "$#" -ne 2 ]; then usage >&2; exit 2; fi
 		targets=("selected CLI:$2") ;;
@@ -46,6 +48,13 @@ case "${1:---all}" in
 	*)
 		usage >&2; exit 2 ;;
 esac
+
+if [ "${1:---all}" = --roc ] ||
+   { [ "${1:---all}" = --all ] && [ "$(uname -s)" = Linux ]; }; then
+	source "$root/tests/roc_native_setup.sh"
+	roc_native_setup || exit 1
+	targets+=("Roc core / C FFI:$RANDOM_ROC_NATIVE_DIR/bin/randomroc")
+fi
 
 if [ "${1:---all}" = "--all" ] || [ "${1:---all}" = "--c" ]; then
 	zig build -Doptimize=ReleaseFast >/dev/null || exit 1

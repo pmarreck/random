@@ -31,21 +31,108 @@
           src = ./.;
           strictDeps = true;
           dontBuild = true;
+          allowedReferences = [ ];
           installPhase = ''
             runHook preInstall
             mkdir -p $out/lib/roc/random $out/share/licenses/random-roc-lib
-            for module in main Fixed Codec Blake3 Drbg Draw Sampler Count Geometric Decimal Chart; do
+            for module in main Fixed Codec Blake3 Drbg Draw Sampler Count Geometric Decimal Chart Batch Selection; do
               install -m644 roc/"$module".roc $out/lib/roc/random/
             done
             install -m644 LICENSE $out/share/licenses/random-roc-lib/LICENSE
             runHook postInstall
           '';
           meta = {
-            description = "Independent pure Roc source library; native C ABI and CLI are still in development";
+            description = "Independent pure Roc source library without a compiler or CLI dependency";
             license = pkgs.lib.licenses.mit;
             platforms = pkgs.lib.platforms.linux;
           };
         };
+
+        randomRocNative = pkgs.stdenvNoCC.mkDerivation {
+          pname = "random-roc-ffi";
+          version = "0.3.0";
+          src = ./.;
+          strictDeps = true;
+          nativeBuildInputs = [ rocToolchain pkgs.zig_0_16 pkgs.binutils ];
+          allowedReferences = [ ];
+          RANDOM_ROC_COMPILER = "${rocToolchain}/bin/roc";
+          RANDOM_ROC_SOURCE_DIR = "${rocToolchain.src}";
+          RANDOM_ROC_LIBRARY_DIR = "${randomRocLib}/lib/roc/random";
+          buildPhase = ''
+            runHook preBuild
+            # Even --no-cache materializes the compiler-owned glue platform.
+            # Give that source cache a writable, build-local root, not HOME.
+            export ROC_CACHE_DIR="$TMPDIR/roc-cache"
+            export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
+            export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-local"
+            mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
+            bash roc/build-native "$PWD/roc-lib-out" --library-only
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/lib $out/include $out/share/licenses/random-roc-ffi
+            install -m644 roc-lib-out/lib/librandomroc.a $out/lib/
+            install -m755 roc-lib-out/lib/librandomroc.so $out/lib/
+            install -m644 include/randomroc.h $out/include/
+            install -m644 LICENSE $out/share/licenses/random-roc-ffi/LICENSE
+            install -m644 roc-lib-out/share/licenses/random-roc-ffi/Roc-UPL \
+              $out/share/licenses/random-roc-ffi/
+            runHook postInstall
+          '';
+          meta = {
+            description = "Standalone static/shared Roc C ABI libraries; no CLI or compiler runtime dependency";
+            license = [ pkgs.lib.licenses.mit pkgs.lib.licenses.upl ];
+            platforms = pkgs.lib.platforms.linux;
+          };
+        };
+
+        randomRoc = pkgs.stdenvNoCC.mkDerivation {
+          pname = "random-roc";
+          version = "0.3.0";
+          src = ./.;
+          strictDeps = true;
+          nativeBuildInputs = [ pkgs.zig_0_16 pkgs.makeWrapper ];
+          buildInputs = [ pkgs.bash ];
+          RANDOM_ROC_NATIVE_LIBRARY = "${randomRocNative}/lib/librandomroc.a";
+          RANDOM_ROC_MUSL_LICENSE = "${pkgs.zig_0_16}/lib/zig/libc/musl/COPYRIGHT";
+          buildPhase = ''
+            runHook preBuild
+            export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
+            export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-local"
+            mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
+            bash roc/build-native "$PWD/roc-cli-out" --cli-only
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/bin $out/tests $out/share/licenses/random-roc
+            install -m755 roc-cli-out/bin/randomroc $out/bin/
+            ln -s randomroc $out/bin/nrandomroc
+            ln -s randomroc $out/bin/drandomroc
+            install -m755 tests/random_test $out/tests/
+            install -m644 tests/cli_test_setup.sh tests/fixture-cleanup.sh $out/tests/
+            patchShebangs --host $out/tests/random_test
+            wrapProgram $out/tests/random_test \
+              --prefix PATH : ${pkgs.lib.makeBinPath installedTestTools}
+            install -m644 LICENSE $out/share/licenses/random-roc/LICENSE
+            install -m644 roc-cli-out/share/licenses/random-roc/Roc-UPL \
+              roc-cli-out/share/licenses/random-roc/musl-COPYRIGHT \
+              $out/share/licenses/random-roc/
+            runHook postInstall
+          '';
+          meta = {
+            description = "Independent Roc core with a stripped static C I/O CLI";
+            license = [ pkgs.lib.licenses.mit pkgs.lib.licenses.upl ];
+            platforms = pkgs.lib.platforms.linux;
+            mainProgram = "randomroc";
+          };
+        };
+        rocTestArtifacts = pkgs.linkFarm "random-roc-test-artifacts" [
+          { name = "bin"; path = "${randomRoc}/bin"; }
+          { name = "lib"; path = "${randomRocNative}/lib"; }
+          { name = "include"; path = "${randomRocNative}/include"; }
+        ];
 
         # LuaJIT/LuaJIT#1499 (https://github.com/LuaJIT/LuaJIT/issues/1499):
         # nixpkgs-unstable's own pkgs.luajit still pins a pre-fix commit
@@ -449,12 +536,12 @@
 		# one canonical aggregate self-test surface.
 		randomAll = pkgs.runCommand "random-all-0.3.0" {
 		  meta = with pkgs.lib; {
-			description = "Aggregate LuaJIT, Zig/C, Rust, and Lean random CSPRNG distribution";
-			license = licenses.mit;
+			description = "Aggregate matching random CSPRNG implementations (including Roc on Linux)";
+			license = [ licenses.mit ] ++ optional rocSupported licenses.upl;
 			platforms = platforms.unix;
 			mainProgram = "random";
 		  };
-		} ''
+		} (''
 		  mkdir -p $out/bin $out/lib $out/libexec $out/include \
 			$out/share/licenses
 		  ln -s ${randomLua}/bin/* ${randomZig}/bin/* ${randomr}/bin/* \
@@ -470,7 +557,13 @@
 			${randomr}/share/licenses/random-rust \
 			${randoml}/share/licenses/random-lean \
 			$out/share/licenses/
-		'';
+		'' + pkgs.lib.optionalString rocSupported ''
+		  ln -s ${randomRoc}/bin/* $out/bin/
+		  ln -s ${randomRocNative}/lib/* $out/lib/
+		  ln -s ${randomRocNative}/include/* $out/include/
+		  ln -s ${randomRoc}/share/licenses/random-roc \
+		    ${randomRocNative}/share/licenses/random-roc-ffi $out/share/licenses/
+		'');
 
 		luaConsumerClosure = pkgs.closureInfo {
 		  rootPaths = [ randomLua ];
@@ -560,6 +653,9 @@
         } // nixpkgs.lib.optionalAttrs (nixpkgs.lib.hasSuffix "-linux" system) {
           roc-toolchain = rocToolchain;
           random-roc-lib = randomRocLib;
+          random-roc-ffi = randomRocNative;
+          random-roc = randomRoc;
+          randomroc = randomRoc;
         } // nixpkgs.lib.optionalAttrs crossSupported {
           # Only meaningful on x86_64-linux: pkgsCross/pkgsMusl and qemu-user are
           # what make the aarch64 and musl legs buildable from this host at all.
@@ -569,22 +665,30 @@
           kani = kaniVerifier;
         };
 
-        apps.randomz = {
+        apps = {
+        randomz = {
           type = "app";
           program = "${randomZig}/bin/randomz";
           meta.description = "Run the C CLI over the Zig randomz library";
         };
 
-        apps.randomr = {
+        randomr = {
           type = "app";
           program = "${randomr}/bin/randomr";
           meta.description = "Run the Rust randomr CLI";
         };
 
-        apps.randoml = {
+        randoml = {
           type = "app";
           program = "${randoml}/bin/randoml";
           meta.description = "Run the independent Lean implementation";
+        };
+        } // nixpkgs.lib.optionalAttrs rocSupported {
+          randomroc = {
+            type = "app";
+            program = "${randomRoc}/bin/randomroc";
+            meta.description = "Run the C I/O frontend over the independent Roc core";
+          };
         };
 
         # Hermetic CI check: runs the FULL suite runner (./test), not just
@@ -598,6 +702,7 @@
           } // pkgs.lib.optionalAttrs rocSupported {
             RANDOM_ROC_COMPILER = "${rocToolchain}/bin/roc";
             RANDOM_ROC_SOURCE_DIR = "${rocToolchain.src}";
+            RANDOM_ROC_NATIVE_DIR = "${rocTestArtifacts}";
           }) ''
             cp -r ${./.} work
             chmod -R u+w work
@@ -677,11 +782,44 @@
             touch $out
           '' else pkgs.runCommand "random-roc-core-not-applicable" { } "touch $out";
 
-        checks.stats-smoke = pkgs.runCommand "random-stats-smoke"
+        checks.roc-native = if rocSupported then pkgs.runCommand "random-roc-native"
           {
+            nativeBuildInputs = runtimeTools ++ testTools ++ zigTools;
+            RANDOM_ROC_NATIVE_DIR = "${rocTestArtifacts}";
+          } ''
+            cp -r ${./.} work
+            chmod -R u+w work
+            cd work
+            export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
+            export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-local"
+            mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
+            export RANDOM_TEST_TRASH_DIR="$TMPDIR/test-Trash"
+            patchShebangs bin tests
+            bash tests/roc_native_test
+            bash tests/roc_cli_test
+            test ! -e ${randomRocNative}/bin
+            test ! -e ${randomRocLib}/bin
+            test ! -e ${randomRoc}/lib
+            for notice in ${randomRocNative}/share/licenses/random-roc-ffi/Roc-UPL \
+                ${randomRoc}/share/licenses/random-roc/Roc-UPL; do
+              test -s "$notice"
+              test "$(sha256sum "$notice" | cut -d' ' -f1)" = \
+                "$(sha256sum ${rocToolchain.src}/LICENSE | cut -d' ' -f1)"
+            done
+            test -s ${randomRoc}/share/licenses/random-roc/musl-COPYRIGHT
+            test "$(sha256sum ${randomRoc}/share/licenses/random-roc/musl-COPYRIGHT | cut -d' ' -f1)" = \
+              "$(sha256sum ${pkgs.zig_0_16}/lib/zig/libc/musl/COPYRIGHT | cut -d' ' -f1)"
+            ${randomRoc}/bin/randomroc --test
+            touch $out
+          '' else pkgs.runCommand "random-roc-native-not-applicable" { } "touch $out";
+
+        checks.stats-smoke = pkgs.runCommand "random-stats-smoke"
+          ({
             nativeBuildInputs = runtimeTools ++ testTools ++ zigTools ++ rustTools ++ leanTools;
             cargoDeps = rustCargoDeps;
-          } ''
+          } // pkgs.lib.optionalAttrs rocSupported {
+            RANDOM_ROC_NATIVE_DIR = "${rocTestArtifacts}";
+          }) ''
             cp -r ${./.} work
             chmod -R u+w work
             cd work
@@ -900,6 +1038,15 @@
 			RANDOM_TEST_FILE=${randomAll}/tests/random_test ${randomAll}/bin/randomr --test
 			${randomAll}/bin/randoml --test
 			${randomr}/bin/randomr --test
+            ${pkgs.lib.optionalString rocSupported ''
+              test -s ${randomAll}/include/randomroc.h
+              test -s ${randomAll}/lib/librandomroc.a
+              test -s ${randomAll}/lib/librandomroc.so
+              test -s ${randomAll}/share/licenses/random-roc/LICENSE
+              ${randomAll}/bin/randomroc --test
+              test "$(${randomAll}/bin/random --seed 42 -c 8)" = \
+                "$(${randomAll}/bin/randomroc --seed 42 -c 8)"
+            ''}
             touch $out
           '';
 
@@ -997,12 +1144,14 @@
           } // pkgs.lib.optionalAttrs rocSupported {
             RANDOM_ROC_COMPILER = "${rocToolchain}/bin/roc";
             RANDOM_ROC_SOURCE_DIR = "${rocToolchain.src}";
+            RANDOM_ROC_MUSL_LICENSE = "${pkgs.zig_0_16}/lib/zig/libc/musl/COPYRIGHT";
           });
         } // nixpkgs.lib.optionalAttrs (nixpkgs.lib.hasSuffix "-linux" system) {
           roc = pkgs.mkShell {
             packages = runtimeTools ++ testTools ++ zigTools ++ rocTools;
             RANDOM_ROC_COMPILER = "${rocToolchain}/bin/roc";
             RANDOM_ROC_SOURCE_DIR = "${rocToolchain.src}";
+            RANDOM_ROC_MUSL_LICENSE = "${pkgs.zig_0_16}/lib/zig/libc/musl/COPYRIGHT";
           };
         } // nixpkgs.lib.optionalAttrs crossSupported {
           kani = pkgs.mkShell {
