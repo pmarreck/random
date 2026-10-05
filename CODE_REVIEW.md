@@ -27,7 +27,7 @@ checks across all 25 implementation directions and 275 streaming checks.
 The 13 benchmark workloads passed five-way output digests; concurrent-build
 timings are diagnostic only and support no throughput claim.
 
-Peter's shared-test reminder exposed three Lean I/O failures hidden by its
+The complete shared-test requirement exposed three Lean I/O failures hidden by its
 previous reduced path: empty entropy lacked source context, and buffered about
 and chart writes could report success on `/dev/full`. The strengthened common
 body caught those failures without changing its expected results; the I/O
