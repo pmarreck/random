@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Separate proof dependency closure; executable consumers never import mathlib.
+set -u
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+deps="${RANDOM_DISTRIBUTION_PROOF_DEPS-}"
+if [[ ! -d "$deps/Mathlib" ]]; then
+	printf 'Pinned distribution proof dependencies unavailable; use nix develop .#proofs\n' >&2
+	exit 1
+fi
+if ! lean --version | grep -Fq 'version 4.30.0'; then
+	printf 'Distribution proofs require the pinned Lean 4.30.0 toolchain\n' >&2
+	exit 1
+fi
+(cd "$root/lean" && lake build Randoml.Geometric) || exit 1
+build="$root/proofs/.lake/build/lib/lean"
+mkdir -p "$build/DistributionProofs" || exit 1
+export LEAN_PATH="$build:$root/lean/.lake/build/lib/lean:$deps"
+cd "$root/proofs" || exit 1
+# The imported math library is pinned separately. Our proof path cannot add
+# unchecked declarations or a compiler-dependent decision shortcut.
+for file in Contract.lean MutationWitness.lean GeometricWitness.lean DistributionProofs/Uniform.lean DistributionProofs/Geometric.lean DistributionProofs/Fixed.lean; do
+	if grep -nE '\b(sorry|admit|axiom|unsafe|partial|native_decide)\b' "$file"; then
+		printf 'Unchecked declaration in distribution proof source: %s\n' "$file" >&2
+		exit 1
+	fi
+done
+for module in Fixed Uniform Geometric; do
+	lean -DwarningAsError=true --trust=0 -o "$build/DistributionProofs/$module.olean" \
+		"DistributionProofs/$module.lean" || exit 1
+done
+audit="$(lean -DwarningAsError=true --trust=0 Contract.lean)" || exit 1
+printf '%s\n' "$audit"
+if [[ "$(printf '%s\n' "$audit" | grep -c 'depends on axioms:')" != 21 ]]; then
+	printf 'Distribution theorem axiom audit was incomplete\n' >&2
+	exit 1
+fi
+if printf '%s\n' "$audit" | grep 'depends on axioms:' | \
+	grep -vE "depends on axioms: \[(propext, Classical.choice, Quot.sound|propext, Quot.sound|propext)\]$"; then
+	printf 'Unexpected axiom in a distribution theorem dependency\n' >&2
+	exit 1
+fi
+bash "$root/proofs/mutations" || exit 1
+printf 'Distribution proof contracts passed (production uniform and finite-fuel geometric base)\n'

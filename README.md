@@ -59,7 +59,11 @@ deterministic mode in every family.
   seek/range bounds, canonical-value boundary properties, curve saturation, and
   production shuffle-population invariants under Lean's kernel; see the exact
   proved/tested/assumed boundary in the
-  [Lean evaluation report](docs/reports/2026-08-26-lean4-evaluation.md)
+  [Lean evaluation report](docs/reports/2026-08-26-lean4-evaluation.md).
+  The separate [distribution proof layer](docs/reports/2026-10-07-distribution-proof-certificates.md)
+  additionally certifies core fractional-uniform CDF error at most 2^-32 and the
+  direct geometric core domain p in [1/2,1), with explicit finite-cap error/failure
+  at most (1-p)^R; other distribution proof obligations remain open
 - **WASM build:** `randomz-wasi.wasm` exports the same deterministic core plus
   a fail-closed adapter to the host's WASI `random_get`; the pure Rust core is
   compile-gated for `wasm32-wasip1`, while an equivalent Rust artifact is
@@ -376,6 +380,7 @@ nix build github:pmarreck/random#random-luajit-lib
 nix build github:pmarreck/random#random-zig-lib
 nix build github:pmarreck/random#random-rust-lib
 nix build github:pmarreck/random#random-lean-lib
+nix build github:pmarreck/random#random-lean-proofs # Optional analytic proof layer
 nix build github:pmarreck/random#random-roc-lib # Pure Roc import package (Linux)
 nix build github:pmarreck/random#random-roc-ffi # Static/shared C ABI only (Linux)
 nix profile install github:pmarreck/random#random-all
@@ -398,6 +403,10 @@ libraries under `lib`; `random-rust-lib/src/rust/randomr` is a standalone Cargo
 path dependency; and `random-lean-lib` supplies source under `src` plus compiled
 modules under `lib/lean`. The package gate imports each native-language surface,
 and loads the installed shared `librandomz` directly through LuaJIT FFI.
+
+`random-lean-proofs` separately exports `DistributionProofs` sources and compiled
+modules, with the pinned mathematical imports needed by them. Ordinary CLI and
+core-library packages do not depend on this optional proof closure.
 
 The LuaJIT package exports `drbg` and `distributions` alongside `fixed` and
 `blake3`. Add `${random.packages.${system}.random-luajit-lib}/lib/?.lua` to
@@ -628,7 +637,7 @@ direnv allow      # or: nix develop
 ./test            # FAST mode (quick, quiet on success)
 FAST= ./test      # full statistical run
 ./stats           # separate, deeper sanity analysis of all available command families
-nix flake check   # hermetic CI check (40 Linux suites, but FORCES FAST=1 --
+nix flake check   # hermetic CI check (41 Linux suites, but FORCES FAST=1 --
                    # kernel_jit_diff's 60000-iteration deep JIT differential
                    # is deep-mode-only by design and is SKIPPED here, not run;
                    # run `FAST= ./test` locally for the full non-FAST suite)
@@ -639,7 +648,8 @@ Zig DRBG reference check, the same 85-check Bash CLI contract and complete
 186-case frontend matrix against all five implementations on Linux, a
 100-output byte-exact five-way help/chart contract, Rust
 mutation/downstream-library controls, a C-compiled public-ABI conformance
-test, Lean trust-zero elaboration/frozen vectors/proof axiom audits, isolated
+test, Lean trust-zero elaboration/frozen vectors/proof axiom audits, analytic
+distribution certificates and production mutation controls, isolated
 Zig-package reconstruction, 11-target Zig cross-compilation
 (including Windows ARM64), Wine-executed Windows x86_64 parity, kernel unit
 tests, golden vectors, geometric exact-rational and direct LuaJIT-FFI controls,

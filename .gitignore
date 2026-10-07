@@ -16,3 +16,4 @@ roc-out
 
 # Lean/Lake build outputs
 lean/.lake
+proofs/.lake

@@ -1,4 +1,49 @@
-# Code review — Roc production CLI, native ABI and five-way acceptance
+# Code review — first production-linked distribution proof certificates
+
+2026-10-07 · Codex, with fresh-context reviewer
+`/root/fresh_distribution_proof_review` · base `17461cf` plus the proof milestone.
+No mathematical correctness or vacuity defect was found in the stated domain.
+This is a scoped proof review, not a whole-library correctness or security claim.
+
+The reviewer read the full proof modules, independently restated headline
+contracts, witness and mutation controls, production arithmetic/sampler/source
+definitions, suite integration, Nix dependency/consumer packaging and claims.
+It independently passed the bounded proof gate, all 21 standard-axiom audits,
+three production mutations after original-code specificity checks, and the
+installed compiled-artifact consumer. The ordinary core runtime and CLI build
+closures contained no proof/mathlib dependency.
+
+Two low findings were reproduced and fixed: the documented `.#proofs` shell was
+absent on supported Darwin, and the constant-uniform mutant emitted an expected
+unused-draw warning. The shell now sits outside the Linux-only Roc block, with
+an all-supported-system assertion in `package-split`. The mutant disables only
+its intentional unused-variable linter and retains warnings-as-errors otherwise.
+The parent reran the proof gate and shell/package checks after these remedies.
+
+Certified: actual 62-step fixed division and its rounding remainder; actual
+fractional/nonzero-uniform output existence/value and universal CDF bounds;
+actual direct geometric preparation, decoded-source/strict-threshold linkage,
+finite-fuel success/failure laws and public `sampleWith` CDF bound. Geometric
+coverage is canonical fixed p in [1/2,1), with R available independent trials.
+Failure mass is separate, not silently normalized away.
+
+The parent passed all 41 FAST suites and the unchanged full five-way Bash CLI
+oracle, the 60,000-iteration deep JIT differential, and standalone Nix proof,
+package-split and installed library-consumer checks. Native execution here is
+Linux x86_64; Darwin/ARM64 shell checks are evaluation-only. Exact shipment CI is
+required separately.
+
+Limits: smaller geometric probabilities and other nonlinear laws, cursor-derived
+stateful fuel/read exhaustion, bounded integer rejection, decimal parsing/output,
+universal other-language equivalence, cryptographic source security and compiler
+correctness remain open. Standard Lean axioms and hash-pinned precompiled mathlib
+are explicit trust boundaries. See the
+[certificate report](docs/reports/2026-10-07-distribution-proof-certificates.md)
+for exact bounds and assumptions. The broader distribution-proof plan stays open.
+
+---
+
+# Previous review — Roc production CLI, native ABI and five-way acceptance
 
 2026-10-04 · Codex, with fresh-context reviewer `/root/roc_production_review` ·
 base `eb81a21`, 53 staged paths plus a separately reviewed one-line test fix.

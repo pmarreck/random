@@ -264,6 +264,7 @@
           pkgs.rustPlatform.cargoSetupHook
         ];
         leanTools = [ pkgs.lean4 ];
+		distributionMathlib = pkgs.callPackage ./nix/distribution-mathlib.nix { };
 
 		mkRandomr = rustPkgs: runTests: rustPkgs.rustPlatform.buildRustPackage {
 		  pname = "random-rust";
@@ -356,6 +357,41 @@
 		  '';
 		  meta = with pkgs.lib; {
 			description = "Importable Randoml Lean 4 library, proofs, and compiled modules";
+			license = licenses.mit;
+			platforms = platforms.unix;
+		  };
+		};
+		randomLeanProofs = pkgs.stdenvNoCC.mkDerivation {
+		  pname = "random-lean-proofs";
+		  version = "0.3.0";
+		  src = ./.;
+		  strictDeps = true;
+		  nativeBuildInputs = [ pkgs.lean4 pkgs.bash pkgs.gnugrep pkgs.gnused ];
+		  propagatedBuildInputs = [ randomLeanLib distributionMathlib ];
+		  RANDOM_DISTRIBUTION_PROOF_DEPS = "${distributionMathlib}/lib/lean";
+		  buildPhase = ''
+			runHook preBuild
+			export XDG_CACHE_HOME="$TMPDIR/random-proof-cache"
+			export RANDOM_TEST_TRASH_DIR="$TMPDIR/random-proof-trash"
+			bash proofs/check
+			runHook postBuild
+		  '';
+		  installPhase = ''
+			runHook preInstall
+			mkdir -p "$out/lib/lean" "$out/src" "$out/share/licenses/random-lean-proofs"
+			cp -R proofs/.lake/build/lib/lean/. "$out/lib/lean/"
+			cp -R proofs/DistributionProofs "$out/src/DistributionProofs"
+			install -Dm644 proofs/Contract.lean "$out/src/Contract.lean"
+			install -Dm644 LICENSE "$out/share/licenses/random-lean-proofs/LICENSE"
+			runHook postInstall
+		  '';
+		  passthru = {
+			leanPath = "lib/lean";
+			coreLibrary = randomLeanLib;
+			mathLibrary = distributionMathlib;
+		  };
+		  meta = with pkgs.lib; {
+			description = "Production-linked Randoml distribution proofs, separate from CLI/core consumers";
 			license = licenses.mit;
 			platforms = platforms.unix;
 		  };
@@ -631,6 +667,7 @@
 		  random-zig-lib = randomZigLib;
 		  random-rust-lib = randomRustLib;
 		  random-lean-lib = randomLeanLib;
+		  random-lean-proofs = randomLeanProofs;
 
 		  # Compatibility aliases. Language-named aliases now resolve to their
 		  # minimal package; `random` remains the historical aggregate alias.
@@ -694,11 +731,13 @@
         # Hermetic CI check: runs the FULL suite runner (./test), not just
         # tests/random_test, so fixed_test/golden_test/kernel_bc_sweep are
         # actually exercised here too, not just the CLI-behavior suite.
+        checks.distribution-proofs = randomLeanProofs;
         checks.random-test = pkgs.runCommand "random-test"
           ({
             nativeBuildInputs = runtimeTools ++ testTools ++ zigTools ++ rustTools ++ leanTools ++ rocTools;
             cargoDeps = rustCargoDeps;
             RANDOM_GMP_LIBRARY = "${pkgs.gmp}/lib/libgmp${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
+			RANDOM_DISTRIBUTION_PROOF_DEPS = "${distributionMathlib}/lib/lean";
           } // pkgs.lib.optionalAttrs rocSupported {
             RANDOM_ROC_COMPILER = "${rocToolchain}/bin/roc";
             RANDOM_ROC_SOURCE_DIR = "${rocToolchain.src}";
@@ -845,6 +884,9 @@
 		checks.package-split = assert pkgs.lib.assertMsg
 		  luaDeclaredBuildInputsClean
 		  "random-luajit has a Zig, Rust/Cargo, or Lean direct build input";
+		  assert pkgs.lib.assertMsg
+		    (builtins.all (shells: shells ? proofs) (builtins.attrValues self.devShells))
+		    "the isolated proof shell is missing on a supported native system";
 		  pkgs.runCommand "random-package-split"
 		  { nativeBuildInputs = [ pkgs.gnugrep ]; } ''
 			# Each named output exposes only its implementation's command family.
@@ -887,6 +929,10 @@
 			test -s ${randomLeanLib}/lib/lean/Randoml.olean
 			test -s ${randomLeanLib}/src/Randoml.lean
 			test ! -e ${randomLeanLib}/bin
+			test -s ${randomLeanProofs}/lib/lean/DistributionProofs/Uniform.olean
+			test -s ${randomLeanProofs}/lib/lean/DistributionProofs/Geometric.olean
+			test -s ${randomLeanProofs}/src/Contract.lean
+			test ! -e ${randomLeanProofs}/bin
 
 			# The backwards-compatible default is the documented aggregate and
 			# therefore exposes every implementation.
@@ -989,6 +1035,9 @@
 
 			# The compiled Lean library imports without the CLI derivation or sources.
 			LEAN_PATH=${randomLeanLib}/lib/lean lean ${./tests/fixtures/randoml-consumer.lean}
+			# Check the installed proof artifacts, not just repository elaboration.
+			LEAN_PATH=${randomLeanProofs}/lib/lean:${randomLeanLib}/lib/lean:${distributionMathlib}/lib/lean \
+			  lean -DwarningAsError=true --trust=0 ${randomLeanProofs}/src/Contract.lean
 			touch $out
 		  '';
 
@@ -1141,11 +1190,16 @@
             # The geometric accuracy oracle uses exact rational arithmetic;
             # resolve its library from the derivation, never by store searches.
             RANDOM_GMP_LIBRARY = "${pkgs.gmp}/lib/libgmp${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
+			RANDOM_DISTRIBUTION_PROOF_DEPS = "${distributionMathlib}/lib/lean";
           } // pkgs.lib.optionalAttrs rocSupported {
             RANDOM_ROC_COMPILER = "${rocToolchain}/bin/roc";
             RANDOM_ROC_SOURCE_DIR = "${rocToolchain.src}";
             RANDOM_ROC_MUSL_LICENSE = "${pkgs.zig_0_16}/lib/zig/libc/musl/COPYRIGHT";
           });
+		  proofs = pkgs.mkShell {
+			packages = leanTools ++ [ pkgs.bash pkgs.coreutils pkgs.gnugrep pkgs.gnused ];
+			RANDOM_DISTRIBUTION_PROOF_DEPS = "${distributionMathlib}/lib/lean";
+		  };
         } // nixpkgs.lib.optionalAttrs (nixpkgs.lib.hasSuffix "-linux" system) {
           roc = pkgs.mkShell {
             packages = runtimeTools ++ testTools ++ zigTools ++ rocTools;

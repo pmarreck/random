@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# Negative controls compile in private RAM-first fixtures, never in production.
+set -u
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$root/tests/fixture-cleanup.sh"
+fixture="$(mktemp -d "${TMPDIR:-/tmp}/random-distribution-mutations.XXXXXX")" || exit 1
+trap 'test_trash_on_exit "$fixture"' EXIT
+deps="${RANDOM_DISTRIBUTION_PROOF_DEPS:?pinned proof dependency environment required}"
+base_path="$root/proofs/.lake/build/lib/lean:$root/lean/.lake/build/lib/lean:$deps"
+# Specificity: the same exact witness must accept the unmodified implementation.
+(cd "$root/proofs" && LEAN_PATH="$base_path" lean -DwarningAsError=true --trust=0 \
+	MutationWitness.lean) || exit 1
+(cd "$root/proofs" && LEAN_PATH="$base_path" lean -DwarningAsError=true --trust=0 \
+	GeometricWitness.lean) || exit 1
+
+expect_refutation() {
+	local case_dir="$1" proof="$2" theorem_file="$3" output
+	output="$(cd "$root/proofs" && LEAN_PATH="$case_dir:$base_path" \
+		lean -DwarningAsError=true --trust=0 "$proof" 2>&1)"
+	local status=$?
+	if [[ "$status" == 0 ]]; then
+		printf 'Mutation escaped the production proof: %s\n' "$case_dir" >&2
+		return 1
+	fi
+	if [[ "$output" != *"$theorem_file:"*"error:"* ]] || \
+		printf '%s\n' "$output" | grep -Eq 'unknown module|object file.*does not exist|unknown constant|unknown identifier'; then
+		printf 'Mutation failed for an infrastructure error, not a refuted theorem:\n%s\n' "$output" >&2
+		return 1
+	fi
+	printf 'Refuted production mutation: %s\n' "${case_dir##*/}"
+}
+
+division="$fixture/division-61-bits"
+mkdir -p "$division/Randoml" || exit 1
+if [[ "$(grep -Fc '(List.range 62).foldl' "$root/lean/Randoml/Fixed.lean")" != 1 ]]; then
+	printf 'Long-division mutation target changed; update the negative control\n' >&2
+	exit 1
+fi
+sed 's/(List.range 62).foldl/(List.range 61).foldl/' "$root/lean/Randoml/Fixed.lean" \
+	> "$division/Randoml/Fixed.lean" || exit 1
+(cd "$division" && LEAN_PATH="$base_path" lean -DwarningAsError=true --trust=0 \
+	-o Randoml/Fixed.olean Randoml/Fixed.lean) || exit 1
+expect_refutation "$division" MutationWitness.lean MutationWitness.lean || exit 1
+
+uniform="$fixture/constant-uniform"
+mkdir -p "$uniform/Randoml" || exit 1
+# Lean resolves a package prefix as a unit. Keep all unmodified sibling
+# modules in this private prefix instead of accidentally hiding their imports.
+cp -R "$root/lean/.lake/build/lib/lean/Randoml/." "$uniform/Randoml/" || exit 1
+target='let value := div (fromInt (Int.ofNat draw.toNat)) (fromInt 0x100000000)'
+if [[ "$(grep -Fc "$target" "$root/lean/Randoml/Distribution.lean")" != 1 ]]; then
+	printf 'Uniform mutation target changed; update the negative control\n' >&2
+	exit 1
+fi
+sed 's/let value := div (fromInt (Int.ofNat draw.toNat)) (fromInt 0x100000000)/let value := Value.zero/' \
+	"$root/lean/Randoml/Distribution.lean" > "$uniform/Randoml/Distribution.lean" || exit 1
+# The deliberately discarded draw is the mutation, not a production warning.
+# Suppress only that linter; every other warning still fails the candidate build.
+(cd "$uniform" && LEAN_PATH="$base_path" lean -Dlinter.unusedVariables=false \
+	-DwarningAsError=true --trust=0 \
+	-o Randoml/Distribution.olean Randoml/Distribution.lean) || exit 1
+expect_refutation "$uniform" DistributionProofs/Uniform.lean Uniform.lean || exit 1
+
+geometric="$fixture/failures-off-by-one"
+mkdir -p "$geometric/Randoml" || exit 1
+cp -R "$root/lean/.lake/build/lib/lean/Randoml/." "$geometric/Randoml/" || exit 1
+if [[ "$(grep -Fc 'pure (some count)' "$root/lean/Randoml/Geometric.lean")" != 1 ]]; then
+	printf 'Geometric count mutation target changed; update the negative control\n' >&2
+	exit 1
+fi
+sed 's/pure (some count)/pure (some (count + 1))/' "$root/lean/Randoml/Geometric.lean" \
+	> "$geometric/Randoml/Geometric.lean" || exit 1
+(cd "$geometric" && LEAN_PATH="$base_path" lean -DwarningAsError=true --trust=0 \
+	-o Randoml/Geometric.olean Randoml/Geometric.lean) || exit 1
+expect_refutation "$geometric" GeometricWitness.lean GeometricWitness.lean || exit 1
+printf 'Production distribution mutation controls passed (3/3)\n'

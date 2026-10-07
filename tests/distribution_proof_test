@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Distribution acceptance is analytic; samples and port agreement are not proofs.
+set -u
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ ! -x "$root/proofs/check" ]]; then
+	printf 'Distribution proof gate missing: proofs/check\n' >&2
+	exit 1
+fi
+report="$(bash "$root/proofs/check" 2>&1)"
+status=$?
+if [[ "$status" != 0 ]]; then
+	printf '%s\n' "$report" >&2
+	exit "$status"
+fi
+printf '%s\n' "$report"
