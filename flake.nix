@@ -5,9 +5,10 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     roc-upstream.url = "github:roc-lang/roc/1a4df199210309bbb6befb1322f7435361bd01e1?dir=src";
+    performance-profiling.url = "github:pmarreck/performance_profiling/a04d62a441a5b9315e81f6277f57f7eddb9a57af";
   };
 
-  outputs = { self, nixpkgs, flake-utils, roc-upstream }:
+  outputs = { self, nixpkgs, flake-utils, roc-upstream, performance-profiling }:
     # Enumerate the supported native systems explicitly. flake-utils' default
     # still includes x86_64-darwin, which nixpkgs 26.11 has dropped and this
     # project no longer promises; Windows remains a Zig/Rust cross target.
@@ -738,6 +739,7 @@
             cargoDeps = rustCargoDeps;
             RANDOM_GMP_LIBRARY = "${pkgs.gmp}/lib/libgmp${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
 			RANDOM_DISTRIBUTION_PROOF_DEPS = "${distributionMathlib}/lib/lean";
+            RANDOM_MPFR_LIBRARY = "${pkgs.mpfr}/lib/libmpfr${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
           } // pkgs.lib.optionalAttrs rocSupported {
             RANDOM_ROC_COMPILER = "${rocToolchain}/bin/roc";
             RANDOM_ROC_SOURCE_DIR = "${rocToolchain.src}";
@@ -1184,6 +1186,11 @@
           else pkgs.runCommand "random-windows-x64-smoke-not-applicable" { } "touch $out";
 
         devShells = {
+          ziggurat = pkgs.mkShell {
+            packages = [ pkgs.zig_0_16 luajitFixed pkgs.bash pkgs.jq pkgs.coreutils
+              performance-profiling.packages.${system}.default ];
+            RANDOM_MPFR_LIBRARY = "${pkgs.mpfr}/lib/libmpfr${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
+          };
           default = pkgs.mkShell ({
             packages = runtimeTools ++ testTools ++ zigTools ++ leanTools ++ rocTools ++
               [ pkgs.cargo pkgs.clippy pkgs.rustc pkgs.rustfmt pkgs.openssh pkgs.rsync pkgs.hyperfine ];
@@ -1191,6 +1198,7 @@
             # resolve its library from the derivation, never by store searches.
             RANDOM_GMP_LIBRARY = "${pkgs.gmp}/lib/libgmp${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
 			RANDOM_DISTRIBUTION_PROOF_DEPS = "${distributionMathlib}/lib/lean";
+            RANDOM_MPFR_LIBRARY = "${pkgs.mpfr}/lib/libmpfr${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
           } // pkgs.lib.optionalAttrs rocSupported {
             RANDOM_ROC_COMPILER = "${rocToolchain}/bin/roc";
             RANDOM_ROC_SOURCE_DIR = "${rocToolchain.src}";

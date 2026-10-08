@@ -12,11 +12,12 @@ mode=full
 case "${1-}" in
 	"") ;;
 	--simd) shift; exec "$here/experiments/bm-fixed-simd" "$@" ;;
+	--ziggurat) shift; exec "$here/experiments/bm-ziggurat" "$@" ;;
 	--quick) mode=quick ;;
 	--check) mode=check ;;
 	--help|-h)
 		printf '%s\n' \
-			'Usage: ./bm [--quick|--check|--simd [--check]]' \
+			'Usage: ./bm [--quick|--check|--simd [--check]|--ziggurat [profile options]]' \
 			'' \
 			'Benchmarks byte-identical deterministic work through random (LuaJIT),' \
 			'randomz (Zig/C), randomr (Rust), randoml (Lean), and randomroc (Roc, Linux).' \
@@ -30,6 +31,7 @@ case "${1-}" in
 			'  --quick  Use smaller workloads and three measured runs' \
 			'  --check  Build and prove every benchmark workload identical; do not time' \
 			'  --simd   Opt-in exact fixed-point Zig/Rust AVX2 experiments (x86_64)' \
+			'  --ziggurat  Opt-in fixed-point normal sampler experiment (Linux)' \
 			'' \
 			'Environment: BM_SKIP_BUILD=1, BM_RUNS, BM_WARMUP, BM_COUNT,' \
 			'BM_RAW_BYTES, BM_MACHINE_ID, BM_RESULTS_FILE, BM_RUST_TIMING_CLI,' \

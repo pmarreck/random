@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Required bounded experiment checks. The production sampler is unchanged.
+set -u
+set -o pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$here" || exit 1
+source tests/fixture-cleanup.sh
+artifacts="$(mktemp -d "${TMPDIR:-/tmp}/random-ziggurat-test.XXXXXX")" || exit 1
+trap 'test_trash_on_exit "$artifacts"' EXIT
+unit_test() {
+	zig test -O ReleaseSafe --dep fixed --dep candidate -Mroot=experiments/ziggurat_test.zig \
+		-O ReleaseSafe --dep fixed -Mcandidate="$1" \
+		-O ReleaseSafe -Mfixed=src/fixed.zig
+}
+report="$(unit_test experiments/ziggurat.zig 2>&1)" || { printf '%s\n' "$report" >&2; exit 1; }
+cp experiments/ziggurat_tables.zig "$artifacts/ziggurat_tables.zig" || exit 1
+for mutation in bits rectangle tail; do
+	case "$mutation" in
+		bits) expression='s/coordinate = word >> 9/coordinate = word >> 8/' ;;
+		rectangle) expression='s/draw.coordinate < strip.k/draw.coordinate > strip.k/' ;;
+		tail) expression='s/fx.mul(t, t)) >= 0/fx.mul(t, t)) < 0/' ;;
+	esac
+	# Mechanical corruption is confined to this private RAM-backed fixture.
+	sed "$expression" experiments/ziggurat.zig > "$artifacts/mutant.zig" || exit 1
+	result="$(unit_test "$artifacts/mutant.zig" 2>&1)"
+	status=$?
+	if [ "$status" -eq 0 ] || [[ "$result" != *'TestExpected'* ]]; then
+		printf 'Ziggurat %s control failed unexpectedly (exit %s):\n%s\n' "$mutation" "$status" "$result" >&2
+		exit 1
+	fi
+done
+bash experiments/ziggurat-build "$artifacts" || exit 1
+luajit experiments/ziggurat_expected.lua "$artifacts/libziggurat.so" 42 7 >/dev/null || exit 1
+work_control="$("$artifacts/ziggurat-bench" box-normal-core-1 7 42 0 2>&1)"
+if [ "$?" -eq 0 ] || [[ "$work_control" != *IncorrectWarmup* ]]; then
+	printf 'Benchmark oracle control failed unexpectedly:\n%s\n' "$work_control" >&2; exit 1
+fi
+oracle="$(luajit experiments/ziggurat_oracle.lua "$artifacts/libziggurat.so" 100000 2>&1)" || {
+	printf '%s\n' "$oracle" >&2; exit 1;
+}
+decisions="$(luajit experiments/ziggurat_decision_oracle.lua "$artifacts/libziggurat.so" 2>&1)" || {
+	printf '%s\n' "$decisions" >&2; exit 1;
+}
+for mutation in threshold geometry pdf; do
+	result="$(luajit experiments/ziggurat_oracle.lua "$artifacts/libziggurat.so" 100000 "$mutation" 2>&1)"
+	status=$?
+	if [ "$status" -eq 0 ] || [[ "$result" != *'threshold'* && "$result" != *'strip'* && "$result" != *'PDF table'* ]]; then
+		printf 'MPFR %s control failed unexpectedly:\n%s\n' "$mutation" "$result" >&2; exit 1
+	fi
+done
+generated="$(luajit experiments/ziggurat_generate.lua 512)" || exit 1
+stored="$(<experiments/ziggurat_tables.zig)"
+if [ "$generated" != "$stored" ]; then echo 'Ziggurat table regeneration differs at 512 bits' >&2; exit 1; fi
+printf '%s\n' "$oracle"
+printf '%s\n' "$decisions"
+printf 'Ziggurat experiment: directed paths, six rejection controls, independent MPFR geometry, table regeneration PASS\n'

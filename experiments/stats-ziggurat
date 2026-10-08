@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -u
+set -o pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$here" || exit 1
+if [ "${RANDOM_ZIGGURAT_SHELL:-0}" != 1 ]; then
+	exec nix develop .#ziggurat -c env RANDOM_ZIGGURAT_SHELL=1 "$0" "$@"
+fi
+artifacts="${RANDOM_ZIGGURAT_ARTIFACTS:-$(mktemp -d "${TMPDIR:-/tmp}/random-ziggurat-stats.XXXXXX")}" || exit 1
+experiments/ziggurat-build "$artifacts" || exit 1
+exec luajit experiments/ziggurat_stats.lua "$artifacts/libziggurat.so" "$@"

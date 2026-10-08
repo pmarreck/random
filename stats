@@ -4,6 +4,7 @@
 set -u
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ "${1-}" = --ziggurat ]; then shift; exec "$root/experiments/stats-ziggurat" "$@"; fi
 lua_cli="$root/bin/random"
 c_cli="$root/zig-out/bin/randomz"
 rust_target="$(cd "$root" && cargo metadata --no-deps --format-version 1 |
@@ -13,10 +14,11 @@ lean_cli="$root/zig-out/bin/randoml"
 
 usage() {
 	cat <<'EOF'
-Usage: ./stats [--all | --lua | --c | --rust | --lean | --roc | --cli PATH]
+Usage: ./stats [--all | --lua | --c | --rust | --lean | --roc | --cli PATH | --ziggurat [N]]
 
 Runs raw-stream and distribution sanity checks without writing sample data to
 disk. Default: all available implementations, including Roc on Linux.
+--ziggurat compares three experimental samplers across four shapes (default 96M).
 
 Environment:
   RANDOM_STATS_BYTES=N       raw bytes per stream (default 4194304)

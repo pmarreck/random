@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Experimental artifacts only; never publishes PATH-facing production binaries.
+set -u
+set -o pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$here" || exit 1
+out="${1:?explicit artifact directory required}"
+mkdir -p "$out" || exit 1
+vector_cpu=baseline
+if [ "$(uname -m)" = x86_64 ]; then vector_cpu=baseline+avx2; fi
+modules=(--dep fixed --dep fixed_simd -Mrandomz=src/randomz.zig
+	-O ReleaseFast --dep fixed --dep fixed_vector -Mfixed_simd=src/fixed_simd_dispatch.zig
+	-O ReleaseFast -mcpu="$vector_cpu" --dep fixed -Mfixed_vector=src/fixed_simd.zig
+	-O ReleaseFast --dep fixed -Mcandidate=experiments/ziggurat.zig
+	-O ReleaseFast -Mfixed=src/fixed.zig)
+zig build-lib -dynamic -lc -O ReleaseFast --dep fixed --dep randomz --dep candidate \
+	-Mroot=experiments/ziggurat_ffi.zig -O ReleaseFast "${modules[@]}" \
+	-femit-bin="$out/libziggurat.so" || exit 1
+zig build-exe -lc -O ReleaseFast --dep fixed --dep randomz --dep candidate \
+	-Mroot=experiments/ziggurat_bench.zig -O ReleaseFast "${modules[@]}" \
+	-femit-bin="$out/ziggurat-bench" || exit 1

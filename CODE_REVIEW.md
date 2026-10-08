@@ -1,4 +1,36 @@
-# Code review — first production-linked distribution proof certificates
+# Code review — isolated fixed-point Ziggurat experiment
+
+2026-10-08 · Codex, with fresh-context reviewer `/root/ziggurat_review` ·
+base `a758c902143f`. No unresolved actionable defect in the reviewed experiment.
+This is not clearance to change the production sampler or deterministic stream.
+
+The reviewer independently passed five directed tests, 6,700 scripted MPFR
+acceptance decisions, the arithmetic oracle, and 24 separate work checksums.
+It reproduced a skipped-work benchmark that originally passed, then verified
+the same mutation failed after expected checksums came from an external FFI
+array loop. Three other corrections cover mantissa-sensitive logarithm inputs,
+sandbox shebang execution and portable OS-specific benchmark clocks. Statistical
+reporting now distinguishes two alpha budgets instead of implying one global
+budget. No thresholds were relaxed.
+
+The final claims audit mechanically recomputed all 12 CDF maxima, tail counts,
+standardized moment ranges, all timing medians/ratios, and the 96M-output
+accounting from retained receipts. Repeating the same deterministic campaign
+reproduced its results; it adds no independent draws to the stated sample count.
+
+Limits: 1,022 near-boundary decision cases were explicitly excluded; sampled
+MPFR errors are not universal bounds. The reviewer did not independently rerun
+the parent's heavy statistics, timing, full suite or native non-Linux checks.
+The parent passed the required focused gate and all 42 default suites in the
+hermetic Nix check, plus the separate 60,000-iteration deep JIT differential.
+It measured 96M outputs and retained 54 raw timing receipts, with no production
+wiring changed. Exact shipment CI is verified separately. See the
+[experiment report](docs/reports/2026-10-08-fixed-point-ziggurat.md) for numerical,
+statistical and performance scope and remaining promotion gates.
+
+---
+
+# Previous review — first production-linked distribution proof certificates
 
 2026-10-07 · Codex, with fresh-context reviewer
 `/root/fresh_distribution_proof_review` · base `17461cf` plus the proof milestone.
