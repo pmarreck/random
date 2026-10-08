@@ -1,5 +1,28 @@
 # Code review — isolated fixed-point Ziggurat experiment
 
+Follow-up, 2026-10-08: the same independent reviewer passed all nine new
+edge/chunk work-oracle counts and 80,229 production batch value/cursor/rejection/
+error checks against the rebuilt experimental library. AUTO/SCALAR call the
+production batch ABI; expected checksums come from independent scalar arrays.
+It also passed the new finite directed-MPFR certificate and verified both
+threshold/height corruption controls fail at their intended assertions.
+All 1,022 initially excluded point fixtures now have resolved ideal signs;
+eight signed wedge cases differ from the compiled candidate. This does not
+certify a whole-domain CDF bound. Review corrected a strict rounding endpoint
+and linked the LN2 enclosure to the compiled `ln(2)` result. A proposed global
+error-budget argument remains provisional, with hybrid-reference and rounding
+lemmas separate from the executed finite certificates. Production remains
+unchanged; the report retains 62 additional timing cases, including the
+permitted retry's noisy first attempt. Exact shipment CI is checked separately.
+The final statistical audit also restricts the calibrated families to the
+32 unpaired scalar/candidate cells; the finite paired control has no joint-
+independence theorem and remains diagnostic only. The unchanged 48-way DKW
+and 100,000-way count allocations are conservative for those 32 cells and
+8,208 count checks under IID target-law nulls. Thresholds and data were not
+changed to obtain this correction.
+
+Initial checkpoint:
+
 2026-10-08 · Codex, with fresh-context reviewer `/root/ziggurat_review` ·
 base `a758c902143f`. No unresolved actionable defect in the reviewed experiment.
 This is not clearance to change the production sampler or deterministic stream.

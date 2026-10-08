@@ -13,6 +13,9 @@ local n = tonumber(arg[2]) or 2000000
 assert(n >= 1000000, "large-sample analysis requires at least one million per seed")
 local seeds = {42, 700, 123456789, 3735928559}
 local names = {"Box-Muller", "paired-Box-Muller", "Ziggurat"}
+-- Finite paired outputs have no established joint-independence theorem;
+-- cached pairs also cross downstream rejection boundaries. Keep their frozen
+-- thresholds as diagnostics, outside the IID target-law family calibration.
 local alpha, family = 1e-6, 100000
 local log_bound = math.log(2*family/alpha)
 local epsilon = math.sqrt(math.log(2*48/alpha)/(2*n))
@@ -39,7 +42,7 @@ local function lower_bound(sorted, x)
 	while lo < hi do local mid = math.floor((lo+hi)/2); if sorted[mid] and sorted[mid] <= x then lo = mid+1 else hi = mid end end
 	return lo-1
 end
-io.write(("Predeclared analysis: n=%d per seed, 4 seeds, 3 algorithms, 4 shapes; DKW_family_alpha=%g; binomial_family_alpha=%g, count_family_bound=%d; combined_calibrated_bound=%g; DKW=%.6g; moments/serial/collisions are additional diagnostics\n"):format(n, alpha, alpha, family, 2*alpha, epsilon))
+io.write(("Predeclared analysis: n=%d per seed, 4 seeds, 3 algorithms, 4 shapes; DKW_family_alpha=%g; binomial_family_alpha=%g, count_family_bound=%d; combined_calibrated_bound=%g; DKW=%.6g; calibration covers only 32 unpaired cells under IID target-law nulls; 16 paired cells and moments/serial/collisions are uncalibrated diagnostics\n"):format(n, alpha, alpha, family, 2*alpha, epsilon))
 for algorithm = 0, 2 do
 	for _, seed in ipairs(seeds) do
 		assert(lib.experiment_samples(seed, algorithm, 0, n, samples) == 0)

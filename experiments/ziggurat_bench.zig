@@ -24,7 +24,8 @@ pub fn main(init: std.process.Init) !void {
 	var buffer: [4096]u8 = undefined;
 	var writer = std.Io.File.stdout().writer(init.io, &buffer);
 	const w = &writer.interface;
-	try w.writeAll("{\"schema\":\"performance-measurement/v1\",\"correct\":true,\"build_mode\":\"ReleaseFast\",\"allocator_coverage\":\"no per-sample allocation; fixed DRBG and formatting buffers\",\"clock\":\"clock_gettime process CPU and CLOCK_MONOTONIC, checked\",\"threads\":1,\"rows\":[");
+	try w.writeAll("{\"schema\":\"performance-measurement/v1\",\"correct\":true,\"build_mode\":\"ReleaseFast\",\"allocator_coverage\":\"no per-sample allocation; fixed DRBG, batch and formatting buffers\",\"clock\":\"clock_gettime process CPU and CLOCK_MONOTONIC, checked\",\"threads\":1,");
+	try w.print("\"batch_accelerated\":{},\"rows\":[", .{algorithm == .auto and workload.isAccelerated()});
 	var first = true;
 	while (sizes.next()) |text| {
 		const n = try std.fmt.parseInt(usize, text, 10);

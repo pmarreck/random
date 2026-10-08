@@ -4,7 +4,8 @@ Completed work: [log](docs/PLAN_LOG.md). Historical directives and deferred risk
 
 ## Correctness and verification
 
-- [ ] Conditionally promote fixed-point Ziggurat across all five implementations after finite-grid/error analysis, optimized-batch/CLI measurements, exact shared oracles and a versioned continuation transition (context: docs/plan_context/ziggurat_experiment.md).
+- [ ] Conditionally promote fixed-point Ziggurat across all five implementations after finite-grid/error analysis, actual CLI measurements, exact shared oracles and a versioned continuation transition (context: docs/plan_context/ziggurat_experiment.md).
+- [x] Compare Ziggurat against production AUTO/SCALAR bounded batches with independent scalar work checks, lane/chunk boundaries and 62 retained timing cases (done 2026-10-08 10:02 EDT; delivered with this change; report: docs/reports/2026-10-08-fixed-point-ziggurat.md).
 - [x] Complete the isolated fixed-point Ziggurat experiment with independent boundary/mutation controls, 96M-output predeclared distribution diagnostics and 54 shared-engine performance cases (done 2026-10-08 09:08 EDT; delivered with this change; report: docs/reports/2026-10-08-fixed-point-ziggurat.md).
 - [ ] Prove production-linked distribution laws and explicit parameter-dependent deviation/failure bounds for uniform, normal, normalized integers, exponential, Poisson, log-normal, beta and geometric; preserve shared CLI acceptance and distinguish ideal-source assumptions from cross-language refinement (context: docs/plan_context/distribution_proofs.md).
 - [ ] Fix tiny-negative scalar cosine wrapping to quadrant four with coordinated language tests; preserve existing sampler streams outside that bug (context: docs/plan_context/legacy_decisions.md).

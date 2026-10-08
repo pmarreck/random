@@ -67,6 +67,7 @@
 		{"case":"ziggurat-normal-format-12","verdict":"UNBASELINED","attempts":1,"source":"25287d5e25d550cfbab97537601779ce184fed1a5006367f72d0fb7854a3ca7a","source_after":"25287d5e25d550cfbab97537601779ce184fed1a5006367f72d0fb7854a3ca7a","correct":true,"rows":[{"checksum":"601e4c53d758880c","samples":{"cpu_ns":[9148961,9190338,9213056,9206196,9189874,9141964,9157175],"wall_ns":[9198758,9259875,9269634,9259524,9246249,9189820,9207405]},"size":16384}]}
 	],
 	"statistics": {
+		"scope_correction": "The retained stdout predates this reporting correction: only 32 unpaired scalar/candidate cells receive the conservative 48-way DKW allocation; their 8208 count checks receive the 100000-way Bernstein allocation under IID target-law nulls. The 16 finite-grid paired cells have no established joint-independence theorem and are nominal diagnostics only. All thresholds, data and sample counts are unchanged.",
 		"reproduced_same_outputs": true,
 		"additional_independent_outputs": 0,
 		"sample_payloads_saved": false,

@@ -35,6 +35,12 @@ for a, algorithm in ipairs(algorithms) do
 					end
 				end
 				assert(lib.experiment_checksum(a-1,o-1,n,seed,formatted) == sum, "benchmark work checksum differs from FFI-array oracle")
+				if algorithm == "box" and operation == "integer" then
+					for b, batch in ipairs({"auto", "scalar"}) do
+						assert(lib.experiment_checksum(b+2,o-1,n,seed,formatted) == sum,
+							batch .. " batch checksum differs from independent scalar work oracle")
+					end
+				end
 				if s > 1 then io.write(',') end
 				io.write('"',n,'":"',tostring(sum):gsub("ULL$", ""),'"')
 			end

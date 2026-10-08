@@ -13,9 +13,9 @@ modules=(--dep fixed --dep fixed_simd -Mrandomz=src/randomz.zig
 	-O ReleaseFast -mcpu="$vector_cpu" --dep fixed -Mfixed_vector=src/fixed_simd.zig
 	-O ReleaseFast --dep fixed -Mcandidate=experiments/ziggurat.zig
 	-O ReleaseFast -Mfixed=src/fixed.zig)
-zig build-lib -dynamic -lc -O ReleaseFast --dep fixed --dep randomz --dep candidate \
+zig build-lib -dynamic -lc -O ReleaseFast --dep fixed --dep randomz --dep candidate --dep fixed_simd \
 	-Mroot=experiments/ziggurat_ffi.zig -O ReleaseFast "${modules[@]}" \
 	-femit-bin="$out/libziggurat.so" || exit 1
-zig build-exe -lc -O ReleaseFast --dep fixed --dep randomz --dep candidate \
+zig build-exe -lc -O ReleaseFast --dep fixed --dep randomz --dep candidate --dep fixed_simd \
 	-Mroot=experiments/ziggurat_bench.zig -O ReleaseFast "${modules[@]}" \
 	-femit-bin="$out/ziggurat-bench" || exit 1

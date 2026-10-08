@@ -34,6 +34,6 @@ pub export fn experiment_samples(seed: u64, algorithm: u8, op: u8, n: usize, out
 	return 0;
 }
 pub export fn experiment_checksum(algorithm: u8, op: u8, n: usize, seed: u64, format: bool) u64 {
-	if (algorithm > 2 or op > 3) return 0;
+	if (algorithm > 4 or op > 3) return 0;
 	return workload.checksum(@enumFromInt(algorithm), @enumFromInt(op), n, seed, format) catch 0;
 }

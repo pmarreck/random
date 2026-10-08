@@ -4,7 +4,9 @@ const std = @import("std");
 const fx = @import("fixed");
 const core = @import("randomz");
 const candidate = @import("candidate");
-pub const Algorithm = enum { box, paired, ziggurat };
+const dispatcher = @import("fixed_simd");
+pub const isAccelerated = dispatcher.isAccelerated;
+pub const Algorithm = enum { box, paired, ziggurat, auto, scalar };
 pub const Operation = enum { normal, integer, lognormal, beta };
 const one = fx.fromInt(1);
 const half = fx.parse("0.5").?;
@@ -75,6 +77,7 @@ pub const Workload = struct {
 		}
 	}
 	pub fn sample(self: *@This(), algorithm: Algorithm, op: Operation) !fx.Fixed {
+		if (algorithm == .auto or algorithm == .scalar) return error.BatchIntegerOnly;
 		if (algorithm == .box) {
 			var out: core.Fixed = undefined;
 			const status = switch (op) {
@@ -110,18 +113,35 @@ pub const Workload = struct {
 	}
 };
 
+fn fold(sum: *u64, x: fx.Fixed, format: bool) !void {
+	if (format) {
+		var buffer: [512]u8 = undefined;
+		const text = try fx.toString(x, 19, &buffer);
+		for (text) |byte| sum.* = std.math.rotl(u64, sum.*, 7) +% byte;
+	} else {
+		sum.* = std.math.rotl(u64, sum.*, 7) +% @as(u64, @bitCast(x.m)) +% @as(u64, @bitCast(@as(i64, x.e)));
+	}
+}
+
 pub fn checksum(algorithm: Algorithm, op: Operation, count: usize, seed: u64, format: bool) !u64 {
+	if ((algorithm == .auto or algorithm == .scalar) and op != .integer) return error.BatchIntegerOnly;
 	var workload = try Workload.init(seed);
 	var sum: u64 = 0;
-	for (0..count) |_| {
-		const x = try workload.sample(algorithm, op);
-		if (format) {
-			var buffer: [512]u8 = undefined;
-			const text = try fx.toString(x, 19, &buffer);
-			for (text) |byte| sum = std.math.rotl(u64, sum, 7) +% byte;
-		} else {
-			sum = std.math.rotl(u64, sum, 7) +% @as(u64, @bitCast(x.m)) +% @as(u64, @bitCast(@as(i64, x.e)));
+	if (algorithm == .auto or algorithm == .scalar) {
+		// The actual production batch ABI, with caller-owned bounded storage.
+		// AUTO selects the portable dispatcher; SCALAR forces its scalar path.
+		var values: [1024]i64 = undefined;
+		var remaining = count;
+		while (remaining != 0) {
+			const n = @min(remaining, values.len);
+			var written: usize = 0;
+			if (core.randomz_normal_int_batch(Workload.fill, &workload, 0, 255, &values, n, &written,
+				if (algorithm == .auto) 0 else 1) != 0 or written != n) return error.ProductionBatch;
+			for (values[0..n]) |value| try fold(&sum, fx.fromInt(value), format);
+			remaining -= n;
 		}
+	} else {
+		for (0..count) |_| try fold(&sum, try workload.sample(algorithm, op), format);
 	}
 	return sum;
 }

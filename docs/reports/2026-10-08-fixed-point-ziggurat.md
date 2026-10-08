@@ -6,9 +6,10 @@ continuation states and public library APIs are unchanged.
 ## Decision
 
 The isolated Zig candidate is substantially faster than scalar production
-Box–Muller and a paired-output Box–Muller control on the measured machine.
-Its 96-million-output campaign detected no distribution regression at the
-predeclared sensitivity. This supports pursuing a coordinated replacement;
+Box–Muller, the paired-output control and the production AUTO batch path on
+the measured normalized-integer workload.
+Its 96-million-output campaign passed the predeclared distribution diagnostics.
+This supports pursuing a coordinated replacement;
 it does not establish superior accuracy, full CLI throughput, or a completed
 five-language migration. Do not promote this prototype by changing one
 implementation's stream alone.
@@ -35,9 +36,13 @@ log-normal transformation, the conditioned rounded-normal integer CDF, and
 `1 − (1 − x)^3` for Beta(1,3). The diagnostic libm normal CDF was independently
 checked against MPFR at 161 inputs, within 2e−15.
 
-The predeclared simultaneous DKW envelope was **0.00214359** for 48 checks
-with a family budget of 1e−6. Maximum observed absolute CDF discrepancies over
-the four seeds were:
+The frozen DKW threshold was **0.00214359**, computed using a 48-case allocation
+and a family budget of 1e−6. This is conservative for the 32 unpaired scalar
+and candidate cells. Joint independence of finite-grid paired outputs has not
+been established, especially across downstream rejection boundaries, so their
+16 pooled cells retain the same threshold only as diagnostics. This corrects
+the initial all-48-cells IID interpretation; no thresholds or data changed.
+Maximum observed absolute CDF discrepancies over the four seeds were:
 
 | Shape | Production Box–Muller | Paired control | Ziggurat |
 |---|---:|---:|---:|
@@ -49,10 +54,12 @@ the four seeds were:
 Normal checks also covered sign balance, both sides of all 255 strip seams,
 two-sided tails at 1–5 standard deviations, mean, second/fourth moments,
 lag-1/lag-2 covariance, and occupancy collisions in 32-bit CDF cells. All passed.
-The seam/tail/count family has a separate Bernstein/binomial budget of 1e−6
-over at most 100,000 checks. The combined calibrated-family budget is at most
-2e−6; extra moment, serial and collision diagnostics do not share a claimed
-global significance level. The occupancy check is not Doornik's
+The unpaired seam/tail/count family has a separate Bernstein/binomial budget
+of 1e−6 over at most 100,000 checks (8,208 actually used). Under the IID
+target-law nulls, the combined calibrated-family false-alarm budget is at most
+2e−6. IID source words alone do not establish correct target probabilities.
+Paired, moment, serial and collision diagnostics share no claimed global
+significance level. The occupancy check is not Doornik's
 30-dimensional TestU01 collision test.
 
 For standardized `z = (sample + 0.25) / 1.75`, the candidate's 8,000,000 normal
@@ -101,7 +108,9 @@ threshold neighbors (including 2^53 neighbors), wedge restart, tail-local
 retry, source errors and exact consumed-word counts. Independent MPFR scripted
 acceptance decisions passed 6,700 cases. Another 1,022 near-boundary cases were
 explicitly excluded at separation margins 1e−15 for wedges and 1e−14 for tails;
-those exclusions remain an unresolved numerical-analysis limit, not passes.
+the directed-certificate follow-up below later resolved those point fixtures,
+including eight deviations. Their exclusion was never counted as a pass.
+The whole-domain disagreement-mass bound remains separate and unresolved.
 
 Required mutation controls reject wrong coordinate bits, reversed fast/tail
 comparisons, and corrupted threshold/geometry/PDF checker inputs. A wrong work
@@ -148,9 +157,10 @@ fingerprints are retained
 in [measurement receipts](2026-10-08-ziggurat-measurements.json); private machine
 and filesystem provenance remains only in external local history.
 
-Formatting cases perform decimal conversion and checksum consumption, not CLI
+These first-run formatting cases perform decimal conversion and checksum consumption, not CLI
 startup, parsing or writes to a sink. The baseline is scalar, not the optimized
-bounded-batch path. The paired control changes stream/caching semantics and
+bounded-batch path; the second-run comparison below addresses that limitation.
+The paired control changes stream/caching semantics and
 uses its finer normal grid for normalized integers. These limitations must be
 addressed before claiming production end-to-end superiority. The candidate
 adds approximately 10 KiB of constant strip data. Its fast path requests eight
@@ -179,7 +189,7 @@ production runtime dependencies.
 
 Before promotion: establish an explicit finite-grid/transcendental-error
 budget in a useful CDF or transport metric; resolve the excluded decision
-boundaries; compare optimized batched and actual CLI sinks; port exact words,
+disagreement mass; compare actual CLI sinks; port exact words,
 rounding and rejection consumption to LuaJIT, Rust, Lean and Roc; retain the
 unchanged common Bash oracle across all five; and version/reject incompatible
 continuation states. Current state schema version is 2; informational `rv`
@@ -189,6 +199,82 @@ remains to be demonstrated. Total variation against a continuous law would be
 
 The profiling command returns exit 3 for a new, unbaselined cohort; that is not
 a historical performance pass or a failed computation check.
+
+## Follow-up: production bounded batches
+
+A second source-frozen run measured all 54 original cases again and added
+eight production bounded-batch cases. AUTO and forced SCALAR call the actual
+`randomz_normal_int_batch` ABI with caller-owned storage capped at 1,024 values.
+Their outputs must match independently consumed scalar FFI output arrays;
+the benchmark cannot supply its own expected checksum. Counts 0, 1, 3, 4, 7,
+1,023, 1,024, 1,025 and 2,051 exercise lane/chunk boundaries in required tests.
+Wrong checksums fail for both modes. The recorded AUTO capability flag was
+true in all four AUTO timing cases, using the production AVX2 dispatcher.
+
+Median process CPU nanoseconds per normalized integer, seed 42, 16,384 outputs:
+
+| Allowed CPUs | Work | Forced SCALAR batch | AUTO batch | Ziggurat | AUTO / Ziggurat |
+|---|---|---:|---:|---:|---:|
+| 1 | Sampler + checksum | 671.8 | 515.9 | 158.0 | 3.27× |
+| 1 | + decimal formatting | 728.3 | 572.5 | 250.6 | 2.28× |
+| 12 | Sampler + checksum | 670.9 | 518.2 | 157.5 | 3.29× |
+| 12 | + decimal formatting | 728.6 | 580.7 | 218.6 | 2.66× |
+
+Every candidate observation was faster than every matching AUTO observation.
+No project builds ran concurrently with timing, but other machine workloads
+were active. Grouped execution and frequency drift limit the precision of
+these ratios. One scalar normal growth case exceeded the variability policy
+on its first attempt; the shared engine's single permitted retry completed.
+The [second-run receipts](2026-10-08-ziggurat-batch-measurements.json) retain that
+noisy attempt as well as all 62 final observations and runtime capability flags.
+All final verdicts are UNBASELINED, with no automatic baseline approval.
+
+These are library calls plus digest consumption, optionally using the same
+19-place fixed formatter for all algorithms. They still do not measure CLI
+startup, argument parsing, the CLI's 18-place default, integer-specific output
+formatting or sink writes. The batch follow-up resolves the scalar-only
+baseline limitation for the 0..255 workload, not the remaining CLI or
+cross-platform performance limits. It adds no independent statistical draws
+to the original 96M-output campaign.
+
+## Follow-up: finite directed certificates
+
+The required test now runs an independent MPFR-512 directed-interval
+[certificate checker](../../experiments/ziggurat_certificate.lua). Unlike the
+sampled kernel-error sweep, it encloses each of the 256 stored thresholds and
+finite geometric quantities. It checks positive decreasing widths, increasing
+heights below the true PDF, strip-area weight discrepancy below 2^−53,
+missing-cover mass below 2^−60, and the base rectangle/tail mixture discrepancy
+below 2^−54. It also checks exact integer inequalities for the analytic
+atanh/Taylor remainder terms. These last checks do not certify rounding
+propagation through the compiled kernels. Deliberately corrupted threshold and
+height checker inputs fail.
+
+Directed intervals resolve all 1,022 previously excluded point fixtures.
+Eight signed wedge cases differ from ideal-real decisions: strips 73, 206,
+213 and 223, both signs, magnitude `j=k_i` and height coordinate `2^55−1`.
+Their exact ideal gaps are positive, approximately 1.92e−19 through 1.09e−18;
+the compiled sampler rejects and consumes the next header. The checker prints
+exact word fixtures and hexadecimal interval endpoints. The two tail-equality
+fixtures accept as specified. Resolving these points is not a bound on the
+mass of every possible finite-precision disagreement, and these eight
+deviations must not be described as exact real-arithmetic agreement.
+
+The checker also verifies the production normal ABI returns canonical zero
+for `U2=1/4` and `3/4`, with `U1=1/2`, mean zero, standard deviation one and
+exact source requests of 4,4 bytes. The cosine reduction is exactly zero at
+those two angles regardless of the radius. Under ideal IID U32 input, this
+gives the baseline a zero atom of at least 2^−31 and therefore Kolmogorov
+distance at least 2^−32 from a continuous normal law. This conclusion combines
+the executed witnesses with the source formula; samples alone cannot establish
+the atom's probability. It does not apply directly to the rounded integer law.
+
+A proposed whole-domain CDF bound still depends on source-linked primitive
+rounding, reachable-range and rejection-coupling lemmas. Review corrected one
+strict endpoint premise: the logarithm's reduced denominator error can equal
+2^−62, rather than always being strictly smaller. No universal candidate CDF
+bound or accuracy-superiority certificate is claimed here. The finite checker
+explicitly reports that distinction, and the promotion item stays open.
 
 References: [Marsaglia–Tsang algorithm](https://www.jstatsoft.org/article/view/v005i08),
 [Doornik's independence and collision analysis](https://www.doornik.com/research/ziggurat.pdf),

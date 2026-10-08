@@ -30,17 +30,38 @@ for mutation in bits rectangle tail; do
 	fi
 done
 bash experiments/ziggurat-build "$artifacts" || exit 1
-luajit experiments/ziggurat_expected.lua "$artifacts/libziggurat.so" 42 7 >/dev/null || exit 1
-work_control="$("$artifacts/ziggurat-bench" box-normal-core-1 7 42 0 2>&1)"
-if [ "$?" -eq 0 ] || [[ "$work_control" != *IncorrectWarmup* ]]; then
-	printf 'Benchmark oracle control failed unexpectedly:\n%s\n' "$work_control" >&2; exit 1
-fi
+for count in 0 1 3 4 7 1023 1024 1025 2051; do
+	luajit experiments/ziggurat_expected.lua "$artifacts/libziggurat.so" 42 "$count" >/dev/null || exit 1
+done
+for name in box-normal auto-integer scalar-integer; do
+	work_control="$("$artifacts/ziggurat-bench" "$name-core-1" 7 42 0 2>&1)"
+	if [ "$?" -eq 0 ] || [[ "$work_control" != *IncorrectWarmup* ]]; then
+		printf 'Benchmark %s oracle control failed unexpectedly:\n%s\n' "$name" "$work_control" >&2; exit 1
+	fi
+done
+expected="$(luajit experiments/ziggurat_expected.lua "$artifacts/libziggurat.so" 42 7)" || exit 1
+checksum="$(jq -er '."box-integer-core"."7"' <<< "$expected")" || exit 1
+for mode in auto scalar; do
+	"$artifacts/ziggurat-bench" "$mode-integer-core-1" 7 42 "$checksum" |
+		jq -e --arg mode "$mode" '(.batch_accelerated|type)=="boolean" and
+			($mode!="scalar" or .batch_accelerated==false) and .correct==true' >/dev/null || exit 1
+done
 oracle="$(luajit experiments/ziggurat_oracle.lua "$artifacts/libziggurat.so" 100000 2>&1)" || {
 	printf '%s\n' "$oracle" >&2; exit 1;
 }
 decisions="$(luajit experiments/ziggurat_decision_oracle.lua "$artifacts/libziggurat.so" 2>&1)" || {
 	printf '%s\n' "$decisions" >&2; exit 1;
 }
+certificate="$(luajit experiments/ziggurat_certificate.lua "$artifacts/libziggurat.so" 2>&1)" || {
+	printf '%s\n' "$certificate" >&2; exit 1;
+}
+for mutation in threshold height; do
+	result="$(luajit experiments/ziggurat_certificate.lua "$artifacts/libziggurat.so" "$mutation" 2>&1)"
+	status=$?
+	if [ "$status" -eq 0 ] || [[ "$result" != *'threshold floor lower'* && "$result" != *'stored height above certified PDF'* ]]; then
+		printf 'Finite certificate %s control failed unexpectedly (exit %s):\n%s\n' "$mutation" "$status" "$result" >&2; exit 1
+	fi
+done
 for mutation in threshold geometry pdf; do
 	result="$(luajit experiments/ziggurat_oracle.lua "$artifacts/libziggurat.so" 100000 "$mutation" 2>&1)"
 	status=$?
@@ -53,4 +74,5 @@ stored="$(<experiments/ziggurat_tables.zig)"
 if [ "$generated" != "$stored" ]; then echo 'Ziggurat table regeneration differs at 512 bits' >&2; exit 1; fi
 printf '%s\n' "$oracle"
 printf '%s\n' "$decisions"
-printf 'Ziggurat experiment: directed paths, six rejection controls, independent MPFR geometry, table regeneration PASS\n'
+printf '%s\n' "$certificate"
+printf 'Ziggurat experiment: directed paths, corruption/rejection controls, finite MPFR certificates, table regeneration PASS\n'
