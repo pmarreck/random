@@ -14,17 +14,25 @@ else
 fi
 
 cd "$lean_dir"
-lake build Randoml Randoml.Cli
+modules=(Native Blake3 Fixed Drbg ZigguratTables Ziggurat Distribution Geometric
+	Decimal Curve GeneratedCharts Chart CliOptions CliSource State Shuffle Cli)
+facets=()
+objects=()
+for module in "${modules[@]}"; do
+	facets+=("Randoml.$module:c.o.export")
+	objects+=("$ir/$module.c.o.export")
+done
+# Lake owns native object freshness, compiler flags and dependency traces.
+# Recompiling every generated C file on every test invocation exhausted the
+# state suite's budget before its complete five-language matrix could finish.
+lake build Randoml Randoml.Cli "${facets[@]}"
 mkdir -p "$(dirname "$output")"
 
 # leanc supplies both compiler and runtime linker flags. Compile and link in
 # one invocation so linker inputs are consumed, not passed to compile-only jobs.
 lake env leanc -O3 -I"$root/src" -o "$output" \
 	"$lean_dir/randoml_launcher.c" "$lean_dir/randoml_native.c" \
-	"$ir/Native.c" "$ir/Blake3.c" "$ir/Fixed.c" "$ir/Drbg.c" \
-	"$ir/Distribution.c" "$ir/Geometric.c" "$ir/Decimal.c" "$ir/Curve.c" "$ir/GeneratedCharts.c" \
-	"$ir/Chart.c" "$ir/CliOptions.c" "$ir/CliSource.c" "$ir/State.c" \
-	"$ir/Shuffle.c" "$ir/Cli.c"
+	"${objects[@]}"
 
 # This script is the production/release linker, not Lean's development build.
 # Strip here so direct builds have the same release policy as packaged builds.

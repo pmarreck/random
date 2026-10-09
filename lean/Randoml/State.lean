@@ -293,7 +293,7 @@ def apply (initial : Options) (input : ByteArray) : Except String Options := do
   allowedKeys root #["sv", "rv", "seed", "next_pos", "args", "notices", "warnings"]
     "unknown state key: "
   match objectValue? root "sv" with
-  | some (.number "2") => pure ()
+  | some (.number "3") => pure ()
   | some (.number _) | none => throw "unsupported state schema version"
   | some _ => throw "state sv must be a number"
   let _ ← requiredString root "rv"

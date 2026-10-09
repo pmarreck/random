@@ -64,6 +64,24 @@ pub fn lnCos4Scalar(xs: Batch, ys: Batch) Error!Results {
     try validate(xs, ys);
     return scalarUnchecked(xs, ys);
 }
+
+/// Scale four completed Ziggurat candidates, preserving scalar truncation and
+/// addition order. Validation bounds all exponent arithmetic; no RNG is read.
+pub fn scaleNormals4(xs: Batch, sixth: fx.Fixed, half: fx.Fixed, start: fx.Fixed) Error!Batch {
+    for (xs) |x| if (!arithmeticLane(x)) return error.UnsupportedDomain;
+    for ([_]fx.Fixed{ sixth, half, start }) |x| if (!arithmeticLane(x)) return error.UnsupportedDomain;
+    if (isAccelerated()) return vector.scaleNormals4(xs, sixth, half, start);
+    var out: Batch = undefined;
+    for (xs, 0..) |x, lane| out[lane] = fx.add(fx.add(fx.mul(x, sixth), half), start);
+    return out;
+}
+
+fn arithmeticLane(x: fx.Fixed) bool {
+    if (x.m == 0) return x.e == 0;
+    if (x.m == std.math.minInt(i64)) return false;
+    const mag: u64 = @intCast(if (x.m < 0) -x.m else x.m);
+    return mag >= fx.TWO62 and x.e >= -128 and x.e <= 128;
+}
 fn scalarUnchecked(xs: Batch, ys: Batch) Results {
     var result: Results = undefined;
     for (xs, ys, 0..) |x, y, lane| {
@@ -98,6 +116,37 @@ test "malformed and out-of-domain lanes fail before arithmetic" {
         }
     }
     try std.testing.expectError(error.UnsupportedDomain, lnCos4(@splat(fx.fromInt(0)), valid));
+}
+
+test "Ziggurat scaling matches scalar including zero cancellation and signs" {
+    const xs: Batch = .{ fx.Fixed.zero, fx.parse("-3.6541528853610088").?, fx.parse("0.25").?, fx.fromInt(14) };
+    const sixth = fx.parse("42.5").?;
+    const half = fx.parse("127.5").?;
+    for ([_]i64{ 0, -9007199254740992, 9007199254740992 }) |first| {
+        const start = fx.fromInt(first);
+        const actual = try scaleNormals4(xs, sixth, half, start);
+        for (xs, 0..) |x, lane|
+            try std.testing.expectEqualDeep(fx.add(fx.add(fx.mul(x, sixth), half), start), actual[lane]);
+    }
+}
+
+test "Ziggurat affine entry rejects malformed and extreme exponent lanes" {
+    const good: Batch = @splat(fx.fromInt(1));
+    const invalid = [_]fx.Fixed{
+        .{ .m = 1, .e = 0 },                               .{ .m = 0, .e = 1 },
+        .{ .m = std.math.minInt(i64), .e = 0 },            .{ .m = @intCast(fx.TWO62), .e = -129 },
+        .{ .m = -@as(i64, @intCast(fx.TWO62)), .e = 129 },
+    };
+    for (invalid) |bad| {
+        for (0..4) |lane| {
+            var xs = good;
+            xs[lane] = bad;
+            try std.testing.expectError(error.UnsupportedDomain, scaleNormals4(xs, good[0], good[0], good[0]));
+        }
+        try std.testing.expectError(error.UnsupportedDomain, scaleNormals4(good, bad, good[0], good[0]));
+        try std.testing.expectError(error.UnsupportedDomain, scaleNormals4(good, good[0], bad, good[0]));
+        try std.testing.expectError(error.UnsupportedDomain, scaleNormals4(good, good[0], good[0], bad));
+    }
 }
 
 test "ten thousand mixed sampler batches equal scalar pairs" {

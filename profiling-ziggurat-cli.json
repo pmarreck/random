@@ -1,0 +1,780 @@
+{
+	"schema": "performance-project/v1",
+	"project": "random_ziggurat_cli",
+	"history_url": "file:///var/lib/performance-profiling",
+	"identity": {
+		"runtime": "Zig-0.16.0-and-Rust-1.97.1",
+		"build_mode": "Release",
+		"concurrency": 1
+	},
+	"cases": [
+		{
+			"cores": 1,
+			"name": "before-zig-normal-1",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "before-zig-integer-1",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "before-zig-lognormal-1",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "before-zig-beta-1",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "before-rust-normal-1",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "before-rust-integer-1",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "before-rust-lognormal-1",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "before-rust-beta-1",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "after-zig-normal-1",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "after-zig-integer-1",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "after-zig-lognormal-1",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "after-zig-beta-1",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "after-rust-normal-1",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "after-rust-integer-1",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "after-rust-lognormal-1",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "after-rust-beta-1",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "before-zig-normal-12",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "before-zig-integer-12",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "before-zig-lognormal-12",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "before-zig-beta-12",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "before-rust-normal-12",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "before-rust-integer-12",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "before-rust-lognormal-12",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "before-rust-beta-12",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "after-zig-normal-12",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "after-zig-integer-12",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "after-zig-lognormal-12",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "after-zig-beta-12",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "after-rust-normal-12",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "after-rust-integer-12",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "after-rust-lognormal-12",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "after-rust-beta-12",
+			"definition": "actual-cli-v7-sv3-endpoint-guard-32768-checked-stream",
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"experiments/ziggurat-cli-probe",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				32768
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		}
+	]
+}

@@ -176,7 +176,7 @@ static const char json_type_error_marker;
 
 static void print_error(const char *message)
 {
-	fputs("{\"sv\":2,\"rv\":\"" RANDOMZ_VERSION
+	fputs("{\"sv\":3,\"rv\":\"" RANDOMZ_VERSION
 		"\",\"error\":{\"code\":\"usage\",\"message\":", stderr);
 	state_json_write_string(stderr, message);
 	fputs("},\"notices\":[],\"warnings\":[]}\n", stderr);
@@ -465,7 +465,7 @@ static void print_help(distribution dist, chart_renderer renderer)
 	puts("");
 	puts("Distributions (mutually exclusive):");
 	puts("  (default)           Uniform distribution");
-	puts("  -n, --normalized    Normal (Gaussian) via Box-Muller");
+	puts("  -n, --normalized    Normal (Gaussian) via Ziggurat");
 	puts("      --exponential   Exponential distribution (use --rate)");
 	puts("      --poisson       Poisson distribution (use --lambda or --mean)");
 	puts("      --geometric     Failures before success; default probability 0.5");
@@ -758,7 +758,7 @@ static int apply_state(options *opts, const char *range_literal)
 		}
 	}
 	const state_json_value *sv = state_json_get(root, "sv");
-	if (sv == NULL || sv->kind != STATE_JSON_NUMBER || strcmp(sv->text, "2") != 0) {
+	if (sv == NULL || sv->kind != STATE_JSON_NUMBER || strcmp(sv->text, "3") != 0) {
 		print_error("unsupported state schema version"); return 1;
 	}
 	const char *rv = json_string(root, "rv", true, error, sizeof(error));
@@ -2237,7 +2237,7 @@ static int write_metadata(const options *opts, const randomz_drbg *drbg,
 	FILE *stream = opts->state_stdout ? stdout : stderr;
 	static const char hex[] = "0123456789abcdef";
 	if (drbg != NULL) {
-		fputs("{\"sv\":2,\"rv\":\"" RANDOMZ_VERSION "\",\"seed\":\"0x", stream);
+		fputs("{\"sv\":3,\"rv\":\"" RANDOMZ_VERSION "\",\"seed\":\"0x", stream);
 		for (size_t i = 0; i < 32; ++i) {
 			fputc(hex[opts->seed[i] >> 4], stream);
 			fputc(hex[opts->seed[i] & 15], stream);
@@ -2295,7 +2295,7 @@ static int write_metadata(const options *opts, const randomz_drbg *drbg,
 		}
 		fputc('}', stream);
 	} else {
-		fputs("{\"sv\":2,\"rv\":\"" RANDOMZ_VERSION "\"", stream);
+		fputs("{\"sv\":3,\"rv\":\"" RANDOMZ_VERSION "\"", stream);
 	}
 	fputs(",\"notices\":[", stream);
 	if (default_range_notice) state_json_write_string(stream, "with the default range 0..99");

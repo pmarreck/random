@@ -23,7 +23,7 @@ local state_json = require("state_json")
 
 local argv = arg or {}
 -- Keep in sync with the package manifests; Lua has no build-time injection.
-local VERSION = "0.3.0"
+local VERSION = "0.4.0"
 local DEFAULT_FRACTION_DIGITS = 18
 local MAX_FRACTION_DIGITS = 18
 -- Complete Base64 groups per chunk; memory is independent of --count.
@@ -40,7 +40,7 @@ local function json_string_array(values)
 end
 
 local function emit_error_json(message, code)
-	io.stderr:write('{"sv":2,"rv":', state_json.quote(VERSION),
+	io.stderr:write('{"sv":3,"rv":', state_json.quote(VERSION),
 		',"error":{"code":', state_json.quote(code or "runtime"),
 		',"message":', state_json.quote(message), '},"notices":',
 		json_string_array(notices), ',"warnings":', json_string_array(warnings), '}\n')
@@ -695,7 +695,7 @@ local function print_help(invocation, distribution)
 	print("")
 	print("Distributions (mutually exclusive):")
 	print("  (default)           Uniform distribution")
-	print("  -n, --normalized    Normal (Gaussian) via Box-Muller")
+	print("  -n, --normalized    Normal (Gaussian) via Ziggurat")
 	print("      --exponential   Exponential distribution (use --rate)")
 	print("      --poisson       Poisson distribution (use --lambda or --mean)")
 	print("      --geometric     Failures before success; default probability 0.5")
@@ -832,7 +832,7 @@ local function apply_state(options, positionals)
 	for key in pairs(decoded) do
 		if not top_allowed[key] then return nil, "unknown state key: " .. tostring(key) end
 	end
-	if decoded.sv ~= 2 then return nil, "unsupported state schema version" end
+	if decoded.sv ~= 3 then return nil, "unsupported state schema version" end
 	if type(decoded.rv) ~= "string" then return nil, "state rv must be a string" end
 	if type(decoded.seed) ~= "string" or
 		not decoded.seed:match("^0x[0-9a-fA-F]+$") or #decoded.seed ~= 66 then
@@ -1643,13 +1643,13 @@ local function emit_success_metadata(options, seed_material, start_val, end_val,
 	end
 	local output
 	if seed_material ~= nil then
-		output = '{"sv":2,"rv":' .. state_json.quote(VERSION) ..
+		output = '{"sv":3,"rv":' .. state_json.quote(VERSION) ..
 			',"seed":"0x' .. bytes_to_hex(seed_material) .. '","next_pos":' ..
 			state_json.quote(exact_integer_text(drbg_rng:position())) .. ',"args":' ..
 			canonical_args_json(options, start_val, end_val, count) .. ',"notices":' ..
 			json_string_array(notices) .. ',"warnings":' .. json_string_array(warnings) .. '}\n'
 	elseif #notices > 0 or #warnings > 0 then
-		output = '{"sv":2,"rv":' .. state_json.quote(VERSION) .. ',"notices":' ..
+		output = '{"sv":3,"rv":' .. state_json.quote(VERSION) .. ',"notices":' ..
 			json_string_array(notices) .. ',"warnings":' .. json_string_array(warnings) .. '}\n'
 	end
 	if output ~= nil then
@@ -1677,7 +1677,7 @@ local function main()
 
 	-- Setup RNG first (needed for all operations). Entropy readers are kept
 	-- open for the invocation and always fail closed on short reads/errors.
-	local rand_func, uniform_func, entropy_reader, seed_material
+	local rand_func, uniform_func, next_word, entropy_reader, seed_material
 
 	if options.deterministic then
 		local env_seed_raw = os.getenv("DRANDOM_SEED")
@@ -1702,12 +1702,14 @@ local function main()
 		drbg_seed(seed_material, options.state_position)
 		rand_func = drbg_range
 		uniform_func = drbg_uniform
+		next_word = function() return drbg_rng:u64() end
 	else
 		entropy_reader = make_entropy_reader(options.random_source, options.no_wait)
 		rand_func = function(start_val, end_val)
 			return true_random_range(start_val, end_val, entropy_reader)
 		end
 		uniform_func = function() return true_random_uniform(entropy_reader) end
+		next_word = function() return bytes_to_u64(entropy_reader(8)) end
 	end
 
 	-- Handle stdin operations
@@ -1932,13 +1934,13 @@ local function main()
 			if options.mean then mum, mue = options.mean[1], options.mean[2] end
 			local sdm, sde = ONE_M, ONE_E
 			if options.stddev then sdm, sde = options.stddev[1], options.stddev[2] end
-			value = { lognormal_random(mum, mue, sdm, sde, uniform_func) }
+			value = { lognormal_random(mum, mue, sdm, sde, next_word) }
 		elseif options.beta then
 			local am, ae = TWO_M, TWO_E
 			if options.alpha then am, ae = options.alpha[1], options.alpha[2] end
 			local bm, be = TWO_M, TWO_E
 			if options.beta_param then bm, be = options.beta_param[1], options.beta_param[2] end
-			value = { beta_random(am, ae, bm, be, uniform_func) }
+			value = { beta_random(am, ae, bm, be, uniform_func, next_word) }
 		elseif options.normalized then
 			if options.mean or options.stddev then
 				-- Use custom mean/stddev, output as an int rounded to
@@ -1949,10 +1951,10 @@ local function main()
 				if options.mean then mum, mue = options.mean[1], options.mean[2] end
 				local sdm, sde = ONE_M, ONE_E
 				if options.stddev then sdm, sde = options.stddev[1], options.stddev[2] end
-				local vm, ve = normal_random_float(mum, mue, sdm, sde, uniform_func)
+				local vm, ve = normal_random_float(mum, mue, sdm, sde, next_word)
 				value = round_to_int(vm, ve)
 			else
-				value = normal_random_int(start_val, end_val, rand_func)
+				value = normal_random_int(start_val, end_val, next_word)
 			end
 		else
 			value = rand_func(start_val, end_val)

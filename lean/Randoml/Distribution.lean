@@ -1,5 +1,6 @@
 import Randoml.Drbg
 import Randoml.Fixed
+import Randoml.Ziggurat
 
 namespace Randoml
 
@@ -115,37 +116,31 @@ def nonzeroUniform (state : Drbg) : Option (Canonical × Drbg) := do
     pure (value, next)
 
 def normal (state : Drbg) (parameters : NormalParameters) : Option (Canonical × Drbg) := do
-  let (u1, state) ← nonzeroUniform state
-  let (u2, state) ← uniform state
-  let logarithm ← ln? u1.value
-  let radius ← sqrt? (mul (fromInt (-2)) logarithm)
-  let z := mul radius (cosTurns u2.value)
+  let (z, state) ← Ziggurat.sample state
   let value := add parameters.mean.value (mul z parameters.stddev.value)
   let canonical ← Canonical.ofValue? value
   pure (canonical, state)
 
+/-- Reject a canonical candidate before the generic integer converter clamps it.
+At e=53, the exact half-away tie |x|=2^53+1/2 has |m|=2^62+256. -/
+def normalIntCandidate? (value : Value) : Option Int :=
+  if value.e > 53 ∨ (value.e = 53 ∧ value.m.natAbs ≥ two62 + 256) then none
+  else some (roundToInt value)
+
 private def normalIntLoop : Nat → Drbg → Int → Int → Value → Value → Option (Int × Drbg)
   | 0, _, _, _, _, _ => none
   | fuel + 1, state, start, stop, sixth, half => do
-      let (first, state) ← state.range 1 1000000
-      let (second, state) ← state.range 1 1000000
-      let million := fromInt 1000000
-      let u1 := div (fromInt first) million
-      let u2 := div (fromInt second) million
-      let logarithm ← ln? u1
-      let radius ← sqrt? (mul (fromInt (-2)) logarithm)
-      let z := mul radius (cosTurns u2)
+      let (z, state) ← Ziggurat.sample state
       let value := add (add (mul z sixth) half) (fromInt start)
-      let rounded := roundToInt value
-      if start ≤ rounded ∧ rounded ≤ stop then
-        pure (rounded, state)
-      else
-        normalIntLoop fuel state start stop sixth half
+      match normalIntCandidate? value with
+      | some rounded =>
+          if start ≤ rounded ∧ rounded ≤ stop then pure (rounded, state)
+          else normalIntLoop fuel state start stop sixth half
+      | none => normalIntLoop fuel state start stop sixth half
 
 def normalInt (state : Drbg) (start stop : Int) : Option (Int × Drbg) := do
-  if stop < start then none else pure ()
+  if stop < start ∨ start < -clamp ∨ stop > clamp then none else pure ()
   let width := stop - start
-  if width > clamp ∨ width < -clamp then none else pure ()
   let sixth := div (fromInt width) (fromInt 6)
   let half := div (fromInt width) (fromInt 2)
   normalIntLoop ((maxExactPosition - state.position) / 8 + 1)

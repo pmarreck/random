@@ -6,6 +6,7 @@
 const std = @import("std");
 const fixed = @import("fixed");
 const fixed_simd = @import("fixed_simd");
+const ziggurat = @import("ziggurat.zig");
 pub const geometric = @import("geometric.zig");
 
 const Blake3 = std.crypto.hash.Blake3;
@@ -125,6 +126,11 @@ const Source = struct {
         for (bytes_out) |byte| value = (value << 8) | byte;
         return value;
     }
+
+    /// Ziggurat consumes whole BE words without an ambient RNG or spare cache.
+    pub fn next(self: Source) RngError!u64 {
+        return self.u64be();
+    }
 };
 
 fn drbgFill(state: *Drbg, out: []u8) RngError!void {
@@ -207,6 +213,28 @@ fn roundToInt(value: fixed.Fixed) i64 {
     return fixed.toIntTrunc(shifted);
 }
 
+// Reject BEFORE generic conversion can saturate to a supported endpoint.
+// For canonical m*2^(e-62), |x| >= 2^53+1/2 iff e>53 or
+// e==53 and |m| >= 2^62+256. Half ties round away from zero.
+fn normalIntCandidate(value: fixed.Fixed) ?i64 {
+    const threshold = 0x4000_0000_0000_0100;
+    if (value.e > 53 or (value.e == 53 and
+        (value.m >= threshold or value.m <= -threshold))) return null;
+    return roundToInt(value);
+}
+
+test "normal integer candidates reject the exact saturation boundary" {
+    const threshold: i64 = 0x4000_0000_0000_0100;
+    for ([_]i64{ -1, 1 }) |sign| {
+        try std.testing.expectEqual(@as(?i64, sign * 9007199254740992), normalIntCandidate(.{ .m = sign * (threshold - 1), .e = 53 }));
+        for ([_]i64{ 0, 1 }) |offset| {
+            try std.testing.expectEqual(@as(?i64, null), normalIntCandidate(.{ .m = sign * (threshold + offset), .e = 53 }));
+        }
+        try std.testing.expectEqual(@as(?i64, null), normalIntCandidate(.{ .m = sign * 0x4000_0000_0000_0000, .e = 54 }));
+    }
+    try std.testing.expectEqual(@as(?i64, 0), normalIntCandidate(fixed.Fixed.zero));
+}
+
 fn nonzeroUniform(source: Source) RngError!fixed.Fixed {
     const value = try uniform(source);
     return if (value.m == 0) constants().min_uniform else value;
@@ -217,16 +245,13 @@ fn normalFloat(
     mean: fixed.Fixed,
     stddev: fixed.Fixed,
 ) RngError!fixed.Fixed {
-    const c = constants();
-    const uniform_one = try nonzeroUniform(source);
-    const uniform_two = try uniform(source);
-    const radius = fixed.sqrt(fixed.mul(c.neg_two, fixed.ln(uniform_one)));
-    const z = fixed.mul(radius, fixed.cosTurns(uniform_two));
+    const z = try ziggurat.normal(source);
     return fixed.add(mean, fixed.mul(z, stddev));
 }
 
 fn normalInt(source: Source, start: i64, end: i64) RngError!i64 {
-    if (start > end) return error.InvalidArgument;
+    if (start > end or start < -@as(i64, max_exact_position) or
+        end > @as(i64, max_exact_position)) return error.InvalidArgument;
     const c = constants();
     const width_i128 = @as(i128, end) - @as(i128, start);
     if (width_i128 > std.math.maxInt(i64)) return error.InvalidArgument;
@@ -234,19 +259,12 @@ fn normalInt(source: Source, start: i64, end: i64) RngError!i64 {
     const sixth = fixed.div(width, c.six);
     const half_width = fixed.div(width, c.two);
     const start_fixed = fixed.fromInt(start);
-    const million = fixed.fromInt(1_000_000);
-
     while (true) {
-        const n1 = fixed.fromInt(try range(source, 1, 1_000_000));
-        const n2 = fixed.fromInt(try range(source, 1, 1_000_000));
-        const uniform_one = fixed.div(n1, million);
-        const uniform_two = fixed.div(n2, million);
-        const radius = fixed.sqrt(fixed.mul(c.neg_two, fixed.ln(uniform_one)));
-        const z = fixed.mul(radius, fixed.cosTurns(uniform_two));
+        const z = try ziggurat.normal(source);
         var value = fixed.mul(z, sixth);
         value = fixed.add(value, half_width);
         value = fixed.add(value, start_fixed);
-        const result = roundToInt(value);
+        const result = normalIntCandidate(value) orelse continue;
         if (result >= start and result <= end) return result;
     }
 }
@@ -792,63 +810,50 @@ pub export fn randomz_normal_int_batch(
     const completed = written orelse return errorStatus(error.InvalidArgument);
     completed.* = 0;
     const source = sourceFrom(fill, context) catch |err| return errorStatus(err);
-    if (mode < 0 or mode > 1 or start > end or
+    if (mode < 0 or mode > 2 or start > end or
         start < -@as(i64, @intCast(max_exact_position)) or end > max_exact_position)
         return errorStatus(error.InvalidArgument);
     if (count == 0) return 0;
     const output = out orelse return errorStatus(error.InvalidArgument);
-    // Within the public exact-integer domain, the bounded positive uniforms
-    // below cannot fail ln/sqrt, and rounded results stay far below
-    // i64 overflow. No later read failure can overtake a numeric failure.
-    const accelerated = mode == 0 and fixed_simd.isAccelerated();
-    if (accelerated) {
-        const c = constants();
-        const width = fixed.fromInt(@intCast(@as(i128, end) - start));
-        const sixth = fixed.div(width, c.six);
-        const half_width = fixed.div(width, c.two);
-        const start_fixed = fixed.fromInt(start);
-        const million = fixed.fromInt(1_000_000);
+    // Rejections consume words in scalar order; no speculative source reads.
+    const width = fixed.fromInt(@intCast(@as(i128, end) - start));
+    const sixth = fixed.div(width, fixed.fromInt(6));
+    const half = fixed.div(width, fixed.fromInt(2));
+    const first = fixed.fromInt(start);
+    // Balanced release measurements showed no consistent Zig SIMD advantage.
+    // Keep AUTO portable/scalar; callers may measure and opt into mode SIMD.
+    if (mode == 2 and fixed_simd.isAccelerated()) {
         while (count - completed.* >= 4) {
-            var xs: fixed_simd.Batch = @splat(c.one);
-            var ys: fixed_simd.Batch = @splat(c.one);
+            var xs: fixed_simd.Batch = @splat(fixed.Fixed.zero);
             var lanes: usize = 0;
             var read_error: ?RngError = null;
             while (lanes < 4) : (lanes += 1) {
-                const n1 = range(source, 1, 1_000_000) catch |err| {
+                xs[lanes] = ziggurat.normal(source) catch |err| {
                     read_error = err;
                     break;
                 };
-                const n2 = range(source, 1, 1_000_000) catch |err| {
-                    read_error = err;
-                    break;
-                };
-                xs[lanes] = fixed.div(fixed.fromInt(n1), million);
-                ys[lanes] = fixed.div(fixed.fromInt(n2), million);
             }
-            // Never gather more candidates than remaining output slots.
-            // Finish the complete prefix before propagating a later read
-            // failure; discarded candidates still consume their original
-            // bytes. Inactive lanes contain one, never an invalid logarithm.
-            if (lanes != 0) {
-                const math = fixed_simd.lnCos4(xs, ys) catch
-                    return errorStatus(error.NumericError);
-                for (0..lanes) |lane| {
-                    const radius = fixed.sqrt(fixed.mul(c.neg_two, math.ln[lane]));
-                    const z = fixed.mul(radius, math.cos[lane]);
-                    const value = fixed.add(fixed.add(fixed.mul(z, sixth), half_width), start_fixed);
-                    const result = roundToInt(value);
-                    if (result >= start and result <= end) {
-                        output[completed.*] = result;
-                        completed.* += 1;
-                    }
+            const values = fixed_simd.scaleNormals4(xs, sixth, half, first) catch
+                return errorStatus(error.NumericError);
+            // Commit the complete scalar-equivalent prefix before a later
+            // source failure; inactive lanes cannot affect completed samples.
+            for (values[0..lanes]) |value| {
+                const result = normalIntCandidate(value) orelse continue;
+                if (result >= start and result <= end) {
+                    output[completed.*] = result;
+                    completed.* += 1;
                 }
             }
             if (read_error) |err| return errorStatus(err);
         }
     }
     while (completed.* < count) {
-        output[completed.*] = normalInt(source, start, end) catch |err| return errorStatus(err);
-        completed.* += 1;
+        const z = ziggurat.normal(source) catch |err| return errorStatus(err);
+        const result = normalIntCandidate(fixed.add(fixed.add(fixed.mul(z, sixth), half), first)) orelse continue;
+        if (result >= start and result <= end) {
+            output[completed.*] = result;
+            completed.* += 1;
+        }
     }
     return 0;
 }
@@ -920,8 +925,8 @@ pub export fn randomz_log_normal(
 ) callconv(.c) c_int {
     if (!validFixed(mean) or !validFixed(stddev) or stddev.m <= 0)
         return @intFromEnum(Status.invalid_argument);
-    // These conservative bounds keep every possible 32-bit-uniform
-    // Box-Muller draw inside fixed.exp's total representable domain.
+    // These conservative bounds keep the finite 55-bit-grid Ziggurat tail
+    // inside fixed.exp's total representable domain (|z| < 15).
     if (!exponentIn(mean, -1_000_000, 27) or
         !exponentIn(stddev, -1_000_000, 23))
         return @intFromEnum(Status.numeric_error);

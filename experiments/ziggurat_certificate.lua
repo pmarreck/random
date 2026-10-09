@@ -15,7 +15,7 @@ typedef int (*certificate_fill)(void *, uint8_t *, size_t);
 void experiment_strip(uint8_t, certificate_pair *, certificate_pair *, uint64_t *);
 int experiment_words(const uint64_t *, size_t, size_t *, certificate_pair *);
 void experiment_math(uint8_t, certificate_pair, certificate_pair *);
-int randomz_normal(certificate_fill, void *, certificate_pair, certificate_pair, certificate_pair *);
+int experiment_box_normal(certificate_fill, void *, certificate_pair, certificate_pair, certificate_pair *);
 ]]
 print("MPFR", ffi.string(m.c.mpfr_get_version()), "precision", m.precision)
 local lib = ffi.load(library)
@@ -211,7 +211,7 @@ for _,negative in ipairs({false,true}) do
 	assert(out[0].m==(negative and -8425902885307730888LL or 8425902885307730888LL) and out[0].e==1)
 	print("CERTIFIED exact tail equality acceptance",tostring(words[0]),tostring(out[0].m),tonumber(out[0].e))
 end
--- Actual production ABI, not only the Lua arithmetic helper. U32 draws are BE.
+-- Historical Box–Muller ABI, not only the Lua arithmetic helper. U32 draws are BE.
 for _,second_first_byte in ipairs({64,192}) do
 	local bytes = ffi.new("uint8_t[8]", {128,0,0,0,second_first_byte,0,0,0})
 	local consumed, requests = 0, {}
@@ -225,10 +225,10 @@ for _,second_first_byte in ipairs({64,192}) do
 	end)
 	local mean = ffi.new("certificate_pair", {0,0})
 	local stddev = ffi.new("certificate_pair", {4611686018427387904LL,0})
-	local status = lib.randomz_normal(callback,nil,mean,stddev,out)
+	local status = lib.experiment_box_normal(callback,nil,mean,stddev,out)
 	callback:free()
 	assert(status==0 and out[0].m==0LL and out[0].e==0)
 	assert(consumed==8 and #requests==2 and requests[1]==4 and requests[2]==4)
-	print("CERTIFIED production standard-normal zero; U1=0x80000000; U2="..(second_first_byte==64 and "0x40000000" or "0xc0000000"),"requests=4,4 consumed=8")
+	print("CERTIFIED historical Box–Muller standard-normal zero; U1=0x80000000; U2="..(second_first_byte==64 and "0x40000000" or "0xc0000000"),"requests=4,4 consumed=8")
 end
 print("FINITE CERTIFICATES PASS. Global primitive rounding, kernel propagation, and coupling lemmas remain uncertified; this is not a machine-proof of D_K < 1e-11.")

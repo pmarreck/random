@@ -95,3 +95,9 @@ Completed PLAN.md items retired by plan-retire, oldest retirement first.
 - [x] [Now: upstream Roc and standalone packages] Complete the Roc production C ABI and I/O-only CLI adapter, including terminal rendering from the pure chart model (done 2026-10-04 22:57 EDT; commit: containing commit; review: CODE_REVIEW.md; context: docs/plan_context/legacy_decisions.md).
 - [x] [Now: upstream Roc and standalone packages] Run the same Bash CLI bodies and expected results against every implementation, adding Roc to library oracles and cross-implementation continuation tests, including geometric (done 2026-10-04 22:57 EDT; commit: containing commit; review: CODE_REVIEW.md).
 - [x] [Now: upstream Roc and standalone packages] Export the Roc production CLI and native C ABI as separate Nix packages alongside the pure source library; verify consumers and CLI-free closures for every language (done 2026-10-04 22:57 EDT; commit: containing commit; review: CODE_REVIEW.md).
+
+## Retired 2026-10-09
+
+- [x] [Correctness and verification] Compare Ziggurat against production AUTO/SCALAR bounded batches with independent scalar work checks, lane/chunk boundaries and 62 retained timing cases (done 2026-10-08 10:02 EDT; delivered with this change; report: docs/reports/2026-10-08-fixed-point-ziggurat.md).
+- [x] [Correctness and verification] Complete the isolated fixed-point Ziggurat experiment with independent boundary/mutation controls, 96M-output predeclared distribution diagnostics and 54 shared-engine performance cases (report: docs/reports/2026-10-08-fixed-point-ziggurat.md; done 2026-10-08 09:08 EDT; delivered with this change).
+- [x] [Correctness and verification] Enforce the ±2^53 contract in scalar normalized-integer APIs before source mutation and reject tails before saturating conversion, with independent signed endpoint and real-DRBG AVX2 controls (report: docs/reports/2026-10-08-ziggurat-production.md; done 2026-10-09 00:50 EDT; delivered with this change).

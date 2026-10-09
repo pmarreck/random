@@ -73,18 +73,30 @@ local bounds = drbg.new(seed)
 for _, interval in ipairs({{2, 1}, {0, 1.5}, {0, 9007199254740992}, {-9007199254740992, 9007199254740992}}) do
 	rejects(function() bounds:range(interval[1], interval[2]) end)
 	assert(bounds:position() == 0)
+	if interval[1] == 2 or interval[2] == 1.5 then
+		rejects(function() bounds:normal_int(interval[1], interval[2]) end)
+		assert(bounds:position() == 0)
+	end
+end
+for _, interval in ipairs({{-9007199254740994,0}, {0,9007199254740994},
+	{9007199254740994,9007199254740994}}) do
 	rejects(function() bounds:normal_int(interval[1], interval[2]) end)
 	assert(bounds:position() == 0)
+end
+for _, interval in ipairs({{0,9007199254740992}, {-9007199254740992,9007199254740992},
+	{-9007199254740992,1}}) do
+	local value = drbg.new(seed):normal_int(interval[1], interval[2])
+	assert(value >= interval[1] and value <= interval[2])
 end
 assert(bounds:range(7, 7) == 7 and bounds:position() == 0)
 local one_m, one_e = fx.from_int(1)
 local two_m, two_e = fx.from_int(2)
--- Existing Rust public-API goldens pin full mantissas, not CLI-rounded values.
+-- Independently frozen Ziggurat vectors pin full mantissas, not CLI rounding.
 for _, vector in ipairs({
-	{"normal", {0LL, 0, one_m, one_e}, -6261580692471259166LL, -2, 8},
+	{"normal", {0LL, 0, one_m, one_e}, -6358178992748390005LL, -1, 8},
 	{"exponential", {one_m, one_e}, 8143522549336293876LL, -1, 4},
-	{"log_normal", {0LL, 0, one_m, one_e}, 6568593509554243022LL, -1, 8},
-	{"beta", {two_m, two_e, two_m, two_e}, 5240771193768987065LL, -1, 24},
+	{"log_normal", {0LL, 0, one_m, one_e}, 4629206882204335086LL, -1, 8},
+	{"beta", {two_m, two_e, two_m, two_e}, 6877416081729278562LL, -2, 24},
 }) do
 	local rng = drbg.new(seed)
 	local vm, ve = rng[vector[1]](rng, unpack(vector[2]))

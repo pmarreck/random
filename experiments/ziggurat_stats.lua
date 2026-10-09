@@ -5,6 +5,7 @@ local m = require("mpfr")
 ffi.cdef[[
 typedef struct { int64_t m; int32_t e; } experiment_pair;
 int experiment_samples(uint64_t, uint8_t, uint8_t, size_t, experiment_pair *);
+int production_samples(uint64_t, uint8_t, size_t, experiment_pair *);
 void experiment_strip(uint8_t, experiment_pair *, experiment_pair *, uint64_t *);
 double erfc(double);
 ]]
@@ -12,7 +13,9 @@ local lib = ffi.load(assert(arg[1], "experiment library required"))
 local n = tonumber(arg[2]) or 2000000
 assert(n >= 1000000, "large-sample analysis requires at least one million per seed")
 local seeds = {42, 700, 123456789, 3735928559}
-local names = {"Box-Muller", "paired-Box-Muller", "Ziggurat"}
+local names = {"Box-Muller", "paired-Box-Muller", "Ziggurat", "production-Ziggurat"}
+local production = arg[3] == "production"
+local algorithms = production and {3} or {0,1,2}
 -- Finite paired outputs have no established joint-independence theorem;
 -- cached pairs also cross downstream rejection boundaries. Keep their frozen
 -- thresholds as diagnostics, outside the IID target-law family calibration.
@@ -20,6 +23,7 @@ local alpha, family = 1e-6, 100000
 local log_bound = math.log(2*family/alpha)
 local epsilon = math.sqrt(math.log(2*48/alpha)/(2*n))
 local control = arg[3]
+if production then control = nil end
 assert(control == nil or control == "shift", "unknown statistical control")
 local sqrt_two = math.sqrt(2)
 local function cdf(x) return 0.5 * ffi.C.erfc(-x/sqrt_two) end
@@ -31,6 +35,10 @@ for j = -80, 80 do
 end
 local function value(x) return tonumber(x.m) * 2^(tonumber(x.e)-62) end
 local samples = ffi.new("experiment_pair[?]", n)
+local function draw(algorithm, op, seed)
+	if algorithm == 3 then return lib.production_samples(seed, op, n, samples) end
+	return lib.experiment_samples(seed, algorithm, op, n, samples)
+end
 local zs, bins = ffi.new("double[?]", n), ffi.new("uint32_t[?]", n)
 local function binomial(k, p, label)
 	local expected = n*p
@@ -42,10 +50,14 @@ local function lower_bound(sorted, x)
 	while lo < hi do local mid = math.floor((lo+hi)/2); if sorted[mid] and sorted[mid] <= x then lo = mid+1 else hi = mid end end
 	return lo-1
 end
-io.write(("Predeclared analysis: n=%d per seed, 4 seeds, 3 algorithms, 4 shapes; DKW_family_alpha=%g; binomial_family_alpha=%g, count_family_bound=%d; combined_calibrated_bound=%g; DKW=%.6g; calibration covers only 32 unpaired cells under IID target-law nulls; 16 paired cells and moments/serial/collisions are uncalibrated diagnostics\n"):format(n, alpha, alpha, family, 2*alpha, epsilon))
-for algorithm = 0, 2 do
+if production then
+	io.write(("Production analysis: n=%d per seed, 4 seeds, actual C ABI, 4 shapes; same frozen 48-cell DKW allocation (16 actual cells), alpha=%g; count-family alpha=%g, bound=%d; DKW=%.6g; IID target-law calibration, not a distribution proof\n"):format(n, alpha, alpha, family, epsilon))
+else
+	io.write(("Predeclared analysis: n=%d per seed, 4 seeds, 3 algorithms, 4 shapes; DKW_family_alpha=%g; binomial_family_alpha=%g, count_family_bound=%d; combined_calibrated_bound=%g; DKW=%.6g; calibration covers only 32 unpaired cells under IID target-law nulls; 16 paired cells and moments/serial/collisions are uncalibrated diagnostics\n"):format(n, alpha, alpha, family, 2*alpha, epsilon))
+end
+for _, algorithm in ipairs(algorithms) do
 	for _, seed in ipairs(seeds) do
-		assert(lib.experiment_samples(seed, algorithm, 0, n, samples) == 0)
+		assert(draw(algorithm, 0, seed) == 0)
 		local sorted, collisions = {}, {}
 		local sum, squares, fourth, lag1, lag2, signs, zeros = 0, 0, 0, 0, 0, 0, 0
 		for i = 0, n-1 do
@@ -107,10 +119,10 @@ end
 -- not every parameter in the library's domain. Count laws are judged directly.
 local low = cdf((-0.5-127.5)/42.5)
 local accepted = cdf((255.5-127.5)/42.5)-low
-for algorithm = 0,2 do
+for _, algorithm in ipairs(algorithms) do
 	for op = 1,3 do
 		for _, seed in ipairs(seeds) do
-			assert(lib.experiment_samples(seed,algorithm,op,n,samples) == 0)
+			assert(draw(algorithm,op,seed) == 0)
 			local sorted = {}
 			for i = 0,n-1 do
 				local x = value(samples[i])
@@ -141,4 +153,4 @@ for algorithm = 0,2 do
 		end
 	end
 end
-io.write(("PASS: %d outputs across four shapes. This cannot certify sub-sampling-scale error or cryptographic security.\n"):format(48*n))
+io.write(("PASS: %d outputs across four shapes. This cannot certify sub-sampling-scale error or cryptographic security.\n"):format(#algorithms*16*n))

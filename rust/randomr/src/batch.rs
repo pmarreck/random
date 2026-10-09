@@ -1,4 +1,6 @@
-use crate::{ByteSource, Drbg, Error, Fixed, normal_int};
+#[cfg(test)]
+use crate::normal_int;
+use crate::{ByteSource, Drbg, Error, Fixed};
 
 #[cfg(kani)]
 #[path = "kani_batch.rs"]
@@ -43,11 +45,39 @@ pub fn normal_int_batch(
 	end: i64,
 	out: &mut [i64],
 ) -> Result<(), BatchError> {
-	parameters(start, end).map_err(|error| BatchError { written: 0, error })?;
+	let (sixth, half) = parameters(start, end).map_err(|error| BatchError { written: 0, error })?;
+	let first = Fixed::from_i64(start);
 	for (written, slot) in out.iter_mut().enumerate() {
-		*slot = normal_int(source, start, end).map_err(|error| BatchError { written, error })?;
+		*slot = sample_prepared(source, start, end, sixth, half, first)
+			.map_err(|error| BatchError { written, error })?;
 	}
 	Ok(())
+}
+
+// Keep the sampler boundary explicit while reusing per-batch parameters. The
+// wrapper's prefix/error contract can then be checked independently of its
+// nonlinear arithmetic without maintaining a second wrapper implementation.
+#[inline]
+fn sample_prepared(
+	source: &mut impl ByteSource,
+	start: i64,
+	end: i64,
+	sixth: Fixed,
+	half: Fixed,
+	first: Fixed,
+) -> Result<i64, Error> {
+	loop {
+		let value = crate::ziggurat::normal(source)?
+			.mul(sixth)?
+			.add(half)?
+			.add(first)?;
+		let Some(value) = crate::distribution::normal_int_candidate(value)? else {
+			continue;
+		};
+		if value >= start && value <= end {
+			return Ok(value);
+		}
+	}
 }
 
 fn parameters(start: i64, end: i64) -> Result<(Fixed, Fixed), Error> {
@@ -67,7 +97,7 @@ impl Drbg {
 	///
 	/// Uses AVX2 when available on std-enabled x86_64 builds; otherwise scalar.
 	/// Four candidates are computed at a time, in stream order. Rejected tails
-	/// consume the same bytes as repeated [`normal_int`] calls. Scratch space is
+	/// consume the same bytes as repeated [`crate::normal_int`] calls. Scratch space is
 	/// constant regardless of destination length; no samples are retained.
 	/// A failing group is replayed scalarly to preserve the exact error prefix.
 	/// Bounds must be ordered and each within ±[`crate::MAX_EXACT_INTEGER`];
@@ -94,32 +124,25 @@ fn vector_batch(
 	out: &mut [i64],
 ) -> Result<(), BatchError> {
 	let (sixth, half) = parameters(start, end).map_err(|error| BatchError { written: 0, error })?;
+	let first = Fixed::from_i64(start);
 	let mut written = 0;
 	while out.len() - written >= 4 {
 		let position = source.position();
-		let candidates = (|| -> Result<[i64; 4], Error> {
-			let mut u1 = [Fixed::ZERO; 4];
-			let mut u2 = [Fixed::ZERO; 4];
-			for lane in 0..4 {
-				u1[lane] = Fixed::from_ratio(crate::range(source, 1, 1_000_000)?, 1_000_000)?;
-				u2[lane] = Fixed::from_ratio(crate::range(source, 1, 1_000_000)?, 1_000_000)?;
+		let candidates = (|| -> Result<[Option<i64>; 4], Error> {
+			let mut xs = [Fixed::ZERO; 4];
+			for x in &mut xs {
+				*x = crate::ziggurat::normal(source)?;
 			}
-			let (logs, cosines) = crate::batch_avx2::uniform_kernels(u1, u2)?;
-			let mut values = [0; 4];
+			let scaled = crate::batch_avx2::scale_normals(xs, sixth, half, first)?;
+			let mut values = [None; 4];
 			for lane in 0..4 {
-				let radius = Fixed::from_i64(-2).mul(logs[lane])?.sqrt()?;
-				values[lane] = radius
-					.mul(cosines[lane])?
-					.mul(sixth)?
-					.add(half)?
-					.add(Fixed::from_i64(start))?
-					.round_to_i64()?;
+				values[lane] = crate::distribution::normal_int_candidate(scaled[lane])?;
 			}
 			Ok(values)
 		})();
 		match candidates {
 			Ok(values) => {
-				for value in values {
+				for value in values.into_iter().flatten() {
 					if value >= start && value <= end {
 						out[written] = value;
 						written += 1;
@@ -127,18 +150,14 @@ fn vector_batch(
 				}
 			}
 			Err(_) => {
-				// Replay the failing speculative group with scalar call boundaries.
-				// No output from this group was committed, and seek wipes its cache.
+				// Only a seekable caller-owned DRBG is speculated. Replay a failing
+				// group to expose exactly the scalar success prefix and byte cursor.
 				source.seek(position).expect("saved position is valid");
-				return normal_int_batch(source, start, end, &mut out[written..]).map_err(
-					|failure| BatchError {
-						written: written + failure.written,
-						error: failure.error,
-					},
-				);
+				break;
 			}
 		}
 	}
+	// The remainder (or replay) uses the same scalar source-call boundaries.
 	normal_int_batch(source, start, end, &mut out[written..]).map_err(|failure| BatchError {
 		written: written + failure.written,
 		error: failure.error,
@@ -148,6 +167,120 @@ fn vector_batch(
 #[cfg(test)]
 mod tests {
 	use super::*;
+	#[test]
+	fn endpoint_tails_are_rejected_not_saturated() {
+		struct Words {
+			words: alloc::vec::Vec<u64>,
+			cursor: usize,
+			calls: usize,
+		}
+		impl ByteSource for Words {
+			fn fill_exact(&mut self, out: &mut [u8]) -> Result<(), Error> {
+				self.calls += 1;
+				assert_eq!(out.len(), 8);
+				let word = self.words.get(self.cursor).ok_or(Error::Numeric)?;
+				out.copy_from_slice(&word.to_be_bytes());
+				self.cursor += 1;
+				Ok(())
+			}
+		}
+		let limit = crate::MAX_EXACT_INTEGER;
+		for negative in [false, true] {
+			for (start, end) in [
+				(-limit, limit),
+				if negative {
+					(-limit, -limit + 10)
+				} else {
+					(limit - 10, limit)
+				},
+			] {
+				for count in [1, 4, 7] {
+					for fail in [false, true] {
+						let tail = if negative {
+							0xffff_ffff_ffff_ff00
+						} else {
+							0xffff_ffff_ffff_fe00
+						};
+						let mut words =
+							alloc::vec![tail, 0xffff_ffff_ffff_fe00, 0xffff_ffff_ffff_fe00];
+						if !fail {
+							words.extend(core::iter::repeat_n(0, count));
+						}
+						let mut source = Words {
+							words,
+							cursor: 0,
+							calls: 0,
+						};
+						let mut out = alloc::vec![-123456;count];
+						let result = normal_int_batch(&mut source, start, end, &mut out);
+						if fail {
+							assert_eq!(
+								result,
+								Err(BatchError {
+									written: 0,
+									error: Error::Numeric
+								})
+							);
+							assert_eq!(out, alloc::vec![-123456;count]);
+							assert_eq!((source.cursor, source.calls), (3, 4));
+						} else {
+							assert_eq!(result, Ok(()));
+							assert_eq!(out, alloc::vec![start+(end-start)/2;count]);
+							assert_eq!((source.cursor, source.calls), (count + 3, count + 3));
+						}
+					}
+				}
+			}
+		}
+	}
+	#[test]
+	fn scalar_unsupported_endpoints_do_not_read_source() {
+		let limit = crate::MAX_EXACT_INTEGER;
+		for (start, end) in [
+			(-limit - 1, 0),
+			(0, limit + 1),
+			(limit + 1, limit + 1),
+			(-limit - 1, -limit - 1),
+		] {
+			let mut source = Drbg::new(&[42; 32]);
+			assert_eq!(
+				normal_int(&mut source, start, end),
+				Err(Error::InvalidArgument)
+			);
+			assert_eq!(source.position(), 0);
+		}
+	}
+	#[test]
+	fn vector_batch_rejects_first_lane_before_endpoint_conversion() {
+		let mut seed = [0; 32];
+		seed[31] = 171;
+		let mut witness = Drbg::new(&seed);
+		let first = crate::ziggurat::normal(&mut witness).unwrap();
+		assert_eq!(first.parts(), (7_222_525_860_465_538_069, 1));
+		assert!(first.cmp_value(Fixed::from_i64(3)).is_gt());
+		// Independent BigInt affine steps and rational half-away rounding of
+		// raw Ziggurat draws, not values captured from normal_int. The first
+		// candidate would round to 9404330547481169 (>2^53); reject it.
+		let expected = [
+			2_329_111_181_032_879,
+			-326_117_065_124_817,
+			2_938_509_393_003_278,
+			3_346_597_857_653_165,
+		];
+		let limit = crate::MAX_EXACT_INTEGER;
+		let mut source = Drbg::new(&seed);
+		let mut out = [0; 4];
+		source.normal_int_batch(-limit, limit, &mut out).unwrap();
+		assert_eq!(out, expected);
+		assert_eq!(source.position(), 40);
+		#[cfg(all(feature = "std", target_arch = "x86_64"))]
+		if std::is_x86_feature_detected!("avx2") {
+			let mut source = Drbg::new(&seed);
+			vector_batch(&mut source, -limit, limit, &mut out).unwrap();
+			assert_eq!(out, expected);
+			assert_eq!(source.position(), 40);
+		}
+	}
 	#[test]
 	fn unsupported_ranges_fail_before_source_or_destination_changes() {
 		let limit = crate::MAX_EXACT_INTEGER;
@@ -249,8 +382,20 @@ mod tests {
 		}
 		let mut bytes = alloc::vec![0;128];
 		Drbg::new(&[42; 32]).fill(&mut bytes).unwrap();
-		// Force uniform rejection, then a normal tail rejection (u1≈0,u2≈1).
-		bytes[..12].copy_from_slice(&[255, 255, 255, 255, 0, 0, 0, 0, 0, 15, 66, 63]);
+		// Base-strip tail: first pair rejects locally, second pair accepts at R.
+		// Partial reads exercise every byte of both the header and tail words.
+		for (i, word) in [
+			u64::MAX - 511,
+			0,
+			u64::MAX - 511,
+			u64::MAX - 511,
+			u64::MAX - 511,
+		]
+		.iter()
+		.enumerate()
+		{
+			bytes[i * 8..i * 8 + 8].copy_from_slice(&word.to_be_bytes());
+		}
 		for cap in 0..80 {
 			let mut a = Failing {
 				bytes: bytes.clone(),

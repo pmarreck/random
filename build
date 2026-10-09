@@ -48,6 +48,8 @@ install -m644 result/lib/drbg.lua               zig-out/lib/drbg.lua
 install -m644 result/lib/geometric.lua          zig-out/lib/geometric.lua
 install -m644 result/lib/unsigned_count.lua     zig-out/lib/unsigned_count.lua
 install -m644 result/lib/distributions.lua      zig-out/lib/distributions.lua
+install -m644 result/lib/ziggurat.lua           zig-out/lib/ziggurat.lua
+install -m644 result/lib/ziggurat_tables.lua    zig-out/lib/ziggurat_tables.lua
 install -m644 result/lib/distribution_charts.lua zig-out/lib/distribution_charts.lua
 install -m644 result/lib/distribution_view.lua   zig-out/lib/distribution_view.lua
 install -m644 result/lib/state_json.lua          zig-out/lib/state_json.lua

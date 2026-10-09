@@ -26,7 +26,8 @@ fn main() {
 	assert_eq!(source.u64().unwrap(), resumed.u64().unwrap());
 	let mut source = Drbg::new(&seed);
 	let value = normal(&mut source, Fixed::ZERO, Fixed::from_i64(1)).expect("valid parameters");
-	assert_eq!(value.parts(), (-6_261_580_692_471_259_166, -2));
+	// Frozen experiment-derived Ziggurat vector, also pinned by the Lua library test.
+	assert_eq!(value.parts(), (-6_358_178_992_748_390_005, -1));
 	assert_eq!(source.position(), 8);
 	let mut source = Drbg::new(&seed);
 	let p = randomr::Geometric::parse_probability("2^-100").unwrap();

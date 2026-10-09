@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-#define RANDOMZ_VERSION "0.3.0"
+#define RANDOMZ_VERSION "0.4.0"
 #define RANDOMZ_DRBG_KEY_BYTES 32
 #define RANDOMZ_MAX_EXACT_POSITION UINT64_C(9007199254740992)
 #define RANDOMZ_MAX_EXACT_INTEGER INT64_C(9007199254740992)
@@ -90,12 +90,15 @@ void randomz_buffered_drbg_zeroize(randomz_buffered_drbg *state);
 int randomz_range(randomz_fill_fn fill, void *context,
 	int64_t start, int64_t end, int64_t *out);
 int randomz_uniform(randomz_fill_fn fill, void *context, randomz_fixed *out);
+/* Ordered endpoints within +/-2^53. Invalid bounds fail before source/output
+ * mutation; out-of-range candidates are rejected, never endpoint-clamped. */
 int randomz_normal_int(randomz_fill_fn fill, void *context,
 	int64_t start, int64_t end, int64_t *out);
 /* Caller-buffer batching; O(count) expected work and O(1) workspace.
- * AUTO selects a supported accelerated kernel, SCALAR keeps single-call math.
- * Bounds must satisfy -2^53 <= start <= end <= 2^53, unlike the legacy scalar
- * entry's wider acceptance. Within this supported domain, values and callback
+ * AUTO currently selects scalar arithmetic: AVX2 has no measured consistent
+ * advantage for this Zig kernel. SIMD explicitly opts into AVX2 where supported
+ * and falls back to scalar on other CPUs. SCALAR always keeps single-call math.
+ * Bounds must satisfy -2^53 <= start <= end <= 2^53. Values and callback
  * request order match repeated randomz_normal_int calls.
  * On failure, *written names the completed prefix; the suffix is untouched.
  * The source includes consumption by the failing sample, as in scalar calls.
@@ -106,7 +109,8 @@ int randomz_normal_int(randomz_fill_fn fill, void *context,
  * No internal threads, allocation, retained samples, or extra entropy reads. */
 typedef enum randomz_batch_mode {
 	RANDOMZ_BATCH_AUTO = 0,
-	RANDOMZ_BATCH_SCALAR = 1
+	RANDOMZ_BATCH_SCALAR = 1,
+	RANDOMZ_BATCH_SIMD = 2
 } randomz_batch_mode;
 int randomz_normal_int_batch(randomz_fill_fn fill, void *context,
 	int64_t start, int64_t end, int64_t *out, size_t count,

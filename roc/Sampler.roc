@@ -1,5 +1,6 @@
 import Fixed
 import Draw
+import Ziggurat
 
 # One pure byte-request program per algorithm, shared by deterministic and
 # entropy interpreters. All parameter checks happen before requesting bytes.
@@ -30,8 +31,7 @@ Sampler :: [].{
 		match parameters(mean, stddev, -1000000, 1000000, -1000000, 1000000, Bool.False, Bool.True) {
 			Err(problem) => Draw.fail(problem)
 			Ok(_) => {
-				uniform().and_then(|u1| uniform().and_then(|u2|
-					Draw.from_try(normal_value(mean, stddev, u1, u2))))
+				Ziggurat.normal().and_then(|z| Draw.from_try(normal_value(mean, stddev, z)))
 			}
 		}
 	}
@@ -159,39 +159,37 @@ range_loop = |first, span| {
 	}
 }
 
-normal_value : Fixed, Fixed, Fixed, Fixed -> Try(Fixed, [Invalid, Numeric, DivisionByZero])
-normal_value = |mean, stddev, u1, u2| {
-	logarithm = nonzero(u1).ln()?
-	radial = Fixed.from_int(-2).mul(logarithm)?.sqrt()?
-	cosine = u2.cos_turns()?
-	standard = radial.mul(cosine)?
+normal_value : Fixed, Fixed, Fixed -> Try(Fixed, [Invalid, Numeric])
+normal_value = |mean, stddev, standard| {
 	mean.add(standard.mul(stddev)?)
 }
 
-normal_int_value : I64, I64, I64, I64 -> Try(I64, [Invalid, Numeric, DivisionByZero])
-normal_int_value = |first, last, n1, n2| {
-	million = Fixed.from_int(1000000)
-	u1 = Fixed.from_int(n1).div(million)?
-	u2 = Fixed.from_int(n2).div(million)?
-	standard = normal_value(Fixed.zero, one, u1, u2)?
+normal_int_value : I64, I64, Fixed -> Try([Accept(I64), Retry], [Invalid, Numeric, DivisionByZero])
+normal_int_value = |first, last, standard| {
 	width = Fixed.from_int(last - first)
 	sixth = width.div(Fixed.from_int(6))?
 	half = width.div(Fixed.from_int(2))?
-	standard.mul(sixth)?.add(half)?.add(Fixed.from_int(first))?.round_to_int()
+	value = standard.mul(sixth)?.add(half)?.add(Fixed.from_int(first))?
+	(m, e) = value.parts()
+	# Reject |x| >= 2^53+1/2 BEFORE generic conversion can clamp the tail.
+	if e > 53 or (e == 53 and (m >= 4611686018427388160 or m <= -4611686018427388160)) {
+		Ok(Retry)
+	} else {
+		Ok(Accept(value.round_to_int()?))
+	}
 }
 
 normal_int_loop : I64, I64 -> Draw(I64)
 normal_int_loop = |first, last| {
-	Sampler.range(1, 1000000).and_then(
-		|n1| Sampler.range(1, 1000000).and_then(
-			|n2| {
-				match normal_int_value(first, last, n1, n2) {
-					Err(problem) => Draw.fail(problem)
-					Ok(value) => if value >= first and value <= last Draw.succeed(value)
-					else normal_int_loop(first, last)
-				}
-			},
-		),
+	Ziggurat.normal().and_then(
+		|standard| {
+			match normal_int_value(first, last, standard) {
+				Err(problem) => Draw.fail(problem)
+				Ok(Retry) => normal_int_loop(first, last)
+				Ok(Accept(value)) => if value >= first and value <= last Draw.succeed(value)
+				else normal_int_loop(first, last)
+			}
+		},
 	)
 }
 

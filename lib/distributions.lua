@@ -1,11 +1,11 @@
 -- Pure fixed-point samplers parameterized by a caller-owned byte source.
 -- Evaluation and rejection order are shared by the library and CLI.
 local fx = require("fixed")
+local ziggurat = require("ziggurat")
 local TWO32_M, TWO32_E = fx.from_int(4294967296)
 
 local ONE_M, ONE_E = fx.from_int(1)
 local TWO_M, TWO_E = fx.from_int(2)
-local NEG2_M, NEG2_E = fx.from_int(-2)
 local SIX_M, SIX_E = fx.from_int(6)
 local HALF_M, HALF_E = fx.div(ONE_M, ONE_E, TWO_M, TWO_E)
 
@@ -48,49 +48,40 @@ end
 -- comment), so only the exact-zero case needs a substitute now.
 local MIN_UNIFORM_M, MIN_UNIFORM_E = fx.div(ONE_M, ONE_E, TWO32_M, TWO32_E)
 
--- Normal distribution (Box-Muller) - for integer output with range.
--- rand_func(1, 1000000) is always in [1, 1000000], so u1/u2 can never be
--- exactly zero here -- no MIN_UNIFORM substitution needed, unlike the
--- soft-float uniform_func() path below.
-local function normal_random_int(start_val, end_val, rand_func)
-	local range = end_val - start_val
-	local rng_m, rng_e = fx.from_int(range)
+-- Range-conditioned Ziggurat, with the same fixed-point scaling order in all ports.
+local function normal_random_int(start_val, end_val, next_word)
+	assert(type(start_val) == "number" and type(end_val) == "number" and
+		start_val >= -9007199254740992 and end_val <= 9007199254740992 and
+		start_val <= end_val and start_val == math.floor(start_val) and end_val == math.floor(end_val),
+		"normal range bounds must be ordered exact integers within +/-2^53")
+	local start_m, start_e = fx.from_int(start_val)
+	local end_m, end_e = fx.from_int(end_val)
+	-- Subtract in fixed point: widths above 2^53 can be odd, and cannot be
+	-- computed exactly by a Lua binary64 subtraction of valid endpoints.
+	local rng_m, rng_e = fx.sub(end_m, end_e, start_m, start_e)
 	local sixth_m, sixth_e = fx.div(rng_m, rng_e, SIX_M, SIX_E)
 	local half_range_m, half_range_e = fx.div(rng_m, rng_e, TWO_M, TWO_E)
-	local start_m, start_e = fx.from_int(start_val)
-	local mil_m, mil_e = fx.from_int(1000000)
 	local result
 	repeat
-		local n1m, n1e = fx.from_int(rand_func(1, 1000000))
-		local n2m, n2e = fx.from_int(rand_func(1, 1000000))
-		local u1m, u1e = fx.div(n1m, n1e, mil_m, mil_e)
-		local u2m, u2e = fx.div(n2m, n2e, mil_m, mil_e)
-		local lm, le = fx.ln(u1m, u1e)
-		local pm, pe = fx.mul(NEG2_M, NEG2_E, lm, le)
-		local rm, re = fx.sqrt(pm, pe)
-		local cm, ce = fx.cos_turns(u2m, u2e)
-		local zm, ze = fx.mul(rm, re, cm, ce)
+		local zm, ze = ziggurat.normal(next_word)
 		-- start + z*(range/6) + range/2, rounded to nearest via round_to_int
 		-- (sign-aware: see that function's own doc comment for why a plain
 		-- "add 1/2, truncate toward zero" is wrong for negative results).
 		local vm, ve = fx.mul(zm, ze, sixth_m, sixth_e)
 		vm, ve = fx.add(vm, ve, half_range_m, half_range_e)
 		vm, ve = fx.add(vm, ve, start_m, start_e)
-		result = round_to_int(vm, ve)
-	until result >= start_val and result <= end_val
+		-- Canonical |x| >= 2^53+1/2 must not reach the saturating converter.
+		if ve > 53 or (ve == 53 and
+			(vm >= 4611686018427388160LL or vm <= -4611686018427388160LL)) then
+			result = nil
+		else result = round_to_int(vm, ve) end
+	until result and result >= start_val and result <= end_val
 	return result
 end
 
 -- Normal distribution with mean/stddev - returns a soft-float (m, e).
-local function normal_random_float(mean_m, mean_e, sd_m, sd_e, uniform_func)
-	local u1m, u1e = uniform_func()
-	local u2m, u2e = uniform_func()
-	if u1m == 0 then u1m, u1e = MIN_UNIFORM_M, MIN_UNIFORM_E end
-	local lm, le = fx.ln(u1m, u1e)
-	local pm, pe = fx.mul(NEG2_M, NEG2_E, lm, le)
-	local rm, re = fx.sqrt(pm, pe)
-	local cm, ce = fx.cos_turns(u2m, u2e)     -- cos(2*pi*u2), u2 already in turns
-	local zm, ze = fx.mul(rm, re, cm, ce)
+local function normal_random_float(mean_m, mean_e, sd_m, sd_e, next_word)
+	local zm, ze = ziggurat.normal(next_word)
 	local sm, se = fx.mul(zm, ze, sd_m, sd_e)
 	return fx.add(mean_m, mean_e, sm, se)
 end
@@ -127,19 +118,19 @@ local function poisson_random(lambda_m, lambda_e, uniform_func)
 end
 
 -- Log-normal distribution - returns a soft-float (m, e).
-local function lognormal_random(mu_m, mu_e, sigma_m, sigma_e, uniform_func)
-	local nm, ne = normal_random_float(mu_m, mu_e, sigma_m, sigma_e, uniform_func)
+local function lognormal_random(mu_m, mu_e, sigma_m, sigma_e, next_word)
+	local nm, ne = normal_random_float(mu_m, mu_e, sigma_m, sigma_e, next_word)
 	return fx.exp(nm, ne)
 end
 
 -- Gamma via Marsaglia-Tsang, with Ahrens-Dieter for alpha < 1. Returns a
 -- soft-float (m, e).
-local function gamma_random(alpha_m, alpha_e, uniform_func)
+local function gamma_random(alpha_m, alpha_e, uniform_func, next_word)
 	if fx.cmp(alpha_m, alpha_e, ONE_M, ONE_E) < 0 then
 		local um, ue = uniform_func()
 		if um == 0 then um, ue = MIN_UNIFORM_M, MIN_UNIFORM_E end
 		local am, ae = fx.add(ONE_M, ONE_E, alpha_m, alpha_e)
-		local gm, ge = gamma_random(am, ae, uniform_func)
+		local gm, ge = gamma_random(am, ae, uniform_func, next_word)
 		local invm, inve = fx.div(ONE_M, ONE_E, alpha_m, alpha_e)
 		local pm, pe = fx.pow(um, ue, invm, inve)
 		return fx.mul(gm, ge, pm, pe)
@@ -155,7 +146,7 @@ local function gamma_random(alpha_m, alpha_e, uniform_func)
 	while true do
 		local xm, xe, vm, ve
 		repeat
-			xm, xe = normal_random_float(0LL, 0, ONE_M, ONE_E, uniform_func)
+			xm, xe = normal_random_float(0LL, 0, ONE_M, ONE_E, next_word)
 			local t1m, t1e = fx.mul(cm, ce, xm, xe)
 			vm, ve = fx.add(ONE_M, ONE_E, t1m, t1e)
 		until fx.cmp(vm, ve, 0LL, 0) > 0
@@ -185,9 +176,9 @@ local function gamma_random(alpha_m, alpha_e, uniform_func)
 end
 
 -- Beta distribution using Gamma variates. Returns a soft-float (m, e).
-local function beta_random(alpha_m, alpha_e, beta_m, beta_e, uniform_func)
-	local xm, xe = gamma_random(alpha_m, alpha_e, uniform_func)
-	local ym, ye = gamma_random(beta_m, beta_e, uniform_func)
+local function beta_random(alpha_m, alpha_e, beta_m, beta_e, uniform_func, next_word)
+	local xm, xe = gamma_random(alpha_m, alpha_e, uniform_func, next_word)
+	local ym, ye = gamma_random(beta_m, beta_e, uniform_func, next_word)
 	local sm, se = fx.add(xm, xe, ym, ye)
 	return fx.div(xm, xe, sm, se)
 end

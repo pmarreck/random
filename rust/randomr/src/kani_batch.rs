@@ -27,13 +27,31 @@ impl ByteSource for Script {
 
 // Explicit contract assumption: one modeled word returns one scalar sample or
 // the original source error. The production wrapper and parameter kernel run.
-fn modeled_scalar(source: &mut impl ByteSource, _start: i64, _end: i64) -> Result<i64, Error> {
+fn modeled_scalar(
+	source: &mut impl ByteSource,
+	_start: i64,
+	_end: i64,
+	_sixth: Fixed,
+	_half: Fixed,
+	_first: Fixed,
+) -> Result<i64, Error> {
 	source.u64_be().map(|value| value as i64)
+}
+
+// A stale/unused scalar stub must fail promptly rather than accidentally
+// expanding the nonlinear sampler or silently changing the proof's scope.
+fn forbidden_normal(_source: &mut impl ByteSource) -> Result<Fixed, Error> {
+	assert!(
+		false,
+		"nonlinear normal unreachable under batch scalar model"
+	);
+	Ok(Fixed::ZERO)
 }
 
 #[kani::proof]
 #[kani::unwind(33)]
-#[kani::stub(crate::distribution::normal_int, modeled_scalar)]
+#[kani::stub(crate::batch::sample_prepared, modeled_scalar)]
+#[kani::stub(crate::ziggurat::normal, forbidden_normal)]
 fn portable_wrapper_contract() {
 	let values: [u64; 4] = kani::any();
 	let fail_at: usize = kani::any();

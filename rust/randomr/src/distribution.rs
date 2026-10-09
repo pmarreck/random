@@ -52,7 +52,7 @@ fn nonzero_uniform(source: &mut impl ByteSource) -> Result<Fixed, Error> {
 	}
 }
 
-/// Draw a normal variate using the integer-only Box–Muller kernel.
+/// Draw a normal variate using the integer-only 256-strip Ziggurat kernel.
 pub fn normal(source: &mut impl ByteSource, mean: Fixed, stddev: Fixed) -> Result<Fixed, Error> {
 	if !mean.is_valid() || !stddev.is_valid() || stddev.m() <= 0 {
 		return Err(Error::InvalidArgument);
@@ -60,30 +60,37 @@ pub fn normal(source: &mut impl ByteSource, mean: Fixed, stddev: Fixed) -> Resul
 	if !mean.exponent_in(-1_000_000, 1_000_000) || !stddev.exponent_in(-1_000_000, 1_000_000) {
 		return Err(Error::Numeric);
 	}
-	let u1 = nonzero_uniform(source)?;
-	let u2 = uniform(source)?;
-	let radius = Fixed::from_i64(-2).mul(u1.ln()?)?.sqrt()?;
-	let z = radius.mul(u2.cos_turns()?)?;
+	let z = crate::ziggurat::normal(source)?;
 	mean.add(z.mul(stddev)?)
 }
 
+// Guard canonical m*2^(e-62) before generic conversion saturates. An exact
+// half tie outside ±2^53 must be rejected, not clamped into the interval.
+#[inline]
+pub(crate) fn normal_int_candidate(value: Fixed) -> Result<Option<i64>, Error> {
+	const THRESHOLD: i64 = 0x4000_0000_0000_0100;
+	if value.e() > 53 || (value.e() == 53 && (value.m() >= THRESHOLD || value.m() <= -THRESHOLD)) {
+		return Ok(None);
+	}
+	value.round_to_i64().map(Some)
+}
+
 /// Draw a range-scaled normal integer, rejecting tails outside `start..=end`.
+/// Both endpoints must be within ±[`crate::MAX_EXACT_INTEGER`].
 pub fn normal_int(source: &mut impl ByteSource, start: i64, end: i64) -> Result<i64, Error> {
-	if start > end {
+	if start > end || start < -crate::MAX_EXACT_INTEGER || end > crate::MAX_EXACT_INTEGER {
 		return Err(Error::InvalidArgument);
 	}
 	let width = i128::from(end) - i128::from(start);
 	let width = i64::try_from(width).map_err(|_| Error::InvalidArgument)?;
 	let sixth = Fixed::from_i64(width).div(Fixed::from_i64(6))?;
 	let half = Fixed::from_i64(width).div(Fixed::from_i64(2))?;
-	let million = Fixed::from_i64(1_000_000);
 	loop {
-		let u1 = Fixed::from_i64(range(source, 1, 1_000_000)?).div(million)?;
-		let u2 = Fixed::from_i64(range(source, 1, 1_000_000)?).div(million)?;
-		let radius = Fixed::from_i64(-2).mul(u1.ln()?)?.sqrt()?;
-		let z = radius.mul(u2.cos_turns()?)?;
+		let z = crate::ziggurat::normal(source)?;
 		let value = z.mul(sixth)?.add(half)?.add(Fixed::from_i64(start))?;
-		let rounded = value.round_to_i64()?;
+		let Some(rounded) = normal_int_candidate(value)? else {
+			continue;
+		};
 		if rounded >= start && rounded <= end {
 			return Ok(rounded);
 		}
@@ -204,6 +211,17 @@ mod tests {
 	use super::*;
 	use alloc::vec::Vec;
 
+	#[test]
+	fn ziggurat_fast_zero_reads_one_whole_word() {
+		let mut source = ScriptedSource::new(&[0; 8]);
+		assert_eq!(
+			normal(&mut source, Fixed::ZERO, Fixed::from_i64(1)),
+			Ok(Fixed::ZERO)
+		);
+		assert_eq!(source.requests, [8]);
+		assert_eq!(source.cursor, 8);
+	}
+
 	struct ScriptedSource {
 		bytes: Vec<u8>,
 		cursor: usize,
@@ -292,6 +310,30 @@ mod tests {
 	}
 
 	#[test]
+	fn normal_integer_rounding_rejects_half_ties_before_clamping() {
+		const THRESHOLD: i64 = 0x4000_0000_0000_0100;
+		for sign in [-1, 1] {
+			assert_eq!(
+				normal_int_candidate(Fixed::from_parts(sign * (THRESHOLD - 1), 53).unwrap()),
+				Ok(Some(sign * crate::MAX_EXACT_INTEGER))
+			);
+			for offset in [0, 1] {
+				assert_eq!(
+					normal_int_candidate(
+						Fixed::from_parts(sign * (THRESHOLD + offset), 53).unwrap()
+					),
+					Ok(None)
+				);
+			}
+			assert_eq!(
+				normal_int_candidate(Fixed::from_parts(sign * 0x4000_0000_0000_0000, 54).unwrap()),
+				Ok(None)
+			);
+		}
+		assert_eq!(normal_int_candidate(Fixed::ZERO), Ok(Some(0)));
+	}
+
+	#[test]
 	fn sampler_vectors_pin_rust_api_outputs_and_consumption() {
 		let mut seed = [0_u8; 32];
 		seed[31] = 42;
@@ -307,11 +349,11 @@ mod tests {
 		let mut source = crate::Drbg::new(&seed);
 		assert_eq!(
 			normal(&mut source, Fixed::ZERO, one).unwrap().parts(),
-			(-6_261_580_692_471_259_166, -2)
+			(-6_358_178_992_748_390_005, -1)
 		);
 		assert_eq!(source.position(), 8);
 		let mut source = crate::Drbg::new(&seed);
-		assert_eq!(normal_int(&mut source, -17, 981), Ok(339));
+		assert_eq!(normal_int(&mut source, -17, 981), Ok(367));
 		assert_eq!(source.position(), 8);
 		let mut source = crate::Drbg::new(&seed);
 		assert_eq!(
@@ -325,13 +367,13 @@ mod tests {
 		let mut source = crate::Drbg::new(&seed);
 		assert_eq!(
 			log_normal(&mut source, Fixed::ZERO, one).unwrap().parts(),
-			(6_568_593_509_554_243_022, -1)
+			(4_629_206_882_204_335_086, -1)
 		);
 		assert_eq!(source.position(), 8);
 		let mut source = crate::Drbg::new(&seed);
 		assert_eq!(
 			beta(&mut source, two, two).unwrap().parts(),
-			(5_240_771_193_768_987_065, -1)
+			(6_877_416_081_729_278_562, -2)
 		);
 		assert_eq!(source.position(), 24);
 	}

@@ -4,12 +4,10 @@ Completed work: [log](docs/PLAN_LOG.md). Historical directives and deferred risk
 
 ## Correctness and verification
 
-- [ ] Conditionally promote fixed-point Ziggurat across all five implementations after finite-grid/error analysis, actual CLI measurements, exact shared oracles and a versioned continuation transition (context: docs/plan_context/ziggurat_experiment.md).
-- [x] Compare Ziggurat against production AUTO/SCALAR bounded batches with independent scalar work checks, lane/chunk boundaries and 62 retained timing cases (done 2026-10-08 10:02 EDT; delivered with this change; report: docs/reports/2026-10-08-fixed-point-ziggurat.md).
-- [x] Complete the isolated fixed-point Ziggurat experiment with independent boundary/mutation controls, 96M-output predeclared distribution diagnostics and 54 shared-engine performance cases (done 2026-10-08 09:08 EDT; delivered with this change; report: docs/reports/2026-10-08-fixed-point-ziggurat.md).
+- [x] Replace Box–Muller with fixed-point Ziggurat across all five implementations, using frozen shared oracles, cross-language resumption, actual CLI measurements and an explicit breaking continuation version (report: docs/reports/2026-10-08-ziggurat-production.md; done 2026-10-09 01:45 EDT; delivered with this change).
+- [x] Measure exact fixed-point SIMD for Zig/Rust Ziggurat batches without changing stream or failure-prefix semantics; enable Rust AUTO and retain guarded Zig opt-in (report: docs/reports/2026-10-08-ziggurat-production.md; done 2026-10-09 01:45 EDT; delivered with this change).
 - [ ] Prove production-linked distribution laws and explicit parameter-dependent deviation/failure bounds for uniform, normal, normalized integers, exponential, Poisson, log-normal, beta and geometric; preserve shared CLI acceptance and distinguish ideal-source assumptions from cross-language refinement (context: docs/plan_context/distribution_proofs.md).
 - [ ] Fix tiny-negative scalar cosine wrapping to quadrant four with coordinated language tests; preserve existing sampler streams outside that bug (context: docs/plan_context/legacy_decisions.md).
-- [ ] Enforce the ±2^53 contract in legacy scalar normalized-integer APIs before source mutation, preventing rejection loops near i64 extrema.
 - [ ] Complete MAX-mantissa/general-multiplication Kani proofs and minimize non-reproducing SMT diagnostics (context: docs/reports/2026-09-30-kani-contracts.md).
 - [ ] Connect actual Lean `Blake3.xofAt`/`Drbg.fill` byte content to the abstract chunking theorem, beyond existing boundary differentials.
 - [ ] Unify remaining Lean deterministic/entropy samplers through a pure byte-source effect and separate interpreters; geometric already uses this boundary.

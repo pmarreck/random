@@ -141,6 +141,20 @@ def nonzeroUniform (source : Source) : IO (Result Value) := do
           let value := if value.m = 0 then div (fromInt 1) (fromInt 0x100000000) else value
           pure (.ok (value, source))
 
+/-- Interpret the core's pure Ziggurat byte requests; no sampler logic at the I/O edge. -/
+private def standardNormal (source : Source) : IO (Result Value) := do
+  let read : Nat → StateT Source (ExceptT String IO) ByteArray := fun count => do
+    let current ← get
+    let result ← liftM (fill current count)
+    match result with
+    | .error message => throw message
+    | .ok (bytes, next) => set next; pure bytes
+  let result ← ((Ziggurat.sampleWith read (availableFuel source 8)).run source).run
+  pure (match result with
+    | .ok (some value, next) => .ok (value, next)
+    | .ok (none, _) => .error "RNG core failed: numeric or position failure"
+    | .error message => .error message)
+
 def normal (source : Source) (mean stddev : Value) : IO (Result Value) := do
   let some parameters := NormalParameters.create mean stddev |
     return .error "RNG core failed: invalid normal parameters"
@@ -148,45 +162,28 @@ def normal (source : Source) (mean stddev : Value) : IO (Result Value) := do
   | .deterministic deterministic =>
       pure (liftCanonical deterministic (Randoml.normal deterministic.state parameters))
   | .entropy _ =>
-      match ← nonzeroUniform source with
+      match ← standardNormal source with
       | .error message => pure (.error message)
-      | .ok (u1, source) =>
-          match ← uniform source with
-          | .error message => pure (.error message)
-          | .ok (u2, source) =>
-              let some logarithm := ln? u1 | return .error "RNG core failed: numeric failure"
-              let some radius := sqrt? (mul (fromInt (-2)) logarithm) |
-                return .error "RNG core failed: numeric failure"
-              let z := mul radius (cosTurns u2)
-              pure (.ok (add parameters.mean.value (mul z parameters.stddev.value), source))
+      | .ok (z, source) =>
+          pure (.ok (add parameters.mean.value (mul z parameters.stddev.value), source))
 
 private def normalIntLoop : Nat → Source → Int → Int → Value → Value → IO (Result Int)
   | 0, _, _, _, _, _ => pure (.error "RNG core failed: position overflow")
   | fuel + 1, source, start, stop, sixth, half => do
-      match ← range source 1 1000000 with
+      match ← standardNormal source with
       | .error message => pure (.error message)
-      | .ok (first, source) =>
-          match ← range source 1 1000000 with
-          | .error message => pure (.error message)
-          | .ok (second, source) =>
-              let million := fromInt 1000000
-              let u1 := div (fromInt first) million
-              let u2 := div (fromInt second) million
-              let some logarithm := ln? u1 | return .error "RNG core failed: numeric failure"
-              let some radius := sqrt? (mul (fromInt (-2)) logarithm) |
-                return .error "RNG core failed: numeric failure"
-              let z := mul radius (cosTurns u2)
-              let value := add (add (mul z sixth) half) (fromInt start)
-              let rounded := roundToInt value
-              if start ≤ rounded ∧ rounded ≤ stop then
-                pure (.ok (rounded, source))
-              else
-                normalIntLoop fuel source start stop sixth half
+      | .ok (z, source) =>
+          let value := add (add (mul z sixth) half) (fromInt start)
+          match normalIntCandidate? value with
+          | some rounded =>
+              if start ≤ rounded ∧ rounded ≤ stop then pure (.ok (rounded, source))
+              else normalIntLoop fuel source start stop sixth half
+          | none => normalIntLoop fuel source start stop sixth half
 
 def normalInt (source : Source) (start stop : Int) : IO (Result Int) := do
-  if stop < start then return .error "RNG core failed: invalid range"
+  if stop < start ∨ start < -Fixed.clamp ∨ stop > Fixed.clamp then
+    return .error "RNG core failed: invalid range"
   let width := stop - start
-  if width ≥ Fixed.clamp then return .error "RNG core failed: range is too wide"
   match source with
   | .deterministic deterministic =>
       pure (liftDeterministic deterministic (Randoml.normalInt deterministic.state start stop))

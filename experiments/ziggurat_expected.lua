@@ -4,6 +4,7 @@ local ffi = require("ffi")
 ffi.cdef[[
 typedef struct { int64_t m; int32_t e; } expected_pair;
 int experiment_samples(uint64_t, uint8_t, uint8_t, size_t, expected_pair *);
+int production_samples(uint64_t, uint8_t, size_t, expected_pair *);
 uint64_t experiment_checksum(uint8_t, uint8_t, size_t, uint64_t, bool);
 int randomz_fixed_format(expected_pair, size_t, char *, size_t, size_t *);
 ]]
@@ -24,6 +25,12 @@ for a, algorithm in ipairs(algorithms) do
 			for s,n in ipairs(sizes) do
 				local values = ffi.new("expected_pair[?]",n)
 				assert(lib.experiment_samples(seed,a-1,o-1,n,values) == 0)
+				if algorithm == "ziggurat" then
+					local actual = ffi.new("expected_pair[?]",n)
+					assert(lib.production_samples(seed,o-1,n,actual)==0, "production sampler status")
+					for i=0,n-1 do assert(actual[i].m==values[i].m and actual[i].e==values[i].e,
+						"production sampler differs from independent experiment: "..operation.." index="..i) end
+				end
 				local sum, buffer, written = 0ULL, ffi.new("char[512]"), ffi.new("size_t[1]")
 				for i = 0,n-1 do
 					local x = values[i]
@@ -35,8 +42,8 @@ for a, algorithm in ipairs(algorithms) do
 					end
 				end
 				assert(lib.experiment_checksum(a-1,o-1,n,seed,formatted) == sum, "benchmark work checksum differs from FFI-array oracle")
-				if algorithm == "box" and operation == "integer" then
-					for b, batch in ipairs({"auto", "scalar"}) do
+				if algorithm == "ziggurat" and operation == "integer" then
+					for b, batch in ipairs({"auto", "scalar", "simd"}) do
 						assert(lib.experiment_checksum(b+2,o-1,n,seed,formatted) == sum,
 							batch .. " batch checksum differs from independent scalar work oracle")
 					end

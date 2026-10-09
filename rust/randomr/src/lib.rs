@@ -31,6 +31,7 @@ mod error;
 mod fixed;
 mod geometric;
 mod unsigned_count;
+mod ziggurat;
 
 #[cfg(kani)]
 mod kani_proofs;

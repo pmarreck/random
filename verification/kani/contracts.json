@@ -98,8 +98,8 @@
 			"id": "batch::kani_contracts::portable_wrapper_contract", "function": "batch::kani_contracts::portable_wrapper_contract", "unwind": 33,
 			"assertions": ["batch typed prefix result", "batch scalar source consumption", "batch initialized prefix untouched tail"], "negative": "batch initialized prefix untouched tail",
 			"covers": ["batch empty reachable", "batch four successes reachable", "batch partial failure reachable", "batch immediate failure reachable"],
-			"stubs": [{"original": "crate::distribution::normal_int", "replacement": "modeled_scalar"}],
-			"scope": "0..4 output lanes and arbitrary scalar results/first-error positions, range 0..20. Production portable wrapper and parameter kernel; scalar sampler replaced by explicit one-word/error model. No nonlinear/AVX2 equivalence claim."
+			"stubs": [{"original": "crate::batch::sample_prepared", "replacement": "modeled_scalar"}, {"original": "crate::ziggurat::normal", "replacement": "forbidden_normal"}],
+			"scope": "0..4 output lanes and arbitrary scalar results/first-error positions, range 0..20. Production portable wrapper and cached parameter kernel; prepared scalar sampler replaced by explicit one-word/error model. The forbidden nonlinear stub is outside the accepted assertion set: Kani elides it when disconnected, and any emitted guard rejects stale/bypassed boundaries. No nonlinear/AVX2 equivalence claim."
 		},
 		{
 			"id": "batch::kani_contracts::portable_source_error_contract", "function": "batch::kani_contracts::portable_source_error_contract", "unwind": 33,

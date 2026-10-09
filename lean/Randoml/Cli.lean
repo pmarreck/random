@@ -12,7 +12,7 @@ open Randoml
 open Randoml.Fixed
 open Randoml.CliOptions
 
-def version := "0.3.0"
+def version := "0.4.0"
 def streamChunk : Nat := 65535
 
 inductive Generated
@@ -46,7 +46,7 @@ def jsonQuote (value : String) : String := Id.run do
   pure ((String.fromUTF8? output).getD "")
 
 def errorJson (message : String) : String :=
-  "{\"sv\":2,\"rv\":" ++ jsonQuote version ++
+  "{\"sv\":3,\"rv\":" ++ jsonQuote version ++
     ",\"error\":{\"code\":\"usage\",\"message\":" ++ jsonQuote message ++
     "},\"notices\":[],\"warnings\":[]}\n"
 
@@ -272,7 +272,7 @@ def helpText (program : String) : String :=
     "",
     "Distributions (mutually exclusive):",
     "  (default)           Uniform distribution",
-    "  -n, --normalized    Normal (Gaussian) via Box-Muller",
+    "  -n, --normalized    Normal (Gaussian) via Ziggurat",
     "      --exponential   Exponential distribution (use --rate)",
     "      --poisson       Poisson distribution (use --lambda or --mean)",
     "      --geometric     Failures before success; default probability 0.5",
@@ -760,13 +760,13 @@ def metadata (options : Options) (source : CliSource.Source)
   match CliSource.seed? source, CliSource.position? source with
   | some seed, some position =>
       let args ← canonicalArgs options bounds
-      pure (some ("{\"sv\":2,\"rv\":" ++ jsonQuote version ++ ",\"seed\":\"0x" ++ byteHex seed ++
+      pure (some ("{\"sv\":3,\"rv\":" ++ jsonQuote version ++ ",\"seed\":\"0x" ++ byteHex seed ++
         "\",\"next_pos\":" ++ jsonQuote (toString position) ++
         ",\"args\":" ++ args ++
         ",\"notices\":[" ++ noticeJson ++ "],\"warnings\":[]}\n"))
   | _, _ =>
       if notices.isEmpty then pure none
-      else pure (some ("{\"sv\":2,\"rv\":" ++ jsonQuote version ++
+      else pure (some ("{\"sv\":3,\"rv\":" ++ jsonQuote version ++
         ",\"notices\":[" ++ noticeJson ++ "],\"warnings\":[]}\n"))
 
 def runGeneration (options : Options) : IO (Except String Unit) := do

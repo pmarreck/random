@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Checked child-CPU/full-wall CLI adapter for the shared measurement engine.
+set -u
+set -o pipefail
+IFS=- read -r version language operation cores <<<"${1:?case required}"
+size="${2:?size required}"; seed="${3:?seed required}"
+if [[ "$size" != 32768 || "$seed" != 42 ]]; then echo 'CLI oracle requires frozen size/seed' >&2; exit 1; fi
+expected="$(jq -er --arg v "$version" --arg op "$operation" '.[$v][$op]' tests/fixtures/ziggurat-cli-bench.json)" || exit 1
+case "$version/$language" in
+	before/zig) cli="${RANDOM_ZIGGURAT_OLD_ZIG:?old release CLI required}" ;;
+	before/rust) cli="${RANDOM_ZIGGURAT_OLD_RUST:?old release CLI required}" ;;
+	after/zig) cli="${RANDOM_ZIGGURAT_NEW_ZIG:-$PWD/zig-out/bin/randomz}" ;;
+	after/rust) cli="${RANDOM_ZIGGURAT_NEW_RUST:-${CARGO_TARGET_DIR:-$PWD/target}/release/randomr}" ;;
+	*) exit 1 ;;
+esac
+args=(--seed "$seed" --count "$size")
+case "$operation" in
+	normal) args+=(--normalized --mean=-0.25 --stddev=1.75) ;;
+	integer) args+=(--normalized 0..255) ;;
+	lognormal) args+=(--log-normal --mean=-0.25 --stddev=1.75) ;;
+	beta) args+=(--beta=3 --alpha=1) ;;
+	*) exit 1 ;;
+esac
+digest="$(sha256sum "$cli")" || exit 1
+"${RANDOM_ZIGGURAT_ARTIFACTS:?build experiment first}/ziggurat-cli-bench" "$size" "$expected" "$cli" "${args[@]}" |
+	jq --arg digest "${digest%% *}" '. + {executable_sha256:$digest}'

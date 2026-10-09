@@ -100,9 +100,9 @@ done
 cp "$root/Cargo.toml" "$root/Cargo.lock" "$mutant_root/source/"
 cp -R "$root/rust" "$mutant_root/source/"
 sed -i \
-	's/7_244_019_458_077_122_842/7_244_019_000_000_000_000/' \
+	's/6_393_154_322_601_327_829/6_393_154_000_000_000_000/' \
 	"$mutant_root/source/rust/randomr/src/fixed.rs"
-if ! grep -q '7_244_019_000_000_000_000' \
+if ! grep -q '6_393_154_000_000_000_000' \
 	"$mutant_root/source/rust/randomr/src/fixed.rs"; then
 	echo "randomr mutation FAILED: nonlinear source mutation was not applied" >&2
 	exit 1

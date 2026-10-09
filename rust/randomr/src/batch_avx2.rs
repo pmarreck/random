@@ -1,8 +1,9 @@
-//! Private AVX2 kernels; callers restrict inputs to sampler-generated uniforms.
+//! Private exact AVX2 kernels with checked sampler-domain entrypoints.
 #![allow(unsafe_code)]
 use crate::Fixed;
 type Batch = [Fixed; 4];
 
+#[cfg(test)]
 pub(super) fn uniform_kernels(
 	log_inputs: Batch,
 	cos_inputs: Batch,
@@ -30,10 +31,62 @@ pub(super) fn uniform_kernels(
 	})
 }
 
+/// Four-lane fixed-point affine mapping. The checked domain bounds every
+/// exponent intermediate; this function neither reads nor retains RNG bytes.
+pub(super) fn scale_normals(
+	xs: Batch,
+	sixth: Fixed,
+	half: Fixed,
+	start: Fixed,
+) -> Result<Batch, crate::Error> {
+	if !std::is_x86_feature_detected!("avx2") {
+		return Err(crate::Error::Unsupported);
+	}
+	if !xs
+		.iter()
+		.chain([&sixth, &half, &start])
+		.all(|x| x.is_valid() && (x.is_zero() || (-128..=128).contains(&x.e())))
+	{
+		return Err(crate::Error::InvalidArgument);
+	}
+	// SAFETY: feature detection and canonical bounded exponents checked above.
+	Ok(unsafe { avx2::scale_normals4(xs, sixth, half, start) })
+}
+
 #[cfg(test)]
 #[allow(unsafe_code)]
 mod tests {
 	use super::*;
+	#[test]
+	fn ziggurat_scaling_preserves_scalar_rounding() {
+		if !std::is_x86_feature_detected!("avx2") {
+			return;
+		}
+		let xs = [
+			Fixed::ZERO,
+			Fixed::from_i64(-3),
+			Fixed::from_ratio(1, 4).unwrap(),
+			Fixed::from_i64(14),
+		];
+		let sixth = Fixed::from_ratio(85, 2).unwrap();
+		let half = Fixed::from_ratio(255, 2).unwrap();
+		for first in [0, -crate::MAX_EXACT_INTEGER, crate::MAX_EXACT_INTEGER] {
+			let start = Fixed::from_i64(first);
+			let actual = scale_normals(xs, sixth, half, start).unwrap();
+			for lane in 0..4 {
+				assert_eq!(
+					actual[lane],
+					xs[lane]
+						.mul(sixth)
+						.unwrap()
+						.add(half)
+						.unwrap()
+						.add(start)
+						.unwrap()
+				);
+			}
+		}
+	}
 	#[test]
 	fn checked_entry_rejects_outside_uniform_domain() {
 		if !std::is_x86_feature_detected!("avx2") {
@@ -54,6 +107,36 @@ mod tests {
 			);
 			assert_eq!(
 				uniform_kernels(good, inputs),
+				Err(crate::Error::InvalidArgument)
+			);
+		}
+	}
+	#[test]
+	fn checked_scaling_rejects_each_extreme_exponent_input() {
+		if !std::is_x86_feature_detected!("avx2") {
+			return;
+		}
+		let good = Fixed::from_i64(1);
+		for exponent in [-129, 129] {
+			let bad = Fixed::from_parts(1 << 62, exponent).unwrap();
+			for lane in 0..4 {
+				let mut xs = [good; 4];
+				xs[lane] = bad;
+				assert_eq!(
+					scale_normals(xs, good, good, good),
+					Err(crate::Error::InvalidArgument)
+				);
+			}
+			assert_eq!(
+				scale_normals([good; 4], bad, good, good),
+				Err(crate::Error::InvalidArgument)
+			);
+			assert_eq!(
+				scale_normals([good; 4], good, bad, good),
+				Err(crate::Error::InvalidArgument)
+			);
+			assert_eq!(
+				scale_normals([good; 4], good, good, bad),
 				Err(crate::Error::InvalidArgument)
 			);
 		}
@@ -247,12 +330,22 @@ mod avx2 {
 	pub unsafe fn add4(a: Batch, b: Batch) -> Batch {
 		unpack(add(pack(a), pack(b)))
 	}
+	/// A single CPU-feature boundary, with no intermediate pack/unpack calls.
+	#[target_feature(enable = "avx2")]
+	pub unsafe fn scale_normals4(xs: Batch, sixth: Fixed, half: Fixed, start: Fixed) -> Batch {
+		unpack(add(
+			add(mul(pack(xs), constant(sixth)), constant(half)),
+			constant(start),
+		))
+	}
 
+	#[cfg(test)]
 	pub struct Coefficients {
 		odd: [Fixed; 20],
 		cosine: [Fixed; 14],
 		sine: [Fixed; 14],
 	}
+	#[cfg(test)]
 	impl Coefficients {
 		pub fn new() -> Self {
 			Self {
@@ -267,6 +360,7 @@ mod avx2 {
 		}
 	}
 	#[target_feature(enable = "avx2")]
+	#[cfg(test)]
 	pub unsafe fn ln4(xs: Batch, coefficients: &Coefficients) -> Batch {
 		let one = Fixed::from_i64(1);
 		let initial = xs.map(|x| {
@@ -293,6 +387,7 @@ mod avx2 {
 		out
 	}
 	#[target_feature(enable = "avx2")]
+	#[cfg(test)]
 	pub unsafe fn cos4(xs: Batch, coefficients: &Coefficients) -> Batch {
 		let one = Fixed::from_i64(1);
 		let mut quadrants = [0_i64; 4];

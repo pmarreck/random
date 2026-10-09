@@ -1,4 +1,52 @@
-# Code review — isolated fixed-point Ziggurat experiment
+# Code review — production Ziggurat and exact SIMD
+
+2026-10-09 · Codex, with fresh-context reviewer
+`/root/ziggurat_production_review` · base `89b2213664f5` plus the production
+migration. Supplementary finding DCR-001 is resolved after corrected-source
+revalidation. This is a scoped
+review, not whole-library clearance or a mathematical distribution proof.
+
+Coverage: all five kernels, table/distribution/CLI wiring, schema-v3 rejection
+and cross-language continuation, Rust and Zig batch/source-error transitions,
+AVX2 integer arithmetic and CPU/OS guards, module packaging, frozen acceptance
+controls, and the statistical/performance/proof evidence boundaries.
+
+The reviewer independently passed all 36 Rust library tests, a no-default-
+features compile check, 347,075 Zig LuaJIT-FFI batch checks, and all 2,305 frozen
+production checks across LuaJIT, Zig, Rust, Lean and Roc. It used explicit
+existing CLI artifacts and an isolated Rust build target; it did not change
+project sources or shared build outputs.
+
+The author repaired a stale Kani scalar-model boundary exposed by parameter
+caching, then passed both affected positive contracts and designated negative
+controls. The review checked the model and receipts but did not independently
+rerun the solver. Successful nonlinear arithmetic and SIMD equivalence remain
+outside those proofs. Roc's newly inconsistent backend-mode validation was
+also reproduced and repaired before this review; all three modes now preserve
+the shared scalar contract, with a portable fallback in Roc.
+
+DCR-001, medium severity/high confidence: generic integer conversion clamps
+normalized tails into ±2^53 before range rejection, contradicting the new
+conditioning contract even on valid narrow CLI ranges. The reviewer reproduced
+it independently through the Zig C ABI in scalar and all batch modes. The new
+40-assertion shared endpoint control failed in all five implementations before
+the correction. Every core now guards the exact half-away rejection threshold
+before conversion. Supplementary review passed the rebuilt-artifact matrix,
+half-tie adjacency controls and an independently derived seed171 rejection
+through the real Rust DRBG and direct AVX2 path. Reviewed source hashes stayed
+unchanged during those checks; no additional implementation finding remains.
+The same correction closes the inherited legacy scalar admission gap beyond
+±2^53, with pre-read refusal and unchanged output/cursor controls.
+
+Native review execution covered Linux x86_64. The reviewer did not rerun the
+full Nix gate, heavy statistics/MPFR generation, pre-AVX emulation or native
+Darwin/Windows/aarch64 tests. The proposed global distribution-error bound is
+still unproved. See the [production report](docs/reports/2026-10-08-ziggurat-production.md)
+for exact measurements, controls and final release-gate evidence.
+
+---
+
+# Previous review — isolated fixed-point Ziggurat experiment
 
 Follow-up, 2026-10-08: the same independent reviewer passed all nine new
 edge/chunk work-oracle counts and 80,229 production batch value/cursor/rejection/

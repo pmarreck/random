@@ -2,6 +2,8 @@ use core::cmp::Ordering;
 
 use crate::{Error, MAX_EXACT_INTEGER};
 
+pub(crate) mod ziggurat_tables;
+
 const TWO62: u64 = 0x4000_0000_0000_0000;
 const TWO61: u64 = 0x2000_0000_0000_0000;
 const LN2: Fixed = Fixed {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Required bounded experiment checks. The production sampler is unchanged.
+# Required bounded experiment checks, including the historical Box–Muller control.
 set -u
 set -o pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -13,6 +13,7 @@ unit_test() {
 		-O ReleaseSafe -Mfixed=src/fixed.zig
 }
 report="$(unit_test experiments/ziggurat.zig 2>&1)" || { printf '%s\n' "$report" >&2; exit 1; }
+report="$(unit_test src/ziggurat.zig 2>&1)" || { printf '%s\n' "$report" >&2; exit 1; }
 cp experiments/ziggurat_tables.zig "$artifacts/ziggurat_tables.zig" || exit 1
 for mutation in bits rectangle tail; do
 	case "$mutation" in
@@ -30,21 +31,48 @@ for mutation in bits rectangle tail; do
 	fi
 done
 bash experiments/ziggurat-build "$artifacts" || exit 1
+printf_cli="$(type -P printf)" || exit 1
+"$artifacts/ziggurat-cli-bench" 1 120 "$printf_cli" x >/dev/null || exit 1
+control="$("$artifacts/ziggurat-cli-bench" 1 121 "$printf_cli" x 2>&1)"
+if [ "$?" -eq 0 ] || [[ "$control" != *'work/status/clock mismatch'* ]]; then
+	printf 'CLI sink work oracle failed to reject changed output: %s\n' "$control" >&2; exit 1
+fi
+cli_oracle="$(luajit experiments/ziggurat_cli_expected.lua "$artifacts/libziggurat.so" 32768 42)" || exit 1
+if [ "$(jq -Sc . <<<"$cli_oracle")" != "$(jq -Sc . tests/fixtures/ziggurat-cli-bench.json)" ]; then
+	echo 'CLI benchmark frozen oracle differs from independent FFI composition' >&2; exit 1
+fi
+cargo build --offline --release -p randomr --example ziggurat_batch_bench || exit 1
+rust_bench="${CARGO_TARGET_DIR:-target}/release/examples/ziggurat_batch_bench"
+for mode in rustauto rustscalar; do
+	control="$("$rust_bench" "$mode-integer-core-1" 7 42 0 2>&1)"
+	if [ "$?" -eq 0 ] || [[ "$control" != *'incorrect warmup'* ]]; then
+		printf 'Rust batch work oracle control failed: %s\n' "$control" >&2; exit 1
+	fi
+done
 for count in 0 1 3 4 7 1023 1024 1025 2051; do
 	luajit experiments/ziggurat_expected.lua "$artifacts/libziggurat.so" 42 "$count" >/dev/null || exit 1
 done
-for name in box-normal auto-integer scalar-integer; do
+for name in box-normal auto-integer scalar-integer simd-integer; do
 	work_control="$("$artifacts/ziggurat-bench" "$name-core-1" 7 42 0 2>&1)"
 	if [ "$?" -eq 0 ] || [[ "$work_control" != *IncorrectWarmup* ]]; then
 		printf 'Benchmark %s oracle control failed unexpectedly:\n%s\n' "$name" "$work_control" >&2; exit 1
 	fi
 done
 expected="$(luajit experiments/ziggurat_expected.lua "$artifacts/libziggurat.so" 42 7)" || exit 1
-checksum="$(jq -er '."box-integer-core"."7"' <<< "$expected")" || exit 1
-for mode in auto scalar; do
+checksum="$(jq -er '."ziggurat-integer-core"."7"' <<< "$expected")" || exit 1
+for mode in auto scalar simd; do
 	"$artifacts/ziggurat-bench" "$mode-integer-core-1" 7 42 "$checksum" |
 		jq -e --arg mode "$mode" '(.batch_accelerated|type)=="boolean" and
-			($mode!="scalar" or .batch_accelerated==false) and .correct==true' >/dev/null || exit 1
+			($mode=="simd" or .batch_accelerated==false) and .correct==true and
+			(.rows[0].samples.cpu_ns|length)==24 and
+			.rows[0].paired_control.repetitions_per_sample==8 and
+			(.rows[0].paired_control.cpu_ns|length)==24' >/dev/null || exit 1
+done
+for mode in rustauto rustscalar; do
+	"$rust_bench" "$mode-integer-core-1" 7 42 "$checksum" |
+		jq -e '.correct==true and (.rows[0].samples.cpu_ns|length)==24 and
+			.rows[0].paired_control.repetitions_per_sample==8 and
+			(.rows[0].paired_control.cpu_ns|length)==24' >/dev/null || exit 1
 done
 oracle="$(luajit experiments/ziggurat_oracle.lua "$artifacts/libziggurat.so" 100000 2>&1)" || {
 	printf '%s\n' "$oracle" >&2; exit 1;
@@ -72,6 +100,18 @@ done
 generated="$(luajit experiments/ziggurat_generate.lua 512)" || exit 1
 stored="$(<experiments/ziggurat_tables.zig)"
 if [ "$generated" != "$stored" ]; then echo 'Ziggurat table regeneration differs at 512 bits' >&2; exit 1; fi
+for entry in zig:src/ziggurat_tables.zig lua:lib/ziggurat_tables.lua \
+	rust:rust/randomr/src/fixed/ziggurat_tables.rs lean:lean/Randoml/ZigguratTables.lean \
+	roc:roc/ZigguratTables.roc; do
+	format="${entry%%:*}"; path="${entry#*:}"
+	# Ignore formatter-only punctuation/whitespace, not any signed decimal
+	# literal, ordering, or count. Each table is also compiled and exercised
+	# against the frozen independent production fixture in the required suite.
+	luajit experiments/ziggurat_generate.lua 512 "$format" |
+		ZIGGURAT_TABLE_PATH="$path" luajit -e 'local function numbers(s) local t={} for n in s:gmatch("%-?%d+") do t[#t+1]=n end return table.concat(t,",") end
+		local path=assert(os.getenv("ZIGGURAT_TABLE_PATH")); local f=assert(io.open(path,"rb")); local stored=f:read("*a"); f:close()
+		assert(numbers(io.read("*a"))==numbers(stored),"production table integer literals differ: "..path)' || exit 1
+done
 printf '%s\n' "$oracle"
 printf '%s\n' "$decisions"
 printf '%s\n' "$certificate"

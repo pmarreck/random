@@ -3,6 +3,10 @@
 2026-10-08. Base revision `a758c902143f`. Production samplers, stream versions,
 continuation states and public library APIs are unchanged.
 
+This is the historical experiment report. The later
+[production migration and SIMD report](2026-10-08-ziggurat-production.md)
+records the coordinated 0.4.0/schema-3 replacement and actual CLI measurements.
+
 ## Decision
 
 The isolated Zig candidate is substantially faster than scalar production

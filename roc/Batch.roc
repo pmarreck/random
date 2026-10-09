@@ -6,7 +6,8 @@ import Draw
 Batch :: { first : I64, last : I64, remaining : U64, index : U64 }.{
 	normal : I64, I64, U64, I64 -> Try(Batch, [Invalid, Numeric, DivisionByZero, Source, BufferTooSmall])
 	normal = |first, last, count, mode| {
-		if mode < 0 or mode > 1 return Err(Invalid)
+		# SIMD (2) permits the same portable scalar fallback as the Zig ABI.
+		if mode < 0 or mode > 2 return Err(Invalid)
 		match Sampler.normal_int(first, last).view() {
 			Failed(problem) => Err(problem)
 			_ => Ok({ first, last, remaining: count, index: 0 })

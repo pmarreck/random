@@ -31,7 +31,7 @@ pub fn apply(options: &mut Options, text: &str, positional: &[String]) -> Result
 			return Err(format!("unknown state key: {key}"));
 		}
 	}
-	if take_number(&mut root, "sv")?.as_deref() != Some("2") {
+	if take_number(&mut root, "sv")?.as_deref() != Some("3") {
 		return Err("unsupported state schema version".to_owned());
 	}
 	let _ = take_string(&mut root, "rv")?;

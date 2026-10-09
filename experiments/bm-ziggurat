@@ -7,10 +7,17 @@ cd "$here" || exit 1
 if [ "${RANDOM_ZIGGURAT_SHELL:-0}" != 1 ]; then
 	exec nix develop .#ziggurat -c env RANDOM_ZIGGURAT_SHELL=1 "$0" "$@"
 fi
+config=profiling-ziggurat.json
+case "${1:-}" in
+	--cli) shift; config=profiling-ziggurat-cli.json ;;
+	--rust) shift; config=profiling-ziggurat-rust.json ;;
+esac
 export RANDOM_ZIGGURAT_ARTIFACTS="${RANDOM_ZIGGURAT_ARTIFACTS:-$(mktemp -d "${TMPDIR:-/tmp}/random-ziggurat.XXXXXX")}" || exit 1
 experiments/ziggurat-build "$RANDOM_ZIGGURAT_ARTIFACTS" || exit 1
+cargo build --offline --release -p randomr --example ziggurat_batch_bench || exit 1
+export RANDOM_ZIGGURAT_RUST_BENCH="${CARGO_TARGET_DIR:-target}/release/examples/ziggurat_batch_bench"
 luajit experiments/ziggurat_oracle.lua "$RANDOM_ZIGGURAT_ARTIFACTS/libziggurat.so" || exit 1
 export RANDOM_ZIGGURAT_EXPECTED_SEED=42
 export RANDOM_ZIGGURAT_EXPECTED_JSON="$(luajit experiments/ziggurat_expected.lua "$RANDOM_ZIGGURAT_ARTIFACTS/libziggurat.so" 42)" || exit 1
 printf 'Experimental artifacts retained: %s\n' "$RANDOM_ZIGGURAT_ARTIFACTS" >&2
-exec performance-profile run --config profiling-ziggurat.json --seed 42 "$@"
+exec performance-profile run --config "$config" --seed 42 "$@"

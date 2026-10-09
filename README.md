@@ -31,7 +31,7 @@ deterministic mode in every family.
 
 ## Features
 
-- **Distributions:** uniform (default), normal (Box-Muller), exponential, Poisson, geometric (failures before success), log-normal, beta
+- **Distributions:** uniform (default), normal (fixed-point Ziggurat), exponential, Poisson, geometric (failures before success), log-normal, beta
 - **Sparse-event gaps:** geometric counts have no u32/u64 ceiling; exact decimal/hex output and unsigned BLIP support probabilities such as `1e-20` and `2^-100` ([contract](docs/specs/2026-10-04-geometric-distribution.md))
 - **Cryptographically secure sources:** the platform OS CSPRNG, or a deterministic BLAKE3 keyed XOF (`-d`/`--seed`)
 - **Stdin ops:** `--choose` one item, `--shuffle` all items, `--weighted` (`value:weight`)
@@ -113,7 +113,7 @@ fragile controls that *must* diverge (platform libm across libcs, out-of-range
 `double`→int conversion across architectures), because an "identical" verdict
 from a comparison that could not have detected a difference proves nothing.
 Results and caveats: [`docs/cross-architecture-evidence.md`](docs/cross-architecture-evidence.md).
-The same local run compares 54 end-to-end invocations from native x86_64 and
+The same local run compares 63 end-to-end invocations from native x86_64 and
 emulated aarch64 Rust executables to the LuaJIT oracle.
 
 While building this kernel we found and filed
@@ -182,7 +182,7 @@ Generated values stay on stdout. A deterministic invocation writes one JSON
 state object to stderr after stdout has been flushed:
 
 ```json
-{"sv":2,"rv":"0.3.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"12","args":{"distribution":"uniform","range":"1..20","count":"3","encoding":"text","delim":"\n"},"notices":[],"warnings":[]}
+{"sv":3,"rv":"0.4.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"12","args":{"distribution":"uniform","range":"1..20","count":"3","encoding":"text","delim":"\n"},"notices":[],"warnings":[]}
 ```
 
 `next_pos` is a decimal string containing the next BLAKE3 XOF byte position,
@@ -201,8 +201,14 @@ Notices and warnings are arrays, and errors use an
 with no notice or warning leave stderr empty. Input state must be valid UTF-8;
 stdin state is capped at 1 MiB, and structural depth/member limits reject
 pathological JSON before it can exhaust a parser stack or monopolize the CLI.
-Schema 2 uses the short semantic keys `op` and `delim`; schema 1 is rejected
-rather than silently translated.
+Schema 3 retains the short semantic keys `op` and `delim`. Version 0.4.0 replaces
+Box–Muller with fixed-point Ziggurat in all five cores: seeded normal, normalized
+integer, log-normal and beta outputs change together. Raw BLAKE3 bytes and the
+other distribution streams do not change. Older continuation schemas are
+rejected rather than silently replayed with a different sampler. Restart from
+a seed to obtain the new sequence; keep an older release to replay its sequence.
+See the [sampler contract](docs/specs/2026-10-08-ziggurat-stream-v3.md) for the
+bit layout, rejection rules and verification limits.
 
 For shell loops that only need to advance state, the redirection order below
 captures stderr while discarding stdout:
@@ -587,10 +593,15 @@ key and cached bytes on drop. Neither implementation starts a worker thread.
 ### Batched normalized sampling
 
 The Zig/C and Rust CLIs automatically batch range-scaled normal integers
-(`--normalized`, including binary output). On supported x86_64 CPUs, exact
-AVX2 logarithm/cosine kernels accelerate the existing sampler. Other CPUs
-use scalar arithmetic. No new CLI switch, seed, or continuation schema is
-needed; single-value calls and every batch partition preserve the sequence.
+(`--normalized`, including binary output). Rust automatically uses exact
+AVX2 fixed-point arithmetic on supported x86_64 CPUs to map four completed
+Ziggurat candidates to the integer range. Zig defaults to scalar arithmetic:
+final paired measurements showed only a small gain, with inconsistent earlier
+results. Its library
+offers explicit SIMD opt-in for callers to benchmark on their own machines.
+Other CPUs use scalar arithmetic. Sampling and rejection stay
+sequential: single-value calls and every batch partition preserve the current
+schema-3 sequence. The Ziggurat migration itself changes the older sequence.
 Custom `--mean`/`--stddev` and other distributions retain their scalar paths.
 
 Library users opt in with their own output buffer:
@@ -603,12 +614,14 @@ int status = randomz_normal_int_batch(fill, context, 1, 20,
 /* On error, values[0..written) is the completed prefix; the suffix is untouched. */
 ```
 
-Use `RANDOMZ_BATCH_SCALAR` to select the original arithmetic explicitly.
-Both batch APIs require `-2^53 <= start <= end <= 2^53`. Within that domain,
+Use `RANDOMZ_BATCH_SIMD` to request Zig's runtime-guarded AVX2 path, with portable
+scalar fallback; `RANDOMZ_BATCH_AUTO` and `RANDOMZ_BATCH_SCALAR` currently select
+scalar arithmetic. This dispatch choice does not change generated values.
+Both scalar and batch APIs require `-2^53 <= start <= end <= 2^53`. Within that domain,
 the callback observes the same ordered read requests as repeated scalar calls,
 including requests that fail. Wider bounds fail before consuming bytes or
-changing output. The older scalar APIs' wider acceptance is not a guarantee
-that their rejection loops terminate near `i64` extrema.
+changing output. Out-of-range normal candidates are rejected before integer
+conversion; they are never clamped into an endpoint.
 
 ```rust
 let mut values = [0_i64; 256];
@@ -625,7 +638,7 @@ the non-speculative scalar entry.
 Both APIs use constant scratch space, retain no samples between calls, and
 start no threads. Callers may use any buffer length, including zero. Invalid
 bounds are rejected even for empty buffers. See the
-[production measurements and validation](docs/normalized-throughput-2026-09-06.md#production-promotion-2026-09-09)
+[current production measurements and validation](docs/reports/2026-10-08-ziggurat-production.md)
 for results and scope.
 
 ## Development

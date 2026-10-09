@@ -44,7 +44,7 @@ NORMAL_TEST_SEEDS=(90001 90006 90003 90004 90005)
 is_json_error() {
 	local output="$1"
 	[[ "$output" != *$'\n'* ]] &&
-		[[ "$output" == '{"sv":2,"rv":"0.3.0","error":{"code":"'* ]] &&
+		[[ "$output" == '{"sv":3,"rv":"0.4.0","error":{"code":"'* ]] &&
 		[[ "$output" == *'","message":"'* ]] &&
 		[[ "$output" == *'},"notices":[],"warnings":[]}' ]]
 }

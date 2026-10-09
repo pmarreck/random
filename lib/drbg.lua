@@ -10,7 +10,7 @@ local i64 = ffi.typeof("int64_t")
 local LIMIT = 9007199254740992
 local CONTEXT = "random drbg 2026-08-04 v1"
 local TWO32_M, TWO32_E = fx.from_int(4294967296)
-local M = {version = "0.3.0", max_position = LIMIT}
+local M = {version = "0.4.0", max_position = LIMIT}
 
 local function exact_position(value)
 	assert(type(value) == "number" and value >= 0 and value <= LIMIT and
@@ -116,14 +116,13 @@ function M.from_state(state)
 	function rng:uniform_number() return self:u32() / 4294967296 end
 
 	function rng:normal_int(first, last)
-		range_span(first, last)
-		return distributions.normal_int(first, last, function(a, b) return self:range(a, b) end)
+		return distributions.normal_int(first, last, function() return self:u64() end)
 	end
 
 	function rng:normal(mm, me, sm, se)
 		fixed_parameter(mm, me, false)
 		fixed_parameter(sm, se, true)
-		return distributions.normal(mm, me, sm, se, function() return self:uniform() end)
+		return distributions.normal(mm, me, sm, se, function() return self:u64() end)
 	end
 	function rng:exponential(m, e)
 		fixed_parameter(m, e, true)
@@ -138,14 +137,15 @@ function M.from_state(state)
 		fixed_parameter(mm, me, false)
 		fixed_parameter(sm, se, true)
 		assert(me <= 27 and se <= 23, "log-normal parameters are outside the supported domain")
-		return distributions.log_normal(mm, me, sm, se, function() return self:uniform() end)
+		return distributions.log_normal(mm, me, sm, se, function() return self:u64() end)
 	end
 	function rng:beta(am, ae, bm, be)
 		fixed_parameter(am, ae, true)
 		fixed_parameter(bm, be, true)
 		assert(ae >= -20 and ae <= 20 and be >= -20 and be <= 20,
 			"beta parameters are outside the supported domain")
-		return distributions.beta(am, ae, bm, be, function() return self:uniform() end)
+		return distributions.beta(am, ae, bm, be, function() return self:uniform() end,
+			function() return self:u64() end)
 	end
 	-- Return canonical unsigned magnitude bytes; decimal/BLIP formatting is a
 	-- separate pure operation, so large gaps never pass through Lua numbers.

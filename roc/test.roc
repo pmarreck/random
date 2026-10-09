@@ -554,8 +554,9 @@ expect Selection.shuffle(1).run_with({}, |_state, _count| Err(Source)) == Ok(([0
 expect Selection.shuffle(3).run_with({}, |_state, count| Ok((List.repeat(0.U8, count), {}))) == Ok(([1.I64, 2, 0], {}))
 expect Selection.shuffle(9007199254740993).run_with({}, |_state, _count| Err(Source)) == Err(Invalid)
 expect (Batch.normal(0, 9, 0, 1) ?? crash "valid batch").view() == Finished
+expect (Batch.normal(0, 9, 0, 2) ?? crash "portable SIMD fallback").view() == Finished
 expect {
-	match Batch.normal(0, 9, 1, 2) {
+	match Batch.normal(0, 9, 1, 3) {
 		Err(Invalid) => Bool.True
 		_ => Bool.False
 	}

@@ -17,7 +17,7 @@ local bounds={{0LL,99LL},{1LL,20LL},{7LL,7LL},{-9007199254740992LL,9007199254740
 	{2LL,1LL},{-9007199254740993LL,0LL},{0LL,9007199254740993LL}}
 for _,range in ipairs(bounds) do
 	for _,count in ipairs({0,1,3,4,5,7,8,9,96,129}) do
-		for _,mode in ipairs({-1,0,1,2}) do
+		for _,mode in ipairs({-1,0,1,2,3}) do
 			for _,failure in ipairs({0,1,3,9}) do
 				local function invoke(lib,prefix,backend)
 					local rng=drbg.new(string.rep('\0',31)..string.char(42))
@@ -42,5 +42,5 @@ for _,range in ipairs(bounds) do
 		end
 	end
 end
-assert(checks==1440)
-print('Roc normalized-batch FFI: '..checks..' exact Zig AUTO/SCALAR values, cursors, read sequence, prefixes, domains and ownership checks passed.')
+assert(checks==1800)
+print('Roc normalized-batch FFI: '..checks..' exact Zig AUTO/SCALAR/SIMD values, cursors, read sequence, prefixes, domains and ownership checks passed.')

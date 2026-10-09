@@ -40,8 +40,8 @@ assert(native.roc_probe_live()==0,'retained Roc allocations after refusal/empty 
 local next=ffi.new('uint64_t[1]')
 state=d.from_state({key=exported.key,position=0})
 for index=1,1000 do
+	local start=state:position()
 	local em,ee=state:normal(0LL,0,0x4000000000000000LL,0)
-	local start=state:position()-8
 	assert(native.roc_probe_normal(key,start,m,e,next)==0)
 	assert(m[0]==em and e[0]==ee and next[0]==state:position())
 	assert(native.roc_probe_live()==0,'retained Roc allocations after sampler')

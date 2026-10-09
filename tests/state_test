@@ -55,7 +55,7 @@ stderr_only()
 assert_state_shape()
 {
 	local label="$1" state="$2"
-	local state_pattern='^\{"sv":2,"rv":"0\.3\.0","seed":"0x[0-9a-f]{64}","next_pos":"[0-9]+","args":\{.*\},"notices":\[.*\],"warnings":\[.*\]\}$'
+	local state_pattern='^\{"sv":3,"rv":"0\.4\.0","seed":"0x[0-9a-f]{64}","next_pos":"[0-9]+","args":\{.*\},"notices":\[.*\],"warnings":\[.*\]\}$'
 	checks=$((checks + 1))
 	if [[ "$state" == *$'\n'* ]] ||
 	   [[ ! "$state" =~ $state_pattern ]]; then
@@ -75,7 +75,7 @@ assert_error_json()
 	status=$?
 	checks=$((checks + 1))
 	if [ "$status" -eq 0 ] || [[ "$error" == *$'\n'* ]] ||
-	   [[ "$error" != '{"sv":2,"rv":"0.3.0","error":{"code":"'* ]] ||
+	   [[ "$error" != '{"sv":3,"rv":"0.4.0","error":{"code":"'* ]] ||
 	   [[ "$error" != *'","message":"'* ]] ||
 	   [[ "$error" != *'},"notices":['* ]] ||
 	   [[ "$error" != *',"warnings":[]}' ]]; then
@@ -91,7 +91,7 @@ assert_error_json_contains()
 	error=$(stderr_only "$cli" "$@")
 	status=$?
 	checks=$((checks + 1))
-	if [ "$status" -eq 0 ] || [[ "$error" != '{"sv":2,"rv":"0.3.0","error":{"code":"'* ]] ||
+	if [ "$status" -eq 0 ] || [[ "$error" != '{"sv":3,"rv":"0.4.0","error":{"code":"'* ]] ||
 	   [[ "$error" != *"$expected"* ]]; then
 		fail "$label did not emit the expected JSON error (status=$status): $error"
 	fi
@@ -119,14 +119,14 @@ for index in "${!clis[@]}"; do
 	fi
 
 	assert_error_json "$label unknown option" "$cli" --heop
-	assert_error_json "$label malformed inline state" "$cli" --state '{"sv":2}'
+	assert_error_json "$label malformed inline state" "$cli" --state '{"sv":3}'
 	assert_error_json "$label seed/state conflict" "$cli" --seed 42 --state "$state"
 
 	notice=$(stderr_only "$cli" --true-random --count 0)
 	status=$?
 	checks=$((checks + 1))
 	if [ "$status" -ne 0 ] ||
-	   [ "$notice" != '{"sv":2,"rv":"0.3.0","notices":["with the default range 0..99"],"warnings":[]}' ]; then
+	   [ "$notice" != '{"sv":3,"rv":"0.4.0","notices":["with the default range 0..99"],"warnings":[]}' ]; then
 		fail "$label default-range notice is not canonical JSON: $notice"
 	fi
 done
@@ -275,22 +275,22 @@ for producer_index in "${!clis[@]}"; do
 done
 
 echo "Testing ordinary JSON flexibility, override precedence, and state validation..."
-reordered_state=' { "warnings" : [ ], "args" : { "delim" : "\n", "encoding" : "text", "count" : "3", "range" : "1..20", "distribution" : "uniform" }, "next_pos" : "12", "seed" : "0x000000000000000000000000000000000000000000000000000000000000002a", "rv" : "0.3.0", "sv" : 2, "notices" : [ ] } '
-non_json_whitespace_state=$'\v{"sv":2,"rv":"0.3.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{}}'
-invalid_utf8_state=$'{"sv":2,"rv":"0.3.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{"delim":"\xff"}}'
+reordered_state=' { "warnings" : [ ], "args" : { "delim" : "\n", "encoding" : "text", "count" : "3", "range" : "1..20", "distribution" : "uniform" }, "next_pos" : "12", "seed" : "0x000000000000000000000000000000000000000000000000000000000000002a", "rv" : "0.4.0", "sv" : 3, "notices" : [ ] } '
+non_json_whitespace_state=$'\v{"sv":3,"rv":"0.4.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{}}'
+invalid_utf8_state=$'{"sv":3,"rv":"0.4.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{"delim":"\xff"}}'
 invalid_utf8_delimiter=$'\xff'
 deep_value='"nested"'
 for _ in {1..128}; do deep_value="[$deep_value]"; done
-deep_state='{"sv":2,"rv":"0.3.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{},"notices":'"$deep_value"'}'
+deep_state='{"sv":3,"rv":"0.4.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{},"notices":'"$deep_value"'}'
 wide_object='{'
 for item in {1..33}; do wide_object="${wide_object}\"k$item\":true,"; done
 wide_object="${wide_object}\"last\":true}"
 wide_items='['
 for _ in {1..1025}; do wide_items="${wide_items}\"notice\","; done
 wide_items="${wide_items}\"last\"]"
-wide_array='{"sv":2,"rv":"0.3.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{},"notices":'"$wide_items"'}'
+wide_array='{"sv":3,"rv":"0.4.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{},"notices":'"$wide_items"'}'
 expected_reordered=$($lua_cli --state "$reordered_state" --count 3 2>/dev/null)
-informational_rv_state=${reordered_state/\"rv\" : \"0.3.0\"/\"rv\" : \"999.0.0\"}
+informational_rv_state=${reordered_state/\"rv\" : \"0.4.0\"/\"rv\" : \"999.0.0\"}
 expected_override=$($lua_cli --state "$reordered_state" --exponential --rate 2 --count 2 2>/dev/null)
 beta_state=$(stderr_only "$lua_cli" -d --seed 42 --beta 0.75 --alpha 0.5 --count 2)
 expected_cross_distribution=$($lua_cli --state "$beta_state" --exponential --rate 2 --count 2 2>/dev/null)
@@ -308,27 +308,27 @@ for index in "${!clis[@]}"; do
 	[ "$overridden" = "$expected_override" ] || fail "$label did not give CLI arguments precedence over state args"
 	[ "$cross_distribution" = "$expected_cross_distribution" ] || fail "$label retained irrelevant parameters after a distribution override"
 	[ -n "$chosen_override" ] || fail "$label retained generation args after an stdin-operation override"
-	assert_error_json "$label duplicate state key" "$cli" --state '{"sv":2,"sv":2}'
+	assert_error_json "$label duplicate state key" "$cli" --state '{"sv":3,"sv":3}'
 	assert_error_json "$label legacy schema" "$cli" --state '{"sv":1,"rv":"0.2.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{}}'
-	assert_error_json "$label legacy operation key" "$cli" --state '{"sv":2,"rv":"0.3.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{"operation":"choose"}}'
-	assert_error_json "$label legacy delimiter key" "$cli" --state '{"sv":2,"rv":"0.3.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{"delimiter":""}}'
-	assert_error_json "$label leading-zero JSON number" "$cli" --state '{"sv":01,"rv":"0.3.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{}}'
+	assert_error_json "$label legacy operation key" "$cli" --state '{"sv":3,"rv":"0.4.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{"operation":"choose"}}'
+	assert_error_json "$label legacy delimiter key" "$cli" --state '{"sv":3,"rv":"0.4.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{"delimiter":""}}'
+	assert_error_json "$label leading-zero JSON number" "$cli" --state '{"sv":01,"rv":"0.4.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{}}'
 	assert_error_json "$label non-JSON whitespace" "$cli" --state "$non_json_whitespace_state"
-	assert_error_json "$label missing object value" "$cli" --state '{"sv":2,"rv":"0.3.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{},"notices":}'
+	assert_error_json "$label missing object value" "$cli" --state '{"sv":3,"rv":"0.4.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{},"notices":}'
 	assert_error_json "$label invalid UTF-8" "$cli" --state "$invalid_utf8_state"
 	assert_error_json "$label invalid UTF-8 producer delimiter" "$cli" -d --seed 42 --count 0 --delimiter "$invalid_utf8_delimiter"
 	assert_error_json_contains "$label excessive JSON nesting" "$cli" 'nesting exceeds 64 levels' --state "$deep_state"
 	assert_error_json_contains "$label excessive object members" "$cli" 'object exceeds 32 members' --state "$wide_object"
 	assert_error_json_contains "$label excessive array items" "$cli" 'array exceeds 1024 items' --state "$wide_array"
-	assert_error_json "$label unknown state key" "$cli" --state '{"sv":2,"rv":"0.3.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{},"bogus":true}'
-	assert_error_json "$label noncanonical state seed prefix" "$cli" --state '{"sv":2,"rv":"0.3.0","seed":"0X000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{}}'
-	assert_error_json "$label invalid state position" "$cli" --state '{"sv":2,"rv":"0.3.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"9007199254740993","args":{}}'
-	assert_error_json "$label invalid inherited scale" "$cli" --state '{"sv":2,"rv":"0.3.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{"distribution":"exponential","rate":"0"}}'
-	assert_error_json "$label noncanonical dN state range" "$cli" --state '{"sv":2,"rv":"0.3.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{"range":"d20"}}'
-	assert_error_json "$label noncanonical hyphen state range" "$cli" --state '{"sv":2,"rv":"0.3.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{"range":"1-20"}}'
-	assert_error_json "$label state args type" "$cli" --state '{"sv":2,"rv":"0.3.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":[]}'
-	assert_error_json "$label notice type" "$cli" --state '{"sv":2,"rv":"0.3.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{},"notices":{}}'
-	assert_error_json "$label NUL state string" "$cli" --state '{"sv":2,"rv":"0.3.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{"delim":"\u0000"}}'
+	assert_error_json "$label unknown state key" "$cli" --state '{"sv":3,"rv":"0.4.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{},"bogus":true}'
+	assert_error_json "$label noncanonical state seed prefix" "$cli" --state '{"sv":3,"rv":"0.4.0","seed":"0X000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{}}'
+	assert_error_json "$label invalid state position" "$cli" --state '{"sv":3,"rv":"0.4.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"9007199254740993","args":{}}'
+	assert_error_json "$label invalid inherited scale" "$cli" --state '{"sv":3,"rv":"0.4.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{"distribution":"exponential","rate":"0"}}'
+	assert_error_json "$label noncanonical dN state range" "$cli" --state '{"sv":3,"rv":"0.4.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{"range":"d20"}}'
+	assert_error_json "$label noncanonical hyphen state range" "$cli" --state '{"sv":3,"rv":"0.4.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{"range":"1-20"}}'
+	assert_error_json "$label state args type" "$cli" --state '{"sv":3,"rv":"0.4.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":[]}'
+	assert_error_json "$label notice type" "$cli" --state '{"sv":3,"rv":"0.4.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{},"notices":{}}'
+	assert_error_json "$label NUL state string" "$cli" --state '{"sv":3,"rv":"0.4.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"0","args":{"delim":"\u0000"}}'
 	quiet=$($cli --true-random --count 0 0..0 2>&1 >/dev/null)
 	checks=$((checks + 1))
 	[ -z "$quiet" ] || fail "$label emitted stderr without metadata or a diagnostic: $quiet"

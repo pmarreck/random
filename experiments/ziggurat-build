@@ -19,3 +19,4 @@ zig build-lib -dynamic -lc -O ReleaseFast --dep fixed --dep randomz --dep candid
 zig build-exe -lc -O ReleaseFast --dep fixed --dep randomz --dep candidate --dep fixed_simd \
 	-Mroot=experiments/ziggurat_bench.zig -O ReleaseFast "${modules[@]}" \
 	-femit-bin="$out/ziggurat-bench" || exit 1
+"${CC:-cc}" -O3 -DNDEBUG -Wall -Wextra -Werror experiments/ziggurat_cli_bench.c -o "$out/ziggurat-cli-bench" || exit 1

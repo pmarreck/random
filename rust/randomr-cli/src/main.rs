@@ -87,7 +87,7 @@ fn main() {
 			CliError::Message(message) => message,
 		};
 		let encoded = format!(
-			"{{\"sv\":2,\"rv\":{},\"error\":{{\"code\":\"usage\",\"message\":{}}},\"notices\":[],\"warnings\":[]}}\n",
+			"{{\"sv\":3,\"rv\":{},\"error\":{{\"code\":\"usage\",\"message\":{}}},\"notices\":[],\"warnings\":[]}}\n",
 			state::quote(VERSION),
 			state::quote(&message)
 		);
@@ -264,7 +264,7 @@ fn emit_metadata(
 		use std::fmt::Write as _;
 		write!(
 			output,
-			"{{\"sv\":2,\"rv\":{},\"seed\":\"0x",
+			"{{\"sv\":3,\"rv\":{},\"seed\":\"0x",
 			state::quote(VERSION)
 		)
 		.map_err(|_| "state formatting failed".to_owned())?;
@@ -281,7 +281,7 @@ fn emit_metadata(
 	} else if notices.is_empty() {
 		return Ok(());
 	} else {
-		output.push_str(&format!("{{\"sv\":2,\"rv\":{}", state::quote(VERSION)));
+		output.push_str(&format!("{{\"sv\":3,\"rv\":{}", state::quote(VERSION)));
 	}
 	output.push_str(",\"notices\":[");
 	for (index, notice) in notices.iter().enumerate() {
@@ -1101,7 +1101,7 @@ fn print_help(program: &str, args: &[String]) -> Result<(), String> {
 			"\n",
 			"Distributions (mutually exclusive):\n",
 			"  (default)           Uniform distribution\n",
-			"  -n, --normalized    Normal (Gaussian) via Box-Muller\n",
+			"  -n, --normalized    Normal (Gaussian) via Ziggurat\n",
 			"      --exponential   Exponential distribution (use --rate)\n",
 			"      --poisson       Poisson distribution (use --lambda or --mean)\n",
 			"      --geometric     Failures before success; default probability 0.5\n",

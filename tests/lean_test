@@ -8,6 +8,21 @@ cd "$root/lean" || exit 1
 
 lake build || exit 1
 
+# Exact independently derived pre-clamp threshold, both signs and adjacent
+# mantissas. Full valid endpoint spans are legal for the nonlinear sampler;
+# the cardinality restriction of the uniform mapper does not apply here.
+normal_endpoints=$(printf '%s\n' \
+	'import Randoml' \
+	'open Randoml Randoml.Fixed' \
+	'#eval [-1, 1].all (fun (sign : Int) => normalIntCandidate? {m := sign * (4611686018427388160 - 1), e := 53} == some (sign * clamp) && (normalIntCandidate? {m := sign * 4611686018427388160, e := 53}).isNone && (normalIntCandidate? {m := sign * (4611686018427388160 + 1), e := 53}).isNone && (normalIntCandidate? {m := sign * 4611686018427387904, e := 54}).isNone)' \
+	'#eval normalIntCandidate? Value.zero == some 0' \
+	'#eval match Drbg.init (List.replicate 32 (0 : UInt8) |>.foldl ByteArray.push ByteArray.empty) with | some state => [(normalInt state (-clamp) clamp).isSome, (normalInt state (-clamp) 1).isSome, (normalInt state (-clamp-1) 0).isNone, (normalInt state 0 (clamp+1)).isNone] | none => []' |
+	lake env lean --trust=0 /dev/stdin) || exit 1
+if [ "$normal_endpoints" != $'true\ntrue\n[true, true, true, true]' ]; then
+	echo "Lean normal integer endpoint controls diverged: $normal_endpoints" >&2
+	exit 1
+fi
+
 vector=$(printf '%s\n' \
 	'import Randoml' \
 	'open Randoml' \
@@ -44,7 +59,7 @@ oracle_bytes()
 {
 	local seed="$1" position="$2" count="$3" seed_hex state
 	printf -v seed_hex '%064x' "$seed"
-	state="{\"sv\":2,\"rv\":\"0.3.0\",\"seed\":\"0x${seed_hex}\",\"next_pos\":\"${position}\",\"args\":{}}"
+	state="{\"sv\":3,\"rv\":\"0.4.0\",\"seed\":\"0x${seed_hex}\",\"next_pos\":\"${position}\",\"args\":{}}"
 	"$root/bin/random" --state "$state" --binaryoutput --count "$count" 2>/dev/null |
 		od -An -tu1 -v | normalize_numbers
 }

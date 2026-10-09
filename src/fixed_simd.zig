@@ -95,6 +95,12 @@ pub fn add4(a: Batch, b: Batch) Batch {
     return unpack(add(pack(a), pack(b)));
 }
 
+/// Keep all affine stages inside one AVX2-targeted call. Baseline callers
+/// cannot inline these kernels across the CPU-feature boundary.
+pub fn scaleNormals4(xs: Batch, sixth: fx.Fixed, half: fx.Fixed, start: fx.Fixed) Batch {
+    return unpack(add(add(mul(pack(xs), splat(sixth)), splat(half)), splat(start)));
+}
+
 const odd = blk: {
     @setEvalBranchQuota(100000);
     var coefficients: [20]fx.Fixed = undefined;

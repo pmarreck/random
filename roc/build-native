@@ -25,7 +25,7 @@ if [ "$mode" != --cli-only ]; then
 	install -m644 "$RANDOM_ROC_SOURCE_DIR/LICENSE" "$output/share/licenses/random-roc-ffi/Roc-UPL"
 	work="$output/build"
 	mkdir -p "$work/platform/targets/$roc_target"
-	for module in main Batch Blake3 Chart Codec Count Decimal Draw Drbg Fixed Geometric Sampler Selection; do
+	for module in main Batch Blake3 Chart Codec Count Decimal Draw Drbg Fixed Geometric Sampler Ziggurat ZigguratTables Selection; do
 		cp "${RANDOM_ROC_LIBRARY_DIR:-$root/roc}/$module.roc" "$work/"
 	done
 	cp "$root/roc/native.roc" "$work/native.roc"

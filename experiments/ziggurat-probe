@@ -6,7 +6,10 @@ if [ "$#" -ne 3 ] || [ "$3" != "${RANDOM_ZIGGURAT_EXPECTED_SEED:?expected seed r
 	echo 'Ziggurat probe requires matching independently prepared seed/work oracles' >&2; exit 1
 fi
 expected="$(jq -er --arg case "$1" --arg sizes "$2" '
-	($case|sub("-[0-9]+(-growth)?$";"")|sub("^(auto|scalar)-";"box-")) as $name |
+	($case|sub("-[0-9]+(-growth)?$";"")|sub("^(auto|scalar|simd|rustauto|rustscalar)-";"ziggurat-")) as $name |
 	.[$name] as $counts | $sizes|split(",")|map($counts[.] // error("missing work oracle"))|join(",")
 	' <<< "${RANDOM_ZIGGURAT_EXPECTED_JSON:?independent work oracles required}")" || exit 1
-exec "${RANDOM_ZIGGURAT_ARTIFACTS:?build experiments first}/ziggurat-bench" "$@" "$expected"
+case "$1" in
+	rustauto-*|rustscalar-*) exec "${RANDOM_ZIGGURAT_RUST_BENCH:?build release Rust probe first}" "$@" "$expected" ;;
+	*) exec "${RANDOM_ZIGGURAT_ARTIFACTS:?build experiments first}/ziggurat-bench" "$@" "$expected" ;;
+esac

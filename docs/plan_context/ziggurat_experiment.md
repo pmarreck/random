@@ -1,7 +1,7 @@
 # Fixed-point Ziggurat experiment
 
 Measured results: [96M-output analysis and timing](../reports/2026-10-08-fixed-point-ziggurat.md).
-The isolated experiment is complete; coordinated production promotion remains open.
+The isolated experiment is complete; coordinated production replacement is underway.
 The production AUTO/SCALAR bounded-batch follow-up retained 62 timing cases;
 Ziggurat remained faster on the measured normalized-integer workload. Actual
 CLI throughput and native non-Linux timing remain separate requirements.
@@ -22,16 +22,19 @@ transport and repeated-rejection lemmas; neither sampled maxima nor the
 finite certificate checker proves it. Keep it provisional until those
 obligations are recorded and checked durably.
 
-The current standard-normal sampler computes one Box–Muller output from two
+The pre-0.4 standard-normal sampler computed one Box–Muller output from two
 32-bit uniforms and does not cache its paired sine output. Normalized integers
-use a separate Box–Muller path with million-point uniforms. Normal sampling also
+used a separate Box–Muller path with million-point uniforms. Normal sampling also
 feeds log-normal and the gamma samplers used by beta.
 
-Switching algorithms is authorized if the replacement is superior. This is an
-experiment first: production streams remain unchanged until the evidence and
-five-language implementation are ready. Stream compatibility is not a veto;
-promotion must version the construction and reject incompatible continuations
-explicitly rather than silently reinterpret their byte cursor.
+The measured evidence favors replacement, including against production AUTO
+batching. The owner approved a breaking replacement on 2026-10-08: implement
+Ziggurat in all five languages without a production legacy sampler or seed
+compatibility layer. Version the construction and reject old continuations
+explicitly rather than silently reinterpret their byte cursor. Keep Box–Muller
+only as a historical experimental control so earlier measurements remain
+reproducible. Whole-domain rounding and distribution proofs remain separate
+open obligations; the earlier Box–Muller sampler did not meet that bar either.
 
 ## Candidate and controls
 

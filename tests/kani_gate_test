@@ -50,6 +50,22 @@ for id in $(jq -r '.[].id' <<<"$manifest"); do
 	contract=$(jq --arg id "$id" '.[]|select(.id==$id)' <<<"$manifest") || exit 1
 	good=$(jq -n --argjson h "$contract" '{verification_results:{summary:{total_harnesses:1,executed:1,status:"completed",successful:1,failed:0},results:[{harness_id:$h.id,status:"Success",checks:(($h.assertions|map({category:"assertion",function:$h.function,description:("\""+.+"\""),status:"Success"}))+($h.covers|map({category:"cover",function:$h.function,description:.,status:"Satisfied"}))+($h.unreachable_covers|map({category:"cover",function:$h.function,description:.,status:"Unreachable"}))+($h.guards|map({category:"assertion",function:.function,description:("\""+.description+"\""),status:"Unreachable"}))+[{category:"array_bounds",function:"core::slice",description:"compiler unreachable path",status:"Unreachable"}])}]}}') || exit 1
 	expect "manifest positive $id" 0 positive "$good" "$id"
+	if [ "$id" = batch::kani_contracts::portable_wrapper_contract ]; then
+		for guard_status in Failure Success Unreachable; do
+			wrong=$(jq --arg status "$guard_status" \
+				'.verification_results.results[0].checks += [{category:"assertion",function:"ziggurat::normal",
+				description:"\"nonlinear normal unreachable under batch scalar model\"",status:$status}]' \
+				<<<"$good") || exit 1
+			expect "unexpected nonlinear guard $guard_status" 1 positive "$wrong" "$id"
+		done
+	fi
+	for guard in $(jq -r '.guards|keys[]' <<<"$contract"); do
+		wrong=$(jq --argjson h "$contract" --argjson guard "$guard" \
+			'($h.guards[$guard]) as $g | (.verification_results.results[0].checks[] |
+			select(.function==$g.function and .description==("\""+$g.description+"\""))).status="Success"' \
+			<<<"$good") || exit 1
+		expect "reachable forbidden guard $guard $id" 1 positive "$wrong" "$id"
+	done
 	bad=$(jq --argjson h "$contract" '.verification_results.summary.successful=0 | .verification_results.summary.failed=1 | .verification_results.results[0].status="Failure" | (.verification_results.results[0].checks[]|select(.description==("\""+$h.negative+"\""))).status="Failure"' <<<"$good") || exit 1
 	expect "manifest negative $id" 0 negative "$bad" "$id"
 	missing=$(jq 'del(.verification_results.results[0].checks[0])' <<<"$good") || exit 1

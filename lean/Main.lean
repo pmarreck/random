@@ -8,5 +8,5 @@ linker and install its single binary. Keeping this target effect-free also
 prevents a UTF-8-only argv path from masquerading as the production CLI.
 -/
 def main (_arguments : List String) : IO UInt32 := do
-  IO.eprintln "{\"sv\":2,\"rv\":\"0.3.0\",\"error\":{\"code\":\"build\",\"message\":\"build the production CLI with lean/build-owned-cli\"},\"notices\":[],\"warnings\":[]}"
+  IO.eprintln "{\"sv\":3,\"rv\":\"0.4.0\",\"error\":{\"code\":\"build\",\"message\":\"build the production CLI with lean/build-owned-cli\"},\"notices\":[],\"warnings\":[]}"
   pure 1

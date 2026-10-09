@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define RANDOMROC_VERSION "0.3.0"
+#define RANDOMROC_VERSION "0.4.0"
 #if defined(__GNUC__)
 #define RANDOMROC_API __attribute__((visibility("default")))
 #else
@@ -71,7 +71,8 @@ RANDOMROC_API int randomroc_drbg_u32(randomroc_drbg *, uint32_t *);
 RANDOMROC_API int randomroc_drbg_u64(randomroc_drbg *, uint64_t *);
 RANDOMROC_API void randomroc_drbg_zeroize(randomroc_drbg *);
 RANDOMROC_API int randomroc_distribution_curve(int, randomroc_fixed, randomroc_fixed, uint16_t *, size_t, size_t *, randomroc_fixed *, randomroc_fixed *);
-/* Mode 0 (AUTO) and 1 (SCALAR) currently use identical scalar Roc plans.
+/* Modes 0 (AUTO), 1 (SCALAR), and 2 (SIMD) use identical scalar Roc plans;
+ * SIMD requests use the portable fallback (there is no Roc vector backend).
  * Constant auxiliary batch storage; no prefetch. On a callback failure,
  * written counts only the complete prefix; untouched tail slots stay intact. */
 RANDOMROC_API int randomroc_normal_int_batch(randomroc_fill_fn, void *, int64_t, int64_t, int64_t *, size_t, size_t *, int);

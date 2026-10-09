@@ -28,7 +28,7 @@
         rocTools = pkgs.lib.optionals rocSupported [ rocToolchain ];
         randomRocLib = pkgs.stdenvNoCC.mkDerivation {
           pname = "random-roc-lib";
-          version = "0.3.0";
+          version = "0.4.0";
           src = ./.;
           strictDeps = true;
           dontBuild = true;
@@ -36,7 +36,7 @@
           installPhase = ''
             runHook preInstall
             mkdir -p $out/lib/roc/random $out/share/licenses/random-roc-lib
-            for module in main Fixed Codec Blake3 Drbg Draw Sampler Count Geometric Decimal Chart Batch Selection; do
+            for module in main Fixed Codec Blake3 Drbg Draw Sampler Ziggurat ZigguratTables Count Geometric Decimal Chart Batch Selection; do
               install -m644 roc/"$module".roc $out/lib/roc/random/
             done
             install -m644 LICENSE $out/share/licenses/random-roc-lib/LICENSE
@@ -51,7 +51,7 @@
 
         randomRocNative = pkgs.stdenvNoCC.mkDerivation {
           pname = "random-roc-ffi";
-          version = "0.3.0";
+          version = "0.4.0";
           src = ./.;
           strictDeps = true;
           nativeBuildInputs = [ rocToolchain pkgs.zig_0_16 pkgs.binutils ];
@@ -90,7 +90,7 @@
 
         randomRoc = pkgs.stdenvNoCC.mkDerivation {
           pname = "random-roc";
-          version = "0.3.0";
+          version = "0.4.0";
           src = ./.;
           strictDeps = true;
           nativeBuildInputs = [ pkgs.zig_0_16 pkgs.makeWrapper ];
@@ -269,7 +269,7 @@
 
 		mkRandomr = rustPkgs: runTests: rustPkgs.rustPlatform.buildRustPackage {
 		  pname = "random-rust";
-          version = "0.3.0";
+          version = "0.4.0";
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
           cargoBuildFlags = [ "-p" "randomr-cli" ];
@@ -305,7 +305,7 @@
         randomr = mkRandomr pkgs true;
 		randomRustLib = pkgs.stdenvNoCC.mkDerivation {
 		  pname = "random-rust-lib";
-		  version = "0.3.0";
+		  version = "0.4.0";
 		  src = ./.;
 		  strictDeps = true;
 		  dontBuild = true;
@@ -334,7 +334,7 @@
 		};
 		randomLeanLib = pkgs.stdenvNoCC.mkDerivation {
 		  pname = "random-lean-lib";
-		  version = "0.3.0";
+		  version = "0.4.0";
 		  src = ./.;
 		  strictDeps = true;
 		  nativeBuildInputs = [ pkgs.lean4 ];
@@ -364,7 +364,7 @@
 		};
 		randomLeanProofs = pkgs.stdenvNoCC.mkDerivation {
 		  pname = "random-lean-proofs";
-		  version = "0.3.0";
+		  version = "0.4.0";
 		  src = ./.;
 		  strictDeps = true;
 		  nativeBuildInputs = [ pkgs.lean4 pkgs.bash pkgs.gnugrep pkgs.gnused ];
@@ -399,7 +399,7 @@
 		};
 		randoml = pkgs.stdenv.mkDerivation {
 		  pname = "random-lean";
-          version = "0.3.0";
+          version = "0.4.0";
           src = ./.;
           strictDeps = true;
           nativeBuildInputs = [ pkgs.lean4 pkgs.makeWrapper pkgs.bash ];
@@ -437,7 +437,7 @@
 
 		randomLuaLib = pkgs.stdenvNoCC.mkDerivation {
 		  pname = "random-luajit-lib";
-		  version = "0.3.0";
+		  version = "0.4.0";
 		  src = ./.;
 		  strictDeps = true;
 		  dontBuild = true;
@@ -458,7 +458,7 @@
 		randomLuaNativeBuildInputs = [ pkgs.makeWrapper pkgs.bash ];
 		randomLua = pkgs.stdenvNoCC.mkDerivation {
 		  pname = "random-luajit";
-		  version = "0.3.0";
+		  version = "0.4.0";
 		  src = ./.;
 		  strictDeps = true;
 		  nativeBuildInputs = randomLuaNativeBuildInputs;
@@ -492,7 +492,7 @@
 
 		randomZigLib = pkgs.stdenvNoCC.mkDerivation {
 		  pname = "random-zig-lib";
-		  version = "0.3.0";
+		  version = "0.4.0";
 		  src = ./.;
 		  strictDeps = true;
 		  nativeBuildInputs = [ pkgs.zig_0_16 ];
@@ -523,7 +523,7 @@
 		};
 		randomZig = pkgs.stdenv.mkDerivation {
 		  pname = "random-zig";
-		  version = "0.3.0";
+		  version = "0.4.0";
 		  src = ./.;
 		  strictDeps = true;
 		  nativeBuildInputs = [
@@ -571,7 +571,7 @@
 		# Zig packages carry the same shared Bash oracle at /tests; selecting the
 		# LuaJIT copy here avoids buildEnv's collision suppression while retaining
 		# one canonical aggregate self-test surface.
-		randomAll = pkgs.runCommand "random-all-0.3.0" {
+		randomAll = pkgs.runCommand "random-all-0.4.0" {
 		  meta = with pkgs.lib; {
 			description = "Aggregate matching random CSPRNG implementations (including Roc on Linux)";
 			license = [ licenses.mit ] ++ optional rocSupported licenses.upl;
@@ -1188,6 +1188,7 @@
         devShells = {
           ziggurat = pkgs.mkShell {
             packages = [ pkgs.zig_0_16 luajitFixed pkgs.bash pkgs.jq pkgs.coreutils
+              pkgs.cargo pkgs.rustc pkgs.rustfmt
               performance-profiling.packages.${system}.default ];
             RANDOM_MPFR_LIBRARY = "${pkgs.mpfr}/lib/libmpfr${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
           };

@@ -1,0 +1,298 @@
+#!/usr/bin/env bash
+# Independent acceptance control for the owner-approved Ziggurat stream break.
+# Expectations are frozen from the validated isolated experiment, never a
+# production CLI. Every natively supported producer/consumer is required:
+# five on Linux; four on Darwin, plus Roc when explicitly selected.
+# Explicit ZIGGURAT_TEST_*_CLI paths select existing artifacts.
+set -u
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$root" || exit 1
+source "$root/tests/cli_test_setup.sh"
+fixture="$root/tests/fixtures/ziggurat-production.json"
+fails=0
+checks=0
+labels=(luajit zig rust lean)
+include_roc=0
+if [ "$(uname -s)" = Linux ] || [ -n "${ZIGGURAT_TEST_ROC_CLI:-}" ]; then
+	include_roc=1
+	labels+=(roc)
+fi
+shims=()
+selected=()
+original_path="$PATH"
+cleanup() {
+	local result=$? directory
+	for directory in "${shims[@]}"; do
+		if ! test_trash "$directory"; then result=1; fi
+	done
+	exit "$result"
+}
+trap cleanup EXIT
+fail() { printf 'Ziggurat production FAILED: %s\n' "$*" >&2; fails=$((fails + 1)); }
+
+# Source the RAM capture helper where installed. A compatible fallback
+# preserves isolated CI closures which intentionally have no home files.
+if [ -r "${RANDOM_CAPTURE_LIBRARY:-${HOME:-}/dotfiles/bin/src/capture.bash}" ]; then
+	# shellcheck source=/dev/null
+	source "${RANDOM_CAPTURE_LIBRARY:-${HOME:-}/dotfiles/bin/src/capture.bash}"
+else
+	capture() {
+		local captured_out captured_err captured_rc assignments
+		assignments="$(
+			{
+				captured_err="$(
+					{
+						captured_out="$("$@" 2>&3)"
+						captured_rc=$?
+						declare -p captured_out captured_rc >&4
+					} 3>&1
+				)"
+				declare -p captured_err >&4
+			} 4>&1
+		)"
+		eval "$assignments"
+		out="$captured_out"
+		err="$captured_err"
+		rc="$captured_rc"
+	}
+fi
+# Hash before capture to retain all bytes, including final newlines and NULs.
+# pipefail retains the producer failure; no payload files are ever written.
+digest_command() (
+	set -o pipefail
+	"$@" | sha256sum
+)
+if ! command -v jq >/dev/null || ! command -v sha256sum >/dev/null ||
+   ! command -v xxd >/dev/null; then
+	printf 'Ziggurat production requires jq, sha256sum and xxd\n' >&2
+	exit 1
+fi
+if [ ! -f "$fixture" ]; then fail "frozen fixture missing: $fixture"; exit 1; fi
+fixture_digest="$(sha256sum "$fixture")"
+if [ "${fixture_digest%% *}" != "14b1296c6e1520debba234ff83eb93332a25c43027844d13b3a4738813bfc127" ]; then
+	fail "frozen control changed without independent review: $fixture"
+	exit 1
+fi
+if ! jq -e '
+	.sv==3 and .rv=="0.4.0" and .seed=="42" and
+	.counts==[0,1,3,4,7,255,256,257,1023,1024,1025] and
+	([.cases[].name]==["normal","normal-standard","integer","integer-wide",
+		"lognormal","lognormal-standard","beta","beta-symmetric","beta-subunit"]) and
+	(.directed|length)==8 and
+	all(.cases[]; (.argv|length)>0 and
+		(.counts|keys|sort)==(["0","1","3","4","7","255","256","257","1023","1024","1025"]|sort) and
+		all(.counts[]; (.sha256|test("^[0-9a-f]{64}$")) and (.next_pos|test("^[0-9]+$"))) and
+		([.resumes[]|[.prefix,.total]]==[[3,7],[255,1025]]))
+	' "$fixture" >/dev/null; then
+	fail "frozen fixture manifest is incomplete"
+	exit 1
+fi
+# Default artifacts are rebuilt. Explicit artifacts support installed-package
+# checks and the initial RED run before production implementation begins.
+if [ -z "${ZIGGURAT_TEST_ZIG_CLI:-}" ]; then
+	report="$(zig build -Doptimize=ReleaseFast 2>&1)"
+	if [ "$?" -ne 0 ]; then fail "Zig build: $report"; exit 1; fi
+fi
+rust_target="$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)" || exit 1
+if [ -z "${ZIGGURAT_TEST_RUST_CLI:-}" ]; then
+	report="$(cargo build --locked --release -p randomr-cli 2>&1)"
+	if [ "$?" -ne 0 ]; then fail "Rust build: $report"; exit 1; fi
+fi
+if [ -z "${ZIGGURAT_TEST_LEAN_CLI:-}" ]; then
+	report="$("$root/lean/build-owned-cli" "$root/zig-out/bin/randoml" 2>&1)"
+	if [ "$?" -ne 0 ]; then fail "Lean build: $report"; exit 1; fi
+fi
+if [ "$include_roc" -eq 1 ] && [ -z "${ZIGGURAT_TEST_ROC_CLI:-}" ]; then
+	source "$root/tests/roc_native_setup.sh"
+	report="$(roc_native_setup 2>&1)"
+	if [ "$?" -ne 0 ]; then fail "Roc build: $report"; exit 1; fi
+fi
+clis=("${ZIGGURAT_TEST_LUA_CLI:-$root/bin/random}"
+	"${ZIGGURAT_TEST_ZIG_CLI:-$root/zig-out/bin/randomz}"
+	"${ZIGGURAT_TEST_RUST_CLI:-$rust_target/release/randomr}"
+	"${ZIGGURAT_TEST_LEAN_CLI:-$root/zig-out/bin/randoml}")
+if [ "$include_roc" -eq 1 ]; then
+	clis+=("${ZIGGURAT_TEST_ROC_CLI:-${RANDOM_ROC_NATIVE_DIR:-$root/roc-out}/bin/randomroc}")
+fi
+for i in "${!clis[@]}"; do
+	export RANDOM_TEST_CLI="${clis[i]}"
+	export RANDOM_TEST_CLI_KIND="${labels[i]}"
+	PATH="$original_path"
+	if ! cli_test_setup; then fail "required ${labels[i]} selector failed"; exit 1; fi
+	[ -z "$CLI_TEST_SHIM_DIR" ] || shims+=("$CLI_TEST_SHIM_DIR")
+	selected+=("$(command -v random)")
+done
+PATH="$original_path"
+if [ "${#selected[@]}" -ne "${#labels[@]}" ]; then fail "required native matrix shrank"; exit 1; fi
+printf 'Required native matrix (%s): %s\n' "$(uname -s)" "${labels[*]}"
+if [ "$include_roc" -eq 0 ]; then
+	printf 'Roc native is Linux-only; set ZIGGURAT_TEST_ROC_CLI to require an explicit Roc executable.\n'
+fi
+
+# Parsed cursor fields AND canonical state bytes prohibit hidden spare samples
+# and implementation-specific replay metadata.
+assert_state() {
+	local label="$1" state="$2" position="$3" count="$4"
+	checks=$((checks + 1))
+	if [[ "$state" == *$'\n'* ]] ||
+	   ! jq -e --arg position "$position" --arg count "$count" '
+		.sv==3 and .rv=="0.4.0" and
+		.seed=="0x000000000000000000000000000000000000000000000000000000000000002a" and
+		.next_pos==$position and .args.count==$count and
+		(.notices|type)=="array" and (.warnings|type)=="array" and
+		(has("value")|not) and (has("values")|not)
+		' <<<"$state" >/dev/null 2>&1; then
+		fail "$label state/cursor expected sv3 rv0.4.0 pos=$position count=$count; got $state"
+	fi
+}
+assert_digest() {
+	local label="$1" expected="$2"
+	checks=$((checks + 1))
+	if [ "$rc" -ne 0 ] || [ "${out%% *}" != "$expected" ]; then
+		fail "$label output expected $expected; got ${out%% *} (exit=$rc)"
+		if [ "$rc" -ne 0 ]; then printf '  stderr: %s\n' "$err" >&2; fi
+	fi
+}
+old_state='{"sv":2,"rv":"0.3.0","seed":"0x000000000000000000000000000000000000000000000000000000000000002a","next_pos":"8","args":{"distribution":"normal","count":"1","mean":"0","stddev":"1","encoding":"text","delim":"\n"},"notices":[],"warnings":[]}'
+empty_digest="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+out="" err="" rc=0
+printf 'Testing old-state rejection across the complete native matrix...\n'
+for i in "${!selected[@]}"; do
+	capture digest_command "${selected[i]}" --state "$old_state" --count 1
+	checks=$((checks + 1))
+	if [ "$rc" -eq 0 ] || [ "${out%% *}" != "$empty_digest" ] ||
+	   [[ "$err" == *$'\n'* ]] ||
+	   ! jq -e '.sv==3 and .rv=="0.4.0" and
+		(.error.code|type)=="string" and
+		(.error.message|test("schema|version|unsupported|sv";"i"))' <<<"$err" >/dev/null 2>&1; then
+		fail "${labels[i]} must clearly reject sv2 before payload (exit=$rc, digest=${out%% *}, stderr=$err)"
+	fi
+done
+mapfile -t case_rows < <(jq -c '.cases[]' "$fixture")
+declare -A states canonical_states
+printf 'Testing frozen outputs, scalar/batch boundaries and byte cursors...\n'
+for ci in "${!case_rows[@]}"; do
+	row="${case_rows[ci]}"
+	name="$(jq -r .name <<<"$row")"
+	mapfile -t argv < <(jq -r '.argv[]' <<<"$row")
+	mapfile -t count_rows < <(jq -r '.counts|to_entries[]|[.key,.value.sha256,.value.next_pos]|@tsv' <<<"$row")
+	for i in "${!selected[@]}"; do
+		for count_row in "${count_rows[@]}"; do
+			IFS=$'\t' read -r count expected position <<<"$count_row"
+			capture digest_command "${selected[i]}" --seed 42 --count "$count" "${argv[@]}"
+			assert_digest "${labels[i]} $name count=$count" "$expected"
+			assert_state "${labels[i]} $name count=$count" "$err" "$position" "$count"
+			states["$ci:$count:$i"]="$err"
+			if [ "$i" -eq 0 ]; then
+				canonical_states["$ci:$count"]="$err"
+			elif [ "$err" != "${canonical_states["$ci:$count"]}" ]; then
+				fail "${labels[i]} $name count=$count state differs byte-for-byte"
+			fi
+		done
+	done
+done
+printf 'Testing every producer->consumer continuation direction...\n'
+for ci in "${!case_rows[@]}"; do
+	row="${case_rows[ci]}"
+	name="$(jq -r .name <<<"$row")"
+	mapfile -t resume_rows < <(jq -r '.resumes[]|[.prefix,.total,.sha256]|@tsv' <<<"$row")
+	for resume_row in "${resume_rows[@]}"; do
+		IFS=$'\t' read -r prefix total expected <<<"$resume_row"
+		remaining=$((total - prefix))
+		position="$(jq -r --arg total "$total" '.counts[$total].next_pos' <<<"$row")"
+		canonical=""
+		for producer in "${!selected[@]}"; do
+			state="${states["$ci:$prefix:$producer"]}"
+			for consumer in "${!selected[@]}"; do
+				label="${labels[producer]}->${labels[consumer]} $name $prefix+$remaining"
+				capture digest_command "${selected[consumer]}" --state "$state" --count "$remaining"
+				assert_digest "$label" "$expected"
+				assert_state "$label" "$err" "$position" "$remaining"
+				if [ -z "$canonical" ]; then
+					canonical="$err"
+				elif [ "$err" != "$canonical" ]; then
+					fail "$label resumed state differs byte-for-byte"
+				fi
+			done
+		done
+	done
+done
+printf 'Testing frozen normalized raw/hex/base64 batch bytes...\n'
+row="${case_rows[2]}"
+mapfile -t binary_rows < <(jq -r '.counts|to_entries[]|
+	[.key,.value.next_pos,.value.raw_sha256,.value.hex_sha256,.value.base64_sha256]|@tsv' <<<"$row")
+for i in "${!selected[@]}"; do
+	for binary_row in "${binary_rows[@]}"; do
+		IFS=$'\t' read -r count position raw_digest hex_digest base64_digest <<<"$binary_row"
+		for encoding in raw hex base64; do
+			flags=(--binaryoutput)
+			case "$encoding" in
+				raw) expected="$raw_digest" ;;
+				hex) flags+=(--hex); expected="$hex_digest" ;;
+				base64) flags+=(--base64); expected="$base64_digest" ;;
+			esac
+			capture digest_command "${selected[i]}" --seed 42 --normalized 0..255 \
+				--count "$count" "${flags[@]}"
+			assert_digest "${labels[i]} normalized $encoding count=$count" "$expected"
+			assert_state "${labels[i]} normalized $encoding count=$count" "$err" "$position" "$count"
+		done
+	done
+done
+
+# Short custom entropy streams force production wedges/tails with no test hook.
+# Exact tail equality, rejection followed by retry, and NEW strip selection
+# distinguish easy-to-miss inequality and entropy-order defects.
+directed_command() {
+	local cli="$1" hex="$2"
+	"$cli" --true-random --random-source <(printf '%s' "$hex" | xxd -r -p) \
+		--log-normal --mean 0 --stddev 1 --count 1
+}
+printf 'Testing directed production wedges and tails...\n'
+mapfile -t directed_rows < <(jq -r '.directed[]|[.name,.hex,.value]|@tsv' "$fixture")
+for i in "${!selected[@]}"; do
+	for directed_row in "${directed_rows[@]}"; do
+		IFS=$'\t' read -r name hex value <<<"$directed_row"
+		expected="$(printf '%s\n' "$value" | sha256sum)"
+		capture digest_command directed_command "${selected[i]}" "$hex"
+		assert_digest "${labels[i]} $name" "${expected%% *}"
+	done
+done
+
+# Independent endpoint control: a tail with U=V=1 lies beyond the requested
+# interval, even though generic fixed-to-integer conversion saturates at 2^53.
+# Reject it BEFORE conversion, then accept the zero draw at the midpoint.
+# Four outputs force real SIMD groups rather than testing scalar remainders.
+endpoint_command() {
+	local cli="$1" hex="$2" range="$3" count="$4"
+	"$cli" --true-random --random-source <(printf '%s' "$hex" | xxd -r -p) \
+		--normalized "$range" --count "$count"
+}
+printf 'Testing independently derived endpoint rejection (including four lanes)...\n'
+for i in "${!selected[@]}"; do
+	for sign in positive negative; do
+		case "$sign" in
+			positive) header=fffffffffffffe00; range=9007199254740982..9007199254740992; midpoint=9007199254740987 ;;
+			negative) header=ffffffffffffff00; range=-9007199254740992..-9007199254740982; midpoint=-9007199254740987 ;;
+		esac
+		tail="${header}fffffffffffffe00fffffffffffffe00"
+		for count in 1 4; do
+			zeros="" expected=""
+			for ((j=0; j<count; j++)); do
+				zeros+=0000000000000000
+				expected+="$midpoint"$'\n'
+			done
+			digest="$(printf '%s' "$expected" | sha256sum)"
+			capture digest_command endpoint_command "${selected[i]}" "$tail$zeros" "$range" "$count"
+			assert_digest "${labels[i]} $sign endpoint count=$count" "${digest%% *}"
+			capture digest_command endpoint_command "${selected[i]}" "$tail" "$range" "$count"
+			checks=$((checks + 1))
+			if [ "$rc" -eq 0 ] || [ "${out%% *}" != "$empty_digest" ] ||
+			   ! jq -e '(.error.code|type)=="string"' <<<"$err" >/dev/null 2>&1; then
+				fail "${labels[i]} $sign endpoint source failure committed a clipped value (count=$count, exit=$rc)"
+			fi
+		done
+	done
+done
+printf 'Ziggurat production: %s checks, %s failures (%s required implementations: %s)\n' \
+	"$checks" "$fails" "${#selected[@]}" "${labels[*]}"
+[ "$fails" -eq 0 ]
