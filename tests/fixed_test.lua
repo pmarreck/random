@@ -1180,6 +1180,21 @@ end
 local c0m, c0e = fx.cos_turns(0LL, 0)
 ok(fx.cmp(c0m, c0e, fx.from_int(1)) == 0, "cos(0 turns) == 1")
 
+-- |u| < 2^-62 makes 1-cos(2*pi*u) far smaller than one mantissa ULP.
+-- In particular a negative wrap rounded to one turn must return one, not
+-- sin(0). Expected pairs are mathematical endpoint values, not oracle output.
+for _, magnitude in ipairs({0x4000000000000000LL,
+	0x4000000000000001LL, 0x7fffffffffffffffLL}) do
+	for _, exponent in ipairs({-63, -64, -100, -1000000}) do
+		for _, sign in ipairs({-1LL, 1LL}) do
+			local cm, ce = fx.cos_turns(sign * magnitude, exponent)
+			ok(cm == 0x4000000000000000LL and ce == 0,
+				("cos tiny turn endpoint m=%s e=%d is exactly one"):format(
+					tostring(sign * magnitude), exponent))
+		end
+	end
+end
+
 local c2m, c2e = fx.cos_turns(turns(1, 2))
 ok(math_abs_rel(c2m, c2e, fx.from_int(-1)) < 1e-16, "cos(1/2 turn) == -1")
 

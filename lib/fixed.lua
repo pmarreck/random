@@ -1230,9 +1230,8 @@ function M.cos_turns(m, e)
 	-- normalize into [0, 1) the same way a real turns-based angle would
 	-- wrap, rather than assuming every caller already range-checked u.
 	local fm, fe = M.frac(m, e)
-	-- Intentional out-of-domain defense: every real caller's u arrives in
-	-- [0, 1), so this branch is unreachable and untested in practice; kept
-	-- anyway rather than trusting callers to range-check first.
+	-- Negative public inputs wrap into the positive turn. Tiny remainders
+	-- can round that wrap to exactly one; quadrant four is then zero again.
 	if fm < 0 then fm, fe = M.add(fm, fe, M.from_int(1)) end
 	-- quadrant = floor(4u); within = 4u - quadrant
 	local q4m, q4e = M.mul(fm, fe, M.from_int(4))
@@ -1240,7 +1239,7 @@ function M.cos_turns(m, e)
 	local wm, we = M.sub(q4m, q4e, M.from_int(q))
 	-- angle in [0, pi/2)
 	local am, ae = M.mul(wm, we, M.PI_2_M, M.PI_2_E)
-	if q == 0 then return cos_rad(am, ae) end
+	if q == 0 or q == 4 then return cos_rad(am, ae) end
 	if q == 1 then local sm, se = sin_rad(am, ae); return M.neg(sm, se) end
 	if q == 2 then local cm, ce = cos_rad(am, ae); return M.neg(cm, ce) end
 	return sin_rad(am, ae)

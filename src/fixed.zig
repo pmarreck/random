@@ -613,7 +613,7 @@ pub fn cosTurns(x: Fixed) Fixed {
     const w = sub(q4, fromInt(q));
     const a = mul(w, PI_2); // angle in [0, pi/2)
     return switch (q) {
-        0 => cosRad(a),
+        0, 4 => cosRad(a), // a tiny negative wrap can round to one full turn
         1 => neg(sinRad(a)),
         2 => neg(cosRad(a)),
         else => sinRad(a),
@@ -1290,4 +1290,14 @@ test "fromInt: representative integers round to normalized form" {
     try std.testing.expectEqual(Fixed{ .m = @as(i64, @bitCast(TWO62)), .e = 0 }, fromInt(1));
     try std.testing.expectEqual(Fixed{ .m = -@as(i64, @bitCast(TWO62)), .e = 0 }, fromInt(-1));
     try std.testing.expectEqual(Fixed{ .m = @as(i64, @bitCast(TWO62)), .e = 1 }, fromInt(2));
+}
+
+test "tiny turns round cosine to one from either side of the full-turn boundary" {
+    for ([_]i64{ @intCast(TWO62), @intCast(TWO62 + 1), std.math.maxInt(i64) }) |m| {
+        for ([_]i32{ -63, -64, -100, -1000000 }) |e| {
+            for ([_]i64{ -1, 1 }) |sign| {
+                try std.testing.expectEqual(fromInt(1), cosTurns(.{ .m = sign * m, .e = e }));
+            }
+        }
+    }
 }

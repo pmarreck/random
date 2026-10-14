@@ -3,7 +3,16 @@ const std = @import("std");
 const fx = @import("fixed");
 const simd = @import("candidate");
 
-test "negative turns whose wrap rounds to quadrant four retain the scalar fallback" {
+test "negative turns whose wrap rounds to a full turn select the cosine endpoint" {
+	for ([_]i32{ -63, -64, -100, -1000000 }) |exponent| {
+		const endpoints: simd.Batch = .{
+			.{ .m = -@as(i64, @intCast(fx.TWO62)), .e = exponent },
+			.{ .m = -@as(i64, @intCast(fx.TWO62 + 1)), .e = exponent },
+			.{ .m = -std.math.maxInt(i64), .e = exponent },
+			fx.Fixed.zero,
+		};
+		for (simd.cos4(endpoints)) |actual| try std.testing.expectEqual(fx.fromInt(1), actual);
+	}
 	for ([_]i32{ -60, -61, -62, -63, -64, -65, -1000 }) |exponent| {
 		const xs: simd.Batch = .{
 			.{ .m = -@as(i64, @intCast(fx.TWO62)), .e = exponent },

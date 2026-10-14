@@ -537,6 +537,21 @@ expect Selection.new([]) == Err(Empty)
 expect Selection.new([0.I64, 0]) == Err(ZeroTotal)
 expect Selection.new([-1.I64, 3]) == Err(InvalidWeight)
 expect Selection.new([9007199254740992.I64, 1]) == Err(TotalTooLarge)
+expect {
+	mantissas : List(I64)
+	mantissas = [-4611686018427387904, -4611686018427387905, -9223372036854775807, 4611686018427387904, 4611686018427387905, 9223372036854775807]
+	exponents : List(I32)
+	exponents = [-63, -64, -100, -1000000]
+	mantissas.all(|m| exponents.all(|e| {
+		match Fixed.from_parts(m, e) {
+			Ok(input) => match input.cos_turns() {
+				Ok(output) => output.is_eq(Fixed.from_int(1))
+				Err(_) => Bool.False
+			}
+			Err(_) => Bool.False
+		}
+	}))
+}
 expect Selection.new([1.I64, 3, 0])?.total() == 4
 expect Selection.add_weight(0, 0) == Ok(0.I64)
 expect Selection.add_weight(9007199254740992, 1) == Err(TotalTooLarge)

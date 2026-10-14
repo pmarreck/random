@@ -103,6 +103,21 @@ test "sampler lanes match scalar exact pairs including endpoints and quadrants" 
     try std.testing.expectEqualDeep(scalar, actual);
 }
 
+test "vector cosine wraps rounded full turns to the cosine endpoint" {
+    // Negative angles intentionally sit outside lnCos4's sampler-only domain.
+    // Exercise the raw kernel only after the production CPU/OS guard succeeds.
+    if (!isAccelerated()) return;
+    for ([_]i32{ -63, -64, -100, -1000000 }) |e| {
+        const xs: Batch = .{
+            .{ .m = -@as(i64, @intCast(fx.TWO62)), .e = e },
+            .{ .m = -@as(i64, @intCast(fx.TWO62 + 1)), .e = e },
+            .{ .m = -std.math.maxInt(i64), .e = e },
+            fx.Fixed.zero,
+        };
+        for (vector.cos4(xs)) |actual| try std.testing.expectEqualDeep(fx.fromInt(1), actual);
+    }
+}
+
 test "malformed and out-of-domain lanes fail before arithmetic" {
     const valid: Batch = @splat(fx.fromInt(1));
     const invalid = [_]fx.Fixed{ fx.fromInt(-1), fx.fromInt(2), .{ .m = 1, .e = 0 }, .{ .m = 0, .e = 1 }, .{ .m = @intCast(fx.TWO62), .e = -65 }, .{ .m = std.math.minInt(i64), .e = 0 }, .{ .m = @intCast(fx.TWO62), .e = std.math.maxInt(i32) } };

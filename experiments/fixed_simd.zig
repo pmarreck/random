@@ -134,8 +134,8 @@ pub fn cos4(xs: Batch) Batch {
 		const q4 = fx.mul(f, fx.fromInt(4));
 		const q = fx.toIntTrunc(q4);
 		angles[lane] = fx.mul(fx.sub(q4, fx.fromInt(q)), fx.PI_2);
-		// Match the scalar default branch even if a tiny negative wrap rounds to 4.
-		sin_mask[lane] = q != 0 and q != 2;
+		// A rounded full turn has zero residual angle and selects cosine(0).
+		sin_mask[lane] = q != 0 and q != 2 and q != 4;
 		neg_mask[lane] = q == 1 or q == 2;
 	}
 	const angle = pack(angles);

@@ -77,6 +77,19 @@ while IFS=$'\t' read -r arguments expected; do
 	fi
 	checks=$((checks + 1))
 done <<<"$oracle_cases"
+# Independently fixed endpoint values also exercise optimized native code.
+for cosine_m in -4611686018427387904 -4611686018427387905 -9223372036854775807 \
+    4611686018427387904 4611686018427387905 9223372036854775807; do
+	for cosine_e in -63 -64 -100 -1000000; do
+		actual="$("$roc_kernel" cos "$cosine_m" "$cosine_e")"
+		status=$?
+		if [ "$status" -ne 0 ] || [ "$actual" != '4611686018427387904,0' ]; then
+			echo "Roc native cosine endpoint FAILED: $cosine_m $cosine_e => '$actual' (status $status)" >&2
+			exit 1
+		fi
+		checks=$((checks + 1))
+	done
+done
 if [ "$checks" -lt 1000 ]; then
 	echo "Roc core test FAILED: incomplete runtime corpus ($checks)" >&2
 	exit 1

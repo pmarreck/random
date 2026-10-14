@@ -214,7 +214,7 @@ Fixed :: { m : I64, e : I32 }.{
 			quadrant = to_int_trunc(quadrant_value)
 			within = sub(quadrant_value, from_int(quadrant))?
 			angle = mul(within, pi_over_two)?
-			if quadrant == 0 cos_radians(angle)
+			if quadrant == 0 or quadrant == 4 cos_radians(angle)
 			else if quadrant == 1 Ok(sin_radians(angle)?.neg())
 			else if quadrant == 2 Ok(cos_radians(angle)?.neg())
 			else sin_radians(angle)

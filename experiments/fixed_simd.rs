@@ -223,10 +223,13 @@ mod avx2 {
 				.unwrap()
 		});
 		let q = _mm256_loadu_si256(quadrants.as_ptr().cast());
-		// The scalar default branch also handles a tiny negative wrap rounded to 4.
+		// A rounded full turn has zero residual angle and selects cosine(0).
 		let cosine_mask = _mm256_or_si256(
-			_mm256_cmpeq_epi64(q, splat(0)),
-			_mm256_cmpeq_epi64(q, splat(2)),
+			_mm256_or_si256(
+				_mm256_cmpeq_epi64(q, splat(0)),
+				_mm256_cmpeq_epi64(q, splat(2)),
+			),
+			_mm256_cmpeq_epi64(q, splat(4)),
 		);
 		let sin_mask = _mm256_xor_si256(cosine_mask, splat(-1));
 		let neg_mask = _mm256_or_si256(
@@ -334,6 +337,19 @@ fn exact_scalar_control() {
 		"Run this AVX2 control on supported hardware"
 	);
 	let coefficients = avx2::Coefficients::new();
+	for exponent in [-63, -64, -100, -1_000_000] {
+		let endpoints = [
+			Fixed::from_parts(-(1 << 62), exponent).unwrap(),
+			Fixed::from_parts(-(1 << 62) - 1, exponent).unwrap(),
+			Fixed::from_parts(-i64::MAX, exponent).unwrap(),
+			Fixed::ZERO,
+		];
+		// SAFETY: the CPU guard above succeeded and these inputs are canonical.
+		assert_eq!(
+			unsafe { avx2::cos4(endpoints, &coefficients) },
+			[Fixed::from_i64(1); 4]
+		);
+	}
 	for exponent in [-60, -61, -62, -63, -64, -65, -1000] {
 		let xs = [
 			Fixed::from_parts(-(1 << 62), exponent).unwrap(),

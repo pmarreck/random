@@ -8,6 +8,17 @@ cd "$root/lean" || exit 1
 
 lake build || exit 1
 
+# Frozen endpoint pairs, independent of the other language implementations.
+cosine_endpoints=$(printf '%s\n' \
+	'import Randoml' \
+	'open Randoml.Fixed' \
+	'#eval [4611686018427387904, 4611686018427387905, 9223372036854775807].all (fun (m : Int) => [-63, -64, -100, -1000000].all (fun (e : Int) => [-1, 1].all (fun (s : Int) => cosTurns {m := s*m, e := e} == fromInt 1)))' | \
+	lake env lean --trust=0 /dev/stdin) || exit 1
+if [ "$cosine_endpoints" != true ]; then
+	echo "Lean tiny-turn cosine endpoint regression: $cosine_endpoints" >&2
+	exit 1
+fi
+
 # Exact independently derived pre-clamp threshold, both signs and adjacent
 # mantissas. Full valid endpoint spans are legal for the nonlinear sampler;
 # the cardinality restriction of the uniform mapper does not apply here.
@@ -144,6 +155,8 @@ fi
 
 axioms=$(printf '%s\n' \
 	'import Randoml' \
+	'#print axioms Randoml.cosine_wrapped_endpoint' \
+	'#print axioms Randoml.cosine_tiny_negative_endpoint' \
 	'#print axioms Randoml.fill_advances_position' \
 	'#print axioms Randoml.seek_sets_position' \
 	'#print axioms Randoml.fill_preserves_key' \
@@ -179,8 +192,8 @@ while IFS= read -r line; do
 		exit 1
 	fi
 done <<<"$axioms"
-if [ "$axiom_lines" -ne 25 ]; then
-	echo "Lean theorem axiom audit expected 25 statements, got $axiom_lines" >&2
+if [ "$axiom_lines" -ne 27 ]; then
+	echo "Lean theorem axiom audit expected 27 statements, got $axiom_lines" >&2
 	exit 1
 fi
 

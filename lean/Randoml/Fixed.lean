@@ -267,7 +267,7 @@ def cosTurns (x : Value) : Value :=
     let quadrant := toIntTrunc quadrantValue
     let within := sub quadrantValue (fromInt quadrant)
     let angle := mul within piOverTwo
-    if quadrant = 0 then cosineRadians angle
+    if quadrant = 0 ∨ quadrant = 4 then cosineRadians angle
     else if quadrant = 1 then neg (sineRadians angle)
     else if quadrant = 2 then neg (cosineRadians angle)
     else sineRadians angle

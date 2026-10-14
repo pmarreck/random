@@ -361,7 +361,7 @@ impl Fixed {
 		let within = quadrant_value.sub(Self::from_i64(quadrant))?;
 		let angle = within.mul(PI_2)?;
 		match quadrant {
-			0 => cos_radians(angle),
+			0 | 4 => cos_radians(angle), // a rounded full turn is the zero-turn endpoint
 			1 => Ok(sin_radians(angle)?.neg()),
 			2 => Ok(cos_radians(angle)?.neg()),
 			_ => sin_radians(angle),
@@ -642,6 +642,21 @@ mod tests {
 			0,
 			"cosine coefficients must be precomputed"
 		);
+	}
+
+	#[test]
+	fn tiny_turn_cosines_round_to_one_on_both_sides() {
+		for magnitude in [TWO62 as i64, TWO62 as i64 + 1, i64::MAX] {
+			for exponent in [-63, -64, -100, -1_000_000] {
+				for sign in [-1, 1] {
+					let input = Fixed {
+						m: sign * magnitude,
+						e: exponent,
+					};
+					assert_eq!(input.cos_turns(), Ok(Fixed::from_i64(1)), "{input:?}");
+				}
+			}
+		}
 	}
 
 	#[test]

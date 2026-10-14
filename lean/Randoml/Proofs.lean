@@ -6,6 +6,21 @@ import Init.Data.UInt.Lemmas
 
 namespace Randoml
 
+/-- The actual negative-wrap endpoint selects cosine(0), not sine(0).
+This is a reduction/refinement result, not a real-valued cosine error bound. -/
+theorem cosine_wrapped_endpoint (x : Fixed.Value)
+    (nonzero : x.m ≠ 0) (negative : (Fixed.frac x).m < 0)
+    (wrapped : Fixed.add (Fixed.frac x) (Fixed.fromInt 1) = Fixed.fromInt 1) :
+    (Fixed.cosTurns x).m = 4611686018427387904 ∧ (Fixed.cosTurns x).e = 0 := by
+  simp only [Fixed.cosTurns, if_neg nonzero, if_pos negative, wrapped]
+  decide
+
+/-- A concrete production input witnesses the rounded negative-wrap endpoint. -/
+theorem cosine_tiny_negative_endpoint :
+    (Fixed.cosTurns {m := -4611686018427387904, e := -100}).m = 4611686018427387904 ∧
+    (Fixed.cosTurns {m := -4611686018427387904, e := -100}).e = 0 := by
+  decide
+
 theorem seek_sets_position (state next : Drbg) (position : Nat)
   (h : state.seek position = some next) : next.position = position := by
   simp [Drbg.seek] at h
