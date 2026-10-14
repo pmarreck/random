@@ -4,6 +4,12 @@ Moved from PLAN.md on 2026-09-24 without re-authorizing or resolving these histo
 
 ## Upstream Roc toolchain, 2026-10-04
 
+This section preserves the October 4 investigation. Later Roc completion and
+the five-language release are recorded in
+`docs/reports/2026-10-08-ziggurat-production.md`; the unfinished-port statements
+below are historical, not current blockers. The later successful affinity
+acknowledgment superseded the earlier request for that experiment's result.
+
 The `writing-roc` skill and both syntax/module references have been read. The candidate is official `roc-lang/roc` revision `1a4df199210309bbb6befb1322f7435361bd01e1`, using its `src/flake.nix`. This is not the project's LuaJIT-backend fork. The skill's executable checks used a locally available older compiler, not a built/tested artifact of this exact revision.
 
 The candidate's locked Nix package uses Zig 0.16.0 and nixpkgs `64c08a7ca051951c8eae34e3e3cb1e202fe36786`. Four isolated builds failed when Zig compiled the final `roc` executable with SIGSEGV: ordinary Debug, increased process stack, ReleaseFast with increased stack, and an explicit Linux LLVM-backend packaging patch. Dependencies fetched successfully. These are compiler-build failures, not failures of a randomization port. The LLVM probe disproved the initial guess that switching off the self-hosted x86 backend would suffice.
@@ -52,18 +58,29 @@ The approved geometric convention counts failures before success, starting at
 zero. The new language implementation targets upstream Roc, not a LuaJIT-codegen
 fork, and must expose an independently consumable library as well as its CLI.
 
-### Numeric risks
+### Numeric corrections and remaining scope
 
-The scalar cosine's negative-turn defense can round a sufficiently tiny negative
-input's wrap to exactly one turn. That selects quadrant four and returns zero.
-This is outside the existing samplers' nonnegative input domain; SIMD experiments
-deliberately preserve the current oracle behavior. Fixing the public numeric
-function requires coordinated tests without silently changing sampler streams.
+The tiny-negative cosine defect was corrected across all five scalar cores and
+the SIMD kernels in `d0a473e` on 2026-10-14. A negative fractional turn can round
+its positive wrap to exactly one turn. Reduction then produces index four with
+zero residual angle; it must select cosine(0), which is one. The old sine(0)
+dispatch returned zero. Frozen endpoint controls failed before implementation in
+each language, and the new production-linked Lean theorem also failed because
+the proposition was false.
 
-Legacy normalized-integer scalar APIs accept some narrow ranges near i64 extrema
-that can reject indefinitely. Production batch APIs already reject bounds outside
-the ±2^53 contract before source/output mutation. The scalar surface still needs
-the same validation.
+`cosine_wrapped_endpoint` now proves the actual Lean result for every nonzero
+negative-fraction input whose actual wrap equals one; a second theorem proves
+the concrete negative 2^-100 witness. These are endpoint refinement results,
+not real-valued trigonometric error bounds or distribution-law certificates.
+The 43-suite default runner, LuaJIT interpreter controls and extended Zig/Rust
+SIMD exact-output checks passed. Roc additionally checks 24 fixed endpoint
+values in optimized native code. The five-language frozen sampler and
+continuation fixtures were unchanged and passed.
+
+The legacy scalar normalized-integer endpoint admission gap and rejected-tail
+saturation were corrected across all five implementations in release 0.4.0.
+The production report records the failing independent endpoint controls and
+subsequent scalar/batch validation; this is no longer an outstanding task.
 
 ### Platform and proof limits
 

@@ -2,17 +2,19 @@
 
 An October 4 consumer request needs deterministic shaped positions over ranges
 as large as about 2^40, plus sparse distinct sampling and weighted choice.
-These are follow-up APIs, not a reason to change frozen sampler streams during
-the Roc port.
+These remain follow-up APIs. The Roc port and the coordinated Ziggurat migration
+are now shipped in release 0.4.0. Existing replay contracts still need explicit
+construction identifiers when a new API changes integer conversion or rejection.
 
 The proposed surfaces need contracts before implementation:
 
 - Parameterized bounded integers: normal mean/stddev, anchored exponential,
   range-mapped beta and log-normal. Define integer conversion, conditioning on
   the inclusive bounds, rejection/work limits, exact byte consumption and
-  insufficient-support errors. Existing normal-integer sampling uses a frozen
-  million-step uniform construction; a higher-resolution construction needs a
-  distinct identifier/API rather than silently changing replay.
+  insufficient-support errors. The consumer's original million-step Box–Muller
+  concern was superseded by the 0.4.0 Ziggurat construction's 55-bit coordinates.
+  Existing normalized integers still fix the center and width/6 scale; they do
+  not supply the requested independently parameterized bounded sampler.
 - Uniform k-distinct values in [0,n): O(k) storage via sparse Fisher-Yates or
   Floyd, with explicit k>n refusal. Shaped distinct sampling additionally needs
   duplicate handling and narrow-support/work-limit policy.
@@ -28,3 +30,12 @@ The proposed surfaces need contracts before implementation:
 
 Keep LuaJIT-first contracts and all-language comparisons. Do not claim full
 u64 endpoints when the specified API admits only the exact-position domain.
+
+## Reconciliation, 2026-10-14
+
+The October 4 request is preserved here and in PLAN. The first contract milestone
+should specify the existing exact-position domain (including about 2^40-sized
+ranges), integer rounding, bounded work, failure effects and construction IDs.
+Full u64 shaped endpoints and shaped distinct sampling remain separate extensions;
+neither may be inferred from a checked u64 geometric conversion. The consumer
+must retain its implementation revision alongside each construction identifier.

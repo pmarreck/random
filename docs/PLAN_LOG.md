@@ -101,3 +101,7 @@ Completed PLAN.md items retired by plan-retire, oldest retirement first.
 - [x] [Correctness and verification] Compare Ziggurat against production AUTO/SCALAR bounded batches with independent scalar work checks, lane/chunk boundaries and 62 retained timing cases (done 2026-10-08 10:02 EDT; delivered with this change; report: docs/reports/2026-10-08-fixed-point-ziggurat.md).
 - [x] [Correctness and verification] Complete the isolated fixed-point Ziggurat experiment with independent boundary/mutation controls, 96M-output predeclared distribution diagnostics and 54 shared-engine performance cases (report: docs/reports/2026-10-08-fixed-point-ziggurat.md; done 2026-10-08 09:08 EDT; delivered with this change).
 - [x] [Correctness and verification] Enforce the ±2^53 contract in scalar normalized-integer APIs before source mutation and reject tails before saturating conversion, with independent signed endpoint and real-DRBG AVX2 controls (report: docs/reports/2026-10-08-ziggurat-production.md; done 2026-10-09 00:50 EDT; delivered with this change).
+
+## Retired 2026-10-14
+
+- [x] [Correctness and verification] Replace Box–Muller with fixed-point Ziggurat across all five implementations, using frozen shared oracles, cross-language resumption, actual CLI measurements and an explicit breaking continuation version (report: docs/reports/2026-10-08-ziggurat-production.md; commit 27b626a; done 2026-10-09 01:45 EDT).
