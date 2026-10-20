@@ -11,6 +11,14 @@ Completed work: [log](docs/PLAN_LOG.md). Historical directives and deferred risk
 - [ ] Connect actual Lean `Blake3.xofAt`/`Drbg.fill` byte content to the abstract chunking theorem, beyond existing boundary differentials.
 - [ ] Unify remaining Lean deterministic/entropy samplers through a pure byte-source effect and separate interpreters; geometric already uses this boundary.
 
+## Experimental Bend 2 backend
+
+- [x] Pin Bend 2.0.37 and implement independent seeded BLAKE3 bytes, checked chunk/resume behavior and signed bounded integers against frozen oracles; 45 suites passed (commit bc736a2; done 2026-10-20 13:10 EDT; context: docs/plan_context/bend2_evaluation.md).
+- [x] Check four executed Bend invariants with pinned-kernel verdicts and specification/implementation mutation controls (commit bc736a2 plus strengthened guards in this change; done 2026-10-20 14:00 EDT; context: docs/plan_context/bend2_evaluation.md).
+- [x] Measure optimized native/JS Bend against LuaJIT/Zig/Rust, preserving 78 observations and inconclusive outcomes without approving baselines or migrating consumers (done 2026-10-20 14:00 EDT; report: docs/reports/2026-10-20-bend2-evaluation.md).
+- [ ] Optimize Bend read-ahead/range preparation and wide remainder, then remeasure before considering production promotion (context: docs/reports/2026-10-20-bend2-evaluation.md).
+- [ ] Extend Bend nonlinear distributions, shared CLI/state continuation and supported native library exports; strengthen stream/arithmetic/sampler refinement laws beyond the four initial invariants (context: docs/plan_context/bend2_evaluation.md).
+
 ## Platform coverage
 
 - [ ] Execute the Roc CLI/C ABI on native aarch64 Linux and extend official-platform packaging beyond Linux before widening runtime support claims.

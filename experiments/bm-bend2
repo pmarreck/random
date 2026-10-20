@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Explicit experimental cohort; history/baseline/retry policy belongs to the engine.
+set -u
+set -o pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$here" || exit 1
+if [ "${RANDOM_BEND_PROFILE_SHELL:-0}" != 1 ]; then
+	exec nix develop .#bend2-profile -c env RANDOM_BEND_PROFILE_SHELL=1 "$0" "$@"
+fi
+./tests/bend2_benchmark_test || exit 1
+config=profiling-bend2.json
+case "${1:-}" in --cli) shift; config=profiling-bend2-cli.json ;; esac
+exec performance-profile run --config "$config" --seed 42 "$@"

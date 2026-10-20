@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# One thin launcher is included in every startup measurement. No oracle subprocess.
+set -u
+backend="${1:-}"; size="${2:-}"; seed="${3:-}"
+if [ "$size" != 1024 ] || [ "$seed" != 42 ]; then
+	printf 'startup fixture requires size 1024, seed 42\n' >&2
+	exit 1
+fi
+# Frozen independently with production LuaJIT; checked by the bounded suite.
+args=(0 1024 1 4059481548 4059481548 2889067838 42)
+case "$backend" in
+	bend-native-*) exec "$RANDOM_BEND_NATIVE_BENCH" "${args[@]}" ;;
+	bend-js-*) exec node --expose-gc experiments/bend2_js_bench.mjs "${args[@]}" ;;
+	zig-*) exec "$RANDOM_BEND_ZIG_BENCH" "${args[@]}" ;;
+	rust-*) exec "$RANDOM_BEND_RUST_BENCH" "${args[@]}" ;;
+	luajit-*) exec luajit experiments/bend2_lua_bench.lua "${args[@]}" ;;
+	*) printf 'invalid startup backend\n' >&2; exit 1 ;;
+esac

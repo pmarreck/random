@@ -1,0 +1,12 @@
+{
+	"schema": "random-bend2-spec/v1",
+	"base_sha256": "3238272964daa05438a8a99311008802fd495963ac78dbbf51f6d5e6bdcee77c",
+	"declarations": {
+		"CV": "type CV is Data: CV{a: U32, b: U32, c: U32, d: U32, e: U32, f: U32, g: U32, h: U32}",
+		"Words": "type Words is Data: Words{a: U32, b: U32, c: U32, d: U32, e: U32, f: U32, g: U32, h: U32, i: U32, j: U32, k: U32, l: U32, m: U32, n: U32, o: U32, p: U32}",
+		"Stream": "type Stream is Data: Stream{key: CV, hi: U32, lo: U32}",
+		"Wide": "type Wide is Data: Wide{hi: U32, lo: U32}",
+		"Sample": "type Sample is Data: Sample{state: Stream, value: Wide}",
+		"Failure": "type Failure is Data: Failure{code: U32, state: Stream}"
+	}
+}

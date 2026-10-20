@@ -27,6 +27,7 @@ if [ -n "${RANDOM_BEND_LIBDIR:-}" ]; then
 		exit 1
 	}
 	module="$RANDOM_BEND_LIBDIR/lib/javascript/random/core.mjs"
+	node tests/bend2_license_test.mjs "$RANDOM_BEND_LIBDIR" random-bend2-lib || exit 1
 elif ! bend bend/Core.bend -o "$module" >"$scratch/compiler.log" 2>&1; then
 	printf 'bend2 test FAILED: compiler rejected core\n' >&2
 	sed -n '1,100p' "$scratch/compiler.log" >&2
@@ -39,6 +40,7 @@ if [ -n "${RANDOM_BEND_PROBEDIR:-}" ]; then
 		exit 1
 	}
 	probe="$RANDOM_BEND_PROBEDIR/bin/bend2-probe"
+	node tests/bend2_license_test.mjs "$RANDOM_BEND_PROBEDIR" random-bend2-probe || exit 1
 elif ! bend bend/Probe.bend -o "$probe" >"$scratch/native.log" 2>&1; then
 	printf 'bend2 test FAILED: native compiler rejected probe\n' >&2
 	sed -n '1,100p' "$scratch/native.log" >&2

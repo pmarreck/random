@@ -14,6 +14,10 @@ fi
 source tests/fixture-cleanup.sh
 scratch="$(mktemp -d --tmpdir random-bend2-proofs.XXXXXXXX)" || exit 1
 trap 'test_trash_on_exit "$scratch"' EXIT
+if ! node tests/bend2_spec_test.mjs >"$scratch/spec.log" 2>&1; then
+	sed -n '1,100p' "$scratch/spec.log" >&2
+	exit 1
+fi
 if ! bend bend/PROOF.bend >"$scratch/ordinary.log" 2>&1; then
 	sed -n '1,100p' "$scratch/ordinary.log" >&2
 	exit 1
@@ -27,6 +31,7 @@ if [ "$(uname -s)/$(uname -m)" != Linux/x86_64 ]; then
 	exit 0
 fi
 export BENDTT="${RANDOM_BENDTT_REQUIRED:?pinned verdict kernel required (use nix develop .#bend2-proofs)}"
+node tests/bend2_license_test.mjs "$(dirname "$(dirname "$BENDTT")")" random-bend2-proof-kernel || exit 1
 if ! bend bend/PROOF.bend --verdict >"$scratch/verdict.log" 2>&1; then
 	sed -n '1,120p' "$scratch/verdict.log" >&2
 	exit 1

@@ -1,0 +1,20 @@
+{
+	"schema": "performance-project/v1",
+	"project": "random_bend2_cli",
+	"history_url": "file:///var/lib/performance-profiling",
+	"identity": {
+		"runtime": "Bend-2.0.37-LuaJIT-Zig-Rust-native-CLI",
+		"build_mode": "optimized",
+		"concurrency": 1
+	},
+	"cases": [
+		{"cores":1,"name":"bend-native-cli-1","definition":"bend2-2.0.37-4KiB-hex-sha256-v1","mode":"bm","metric":"wall_ns","comparison":"absolute","command":["node","experiments/bend2-cli-profile.mjs","{case}","{sizes}","{seed}"],"sizes":[4096],"bounds":[1,100000000000],"policy":{"max_cv":0.15}},
+		{"cores":1,"name":"zig-cli-1","definition":"bend2-2.0.37-4KiB-hex-sha256-v1","mode":"bm","metric":"wall_ns","comparison":"absolute","command":["node","experiments/bend2-cli-profile.mjs","{case}","{sizes}","{seed}"],"sizes":[4096],"bounds":[1,100000000000],"policy":{"max_cv":0.15}},
+		{"cores":1,"name":"rust-cli-1","definition":"bend2-2.0.37-4KiB-hex-sha256-v1","mode":"bm","metric":"wall_ns","comparison":"absolute","command":["node","experiments/bend2-cli-profile.mjs","{case}","{sizes}","{seed}"],"sizes":[4096],"bounds":[1,100000000000],"policy":{"max_cv":0.15}},
+		{"cores":1,"name":"luajit-cli-1","definition":"bend2-2.0.37-4KiB-hex-sha256-v1","mode":"bm","metric":"wall_ns","comparison":"absolute","command":["node","experiments/bend2-cli-profile.mjs","{case}","{sizes}","{seed}"],"sizes":[4096],"bounds":[1,100000000000],"policy":{"max_cv":0.15}},
+		{"cores":12,"name":"bend-native-cli-12","definition":"bend2-2.0.37-4KiB-hex-sha256-v1","mode":"bm","metric":"wall_ns","comparison":"absolute","command":["node","experiments/bend2-cli-profile.mjs","{case}","{sizes}","{seed}"],"sizes":[4096],"bounds":[1,100000000000],"policy":{"max_cv":0.15}},
+		{"cores":12,"name":"zig-cli-12","definition":"bend2-2.0.37-4KiB-hex-sha256-v1","mode":"bm","metric":"wall_ns","comparison":"absolute","command":["node","experiments/bend2-cli-profile.mjs","{case}","{sizes}","{seed}"],"sizes":[4096],"bounds":[1,100000000000],"policy":{"max_cv":0.15}},
+		{"cores":12,"name":"rust-cli-12","definition":"bend2-2.0.37-4KiB-hex-sha256-v1","mode":"bm","metric":"wall_ns","comparison":"absolute","command":["node","experiments/bend2-cli-profile.mjs","{case}","{sizes}","{seed}"],"sizes":[4096],"bounds":[1,100000000000],"policy":{"max_cv":0.15}},
+		{"cores":12,"name":"luajit-cli-12","definition":"bend2-2.0.37-4KiB-hex-sha256-v1","mode":"bm","metric":"wall_ns","comparison":"absolute","command":["node","experiments/bend2-cli-profile.mjs","{case}","{sizes}","{seed}"],"sizes":[4096],"bounds":[1,100000000000],"policy":{"max_cv":0.15}}
+	]
+}

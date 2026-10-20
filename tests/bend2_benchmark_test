@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Bounded acceptance controls; the performance study itself is opt-in ./bm --bend2.
+set -u
+cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
+if [ "$(uname -s)/$(uname -m)" != Linux/x86_64 ]; then
+	printf 'Bend native comparison instrumentation supports x86_64-linux only; core acceptance remains required.\n'
+	exit 0
+fi
+node tests/bend2_benchmark_test.mjs

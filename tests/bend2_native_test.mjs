@@ -12,10 +12,11 @@ io.write(b.bin_to_hex(d.new(material):bytes(${count})))`],{encoding:'utf8'});
 	const result=spawnSync(exe,['--threads','1',String(seed),String(count)],{encoding:'utf8'});
 	assert.equal(result.status,0,result.stderr);
 	assert.equal(result.stderr,'');
-	assert.equal(result.stdout,expected.stdout,`native bytes seed=${seed} count=${count}`);
+	assert.equal(result.stdout,expected.stdout+(count ? '\n' : ''),`native bytes seed=${seed} count=${count}`);
 	checks++;
 }
-for (const args of [[],['nope','1'],['1','4097'],['1','1','extra']]) {
+for (const args of [[],['nope','1'],['1','4097'],['1','1','extra'],
+	['4294967296','1'],['-1','1'],['1','4294967296'],['1','-1']]) {
 	const result=spawnSync(exe,['--threads','1',...args],{encoding:'utf8'});
 	assert.notEqual(result.status,0);
 	assert.equal(result.stdout,'');

@@ -459,6 +459,19 @@ For repeated draws, `geometric.prepare(m,e)` caches parameters and
 through a caller-owned source. Rust exports the equivalent `Geometric` and
 `UnsignedCount`; Zig's public C ABI returns unsigned BLIP into caller storage.
 
+### Experimental Bend 2
+
+The optional Bend 2 experiment is separate from the five production backends.
+`nix build .#random-bend2-lib` exports an independent pure Bend source/generated
+JavaScript core; `.#random-bend2-probe` supplies a narrow native byte adapter,
+not a production-compatible CLI. It covers deterministic bytes, checked state
+and bounded integers. Four implementation laws pass a pinned kernel verdict;
+this is not a proof of the complete CSPRNG. See the
+[coverage, measured costs and remaining work](docs/reports/2026-10-20-bend2-evaluation.md).
+`./bm --bend2` compares native/JS Bend with LuaJIT, Zig and Rust; `--cli` after
+`--bend2` selects the separate hex-output comparison. Performance history must
+use an existing writable directory outside the repository.
+
 ### Manual
 
 For the LuaJIT oracle, put `bin/` on your `PATH`; it requires `luajit`. For the
@@ -797,3 +810,7 @@ lineage and benchmarking. They are not installed.
 ## License
 
 MIT © Peter Marreck
+
+Optional generated Bend artifacts include Bend's Apache-2.0 runtime notice.
+The experimental proof kernel also carries Lean's license and third-party
+notices. These are installed alongside those artifacts under `share/licenses`.

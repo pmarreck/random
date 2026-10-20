@@ -18,12 +18,19 @@ def seed_material(+seed: U32) -> List<&2, U32>:
 def invalid() -> Result<&2, &2, String, String>:
 	Fail{"{\"error\":\"usage: bend2-probe SEED_U32 COUNT (0..4096)\"}\n"}
 
-def bounded(valid: Bool, seed: U32, count: U32) -> Result<&2, &2, String, String>:
+def line(empty: Bool, text: String) -> String:
+	match empty:
+		case True{}:
+			text
+		case False{}:
+			text ++ "\n"
+
+def bounded(valid: Bool, seed: U32, +count: U32) -> Result<&2, &2, String, String>:
 	match valid:
 		case False{}:
 			invalid()
 		case True{}:
-			Done{hex(Core.xof_at(Core.seed_key(seed_material(seed)), 0, 0, U32.to_nat(count)))}
+			Done{line(U32.is_eq(count, 0), hex(Core.xof_at(Core.seed_key(seed_material(seed)), 0, 0, U32.to_nat(count))))}
 
 def parsed(seed: Maybe<&2, U32>, count: Maybe<&2, U32>) -> Result<&2, &2, String, String>:
 	match seed count:

@@ -54,6 +54,9 @@ in pkgs.stdenv.mkDerivation {
     mkdir -p $out/bin $out/share/random-bend2-proof-kernel
     install -m755 bendtt $out/bin/bendtt
     install -m644 axioms.log $out/share/random-bend2-proof-kernel/
+    install -Dm644 ${upstream}/LICENSE $out/share/licenses/random-bend2-proof-kernel/Bend-LICENSE
+    install -Dm644 ${lean}/LICENSE $out/share/licenses/random-bend2-proof-kernel/Lean-LICENSE
+    install -Dm644 ${lean}/LICENSES $out/share/licenses/random-bend2-proof-kernel/Lean-LICENSES
     lean --version > $out/share/random-bend2-proof-kernel/lean-version
     runHook postInstall
   '';
