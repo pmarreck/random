@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Ordinary checking is separate from the explicitly pinned BendTT verdict.
+set -u
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$root" || exit 1
+sha256sum --check --status tests/fixtures/bend2-laws.sha256 || {
+	echo 'bend2 proof FAILED: frozen specification changed; explicit review required' >&2
+	exit 1
+}
+if [ "$(bend version)" != 'bend 2.0.37' ]; then
+	echo 'bend2 proof FAILED: wrong compiler version' >&2
+	exit 1
+fi
+source tests/fixture-cleanup.sh
+scratch="$(mktemp -d --tmpdir random-bend2-proofs.XXXXXXXX)" || exit 1
+trap 'test_trash_on_exit "$scratch"' EXIT
+if ! bend bend/PROOF.bend >"$scratch/ordinary.log" 2>&1; then
+	sed -n '1,100p' "$scratch/ordinary.log" >&2
+	exit 1
+fi
+if ! grep -q '^ALL PROOFS CHECK$' "$scratch/ordinary.log"; then
+	echo 'bend2 proof FAILED: no ordinary success marker' >&2
+	exit 1
+fi
+if [ "$(uname -s)/$(uname -m)" != Linux/x86_64 ]; then
+	echo 'bend2 proof: ordinary check only; pinned verdict kernel currently supports Linux/x86_64'
+	exit 0
+fi
+export BENDTT="${RANDOM_BENDTT_REQUIRED:?pinned verdict kernel required (use nix develop .#bend2-proofs)}"
+if ! bend bend/PROOF.bend --verdict >"$scratch/verdict.log" 2>&1; then
+	sed -n '1,120p' "$scratch/verdict.log" >&2
+	exit 1
+fi
+if ! grep -q '^ALL PROOFS CHECK$' "$scratch/verdict.log"; then
+	echo 'bend2 proof FAILED: no kernel success marker' >&2
+	exit 1
+fi
+node tests/bend2_mutation_test.mjs "$scratch" || exit 1
+echo 'bend2 proof: four ordinary/kernel-checked implementation laws and mutation controls passed'

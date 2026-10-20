@@ -4,11 +4,15 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    bend-upstream = {
+      url = "github:bendlang/bend/4ff8545f19b09b7d2b8ca2303668100eac8efd66";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     roc-upstream.url = "github:roc-lang/roc/1a4df199210309bbb6befb1322f7435361bd01e1?dir=src";
     performance-profiling.url = "github:pmarreck/performance_profiling/a04d62a441a5b9315e81f6277f57f7eddb9a57af";
   };
 
-  outputs = { self, nixpkgs, flake-utils, roc-upstream, performance-profiling }:
+  outputs = { self, nixpkgs, flake-utils, bend-upstream, roc-upstream, performance-profiling }:
     # Enumerate the supported native systems explicitly. flake-utils' default
     # still includes x86_64-darwin, which nixpkgs 26.11 has dropped and this
     # project no longer promises; Windows remains a Zig/Rust cross target.
@@ -19,6 +23,90 @@
     ] (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        # The v2.0.37 source tag's generated flake still packages v2.0.36.
+        # Override only that stale archive selection, using the published
+        # v2.0.37 asset digests. Remove when a selected upstream tag agrees
+        # with its archive; tests/bend2_test checks the executable identity.
+        bendArchive = {
+          x86_64-linux = { target = "linux-x64"; sha256 = "84c32465a39bc9ac315eade23f470cb8db03153dc860f89564fcfec153c3e445"; };
+          aarch64-linux = { target = "linux-arm64"; sha256 = "b65d452e5c68a4c486e353220d4298ba5d76f535db47109a7d76ffdf72efafb1"; };
+          aarch64-darwin = { target = "darwin-arm64"; sha256 = "846d25ccf0c12d5d1e5e648c0b3ba4c8397fdb852812ac00ef8135998f8e194b"; };
+        }.${system};
+        bendToolchain = bend-upstream.packages.${system}.default.overrideAttrs (_: {
+          version = "2.0.37";
+          src = pkgs.fetchurl {
+            url = "https://github.com/bendlang/bend/releases/download/v2.0.37/bend-2.0.37-${bendArchive.target}.tar.gz";
+            inherit (bendArchive) sha256;
+          };
+        });
+        bendProofKernel = pkgs.callPackage ./nix/bend2-proof-kernel.nix {
+          upstream = bend-upstream.outPath;
+        };
+        randomBendLib = pkgs.stdenvNoCC.mkDerivation {
+          pname = "random-bend2-lib-experimental";
+          version = "0.4.0";
+          src = ./.;
+          strictDeps = true;
+          nativeBuildInputs = [ bendToolchain pkgs.time ];
+          allowedReferences = [ ];
+          BEND_NO_TELEMETRY = "1";
+          buildPhase = ''
+            runHook preBuild
+            ${pkgs.time}/bin/time -o compiler-cost.json \
+              -f '{"wall_seconds":%e,"peak_rss_kib":%M}' \
+              bend bend/Core.bend -o core.mjs
+            sha256sum bend/Core.bend > core-source.sha256
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/lib/bend/random $out/lib/javascript/random \
+              $out/share/licenses/random-bend2-lib $out/share/random-bend2-lib
+            install -m644 bend/Core.bend bend/LAWS.bend bend/PROOF.bend $out/lib/bend/random/
+            install -m644 core.mjs $out/lib/javascript/random/
+            install -m644 compiler-cost.json $out/share/random-bend2-lib/
+            install -m644 core-source.sha256 $out/share/random-bend2-lib/
+            install -m644 LICENSE $out/share/licenses/random-bend2-lib/LICENSE
+            runHook postInstall
+          '';
+          meta = {
+            description = "Experimental independent Bend source and pure generated JavaScript core; bytes and bounded integers only";
+            license = pkgs.lib.licenses.mit;
+            platforms = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
+          };
+        };
+        randomBendProbe = pkgs.stdenv.mkDerivation {
+          pname = "random-bend2-probe-experimental";
+          version = "0.4.0";
+          src = ./.;
+          strictDeps = true;
+          nativeBuildInputs = [ bendToolchain pkgs.clang pkgs.time ];
+          disallowedReferences = [ bendToolchain ];
+          stripDebugList = [ ];
+          stripAllList = [ "bin" ];
+          BEND_NO_TELEMETRY = "1";
+          buildPhase = ''
+            runHook preBuild
+            ${pkgs.time}/bin/time -o compiler-cost.json \
+              -f '{"wall_seconds":%e,"peak_rss_kib":%M}' \
+              bend bend/Probe.bend -o bend2-probe
+            sha256sum bend/Core.bend bend/ProbeModel.bend bend/Probe.bend > probe-source.sha256
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/bin $out/share/random-bend2-probe
+            install -m755 bend2-probe $out/bin/
+            install -m644 compiler-cost.json $out/share/random-bend2-probe/
+            install -m644 probe-source.sha256 $out/share/random-bend2-probe/
+            runHook postInstall
+          '';
+          meta = {
+            description = "Experimental optimized native Bend byte probe, not the production random CLI contract";
+            license = pkgs.lib.licenses.mit;
+            platforms = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
+          };
+        };
         kaniVerifier = pkgs.callPackage ./nix/kani.nix { };
         rocToolchain = import ./nix/roc-toolchain.nix {
           inherit pkgs;
@@ -669,6 +757,9 @@
 		  random-rust-lib = randomRustLib;
 		  random-lean-lib = randomLeanLib;
 		  random-lean-proofs = randomLeanProofs;
+          random-bend2-lib = randomBendLib;
+          random-bend2-probe = randomBendProbe;
+          bend2-toolchain = bendToolchain;
 
 		  # Compatibility aliases. Language-named aliases now resolve to their
 		  # minimal package; `random` remains the historical aggregate alias.
@@ -694,6 +785,8 @@
           random-roc-ffi = randomRocNative;
           random-roc = randomRoc;
           randomroc = randomRoc;
+        } // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
+          bend2-proof-kernel = bendProofKernel;
         } // nixpkgs.lib.optionalAttrs crossSupported {
           # Only meaningful on x86_64-linux: pkgsCross/pkgsMusl and qemu-user are
           # what make the aarch64 and musl legs buildable from this host at all.
@@ -735,7 +828,11 @@
         checks.distribution-proofs = randomLeanProofs;
         checks.random-test = pkgs.runCommand "random-test"
           ({
-            nativeBuildInputs = runtimeTools ++ testTools ++ zigTools ++ rustTools ++ leanTools ++ rocTools;
+            nativeBuildInputs = runtimeTools ++ testTools ++ zigTools ++ rustTools ++ leanTools ++ rocTools ++ [ bendToolchain ];
+            BEND_NO_TELEMETRY = "1";
+            RANDOM_BEND_LIBDIR = "${randomBendLib}";
+            RANDOM_BEND_PROBEDIR = "${randomBendProbe}";
+            RANDOM_BENDTT_REQUIRED = pkgs.lib.optionalString (system == "x86_64-linux") "${bendProofKernel}/bin/bendtt";
             cargoDeps = rustCargoDeps;
             RANDOM_GMP_LIBRARY = "${pkgs.gmp}/lib/libgmp${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
 			RANDOM_DISTRIBUTION_PROOF_DEPS = "${distributionMathlib}/lib/lean";
@@ -1186,6 +1283,12 @@
           else pkgs.runCommand "random-windows-x64-smoke-not-applicable" { } "touch $out";
 
         devShells = {
+          bend2 = pkgs.mkShell {
+            packages = [ bendToolchain
+              pkgs.bun pkgs.nodejs pkgs.clang luajitFixed pkgs.bash pkgs.jq
+              pkgs.coreutils pkgs.time ];
+            BEND_NO_TELEMETRY = "1";
+          };
           ziggurat = pkgs.mkShell {
             packages = [ pkgs.zig_0_16 luajitFixed pkgs.bash pkgs.jq pkgs.coreutils
               pkgs.cargo pkgs.rustc pkgs.rustfmt
@@ -1193,8 +1296,12 @@
             RANDOM_MPFR_LIBRARY = "${pkgs.mpfr}/lib/libmpfr${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
           };
           default = pkgs.mkShell ({
-            packages = runtimeTools ++ testTools ++ zigTools ++ leanTools ++ rocTools ++
+            packages = runtimeTools ++ testTools ++ zigTools ++ leanTools ++ rocTools ++ [ bendToolchain ] ++
               [ pkgs.cargo pkgs.clippy pkgs.rustc pkgs.rustfmt pkgs.openssh pkgs.rsync pkgs.hyperfine ];
+            BEND_NO_TELEMETRY = "1";
+            RANDOM_BEND_LIBDIR = "${randomBendLib}";
+            RANDOM_BEND_PROBEDIR = "${randomBendProbe}";
+            RANDOM_BENDTT_REQUIRED = pkgs.lib.optionalString (system == "x86_64-linux") "${bendProofKernel}/bin/bendtt";
             # The geometric accuracy oracle uses exact rational arithmetic;
             # resolve its library from the derivation, never by store searches.
             RANDOM_GMP_LIBRARY = "${pkgs.gmp}/lib/libgmp${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
@@ -1209,6 +1316,13 @@
 			packages = leanTools ++ [ pkgs.bash pkgs.coreutils pkgs.gnugrep pkgs.gnused ];
 			RANDOM_DISTRIBUTION_PROOF_DEPS = "${distributionMathlib}/lib/lean";
 		  };
+        } // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
+          bend2-proofs = pkgs.mkShell {
+            packages = [ bendToolchain pkgs.bash pkgs.coreutils pkgs.nodejs ];
+            BEND_NO_TELEMETRY = "1";
+            BENDTT = "${bendProofKernel}/bin/bendtt";
+            RANDOM_BENDTT_REQUIRED = "${bendProofKernel}/bin/bendtt";
+          };
         } // nixpkgs.lib.optionalAttrs (nixpkgs.lib.hasSuffix "-linux" system) {
           roc = pkgs.mkShell {
             packages = runtimeTools ++ testTools ++ zigTools ++ rocTools;

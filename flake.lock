@@ -1,5 +1,26 @@
 {
   "nodes": {
+    "bend-upstream": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1791886349,
+        "narHash": "sha256-BtOznD2a757sWIqHU57fRJdjEGDOcYnwHO3dp9YxBIY=",
+        "owner": "bendlang",
+        "repo": "bend",
+        "rev": "4ff8545f19b09b7d2b8ca2303668100eac8efd66",
+        "type": "github"
+      },
+      "original": {
+        "owner": "bendlang",
+        "repo": "bend",
+        "rev": "4ff8545f19b09b7d2b8ca2303668100eac8efd66",
+        "type": "github"
+      }
+    },
     "dotfiles": {
       "flake": false,
       "locked": {
@@ -184,6 +205,7 @@
     },
     "root": {
       "inputs": {
+        "bend-upstream": "bend-upstream",
         "flake-utils": "flake-utils",
         "nixpkgs": "nixpkgs",
         "performance-profiling": "performance-profiling",

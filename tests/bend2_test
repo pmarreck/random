@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Acceptance for the experimental pure Bend 2 core, not a production CLI claim.
+set -u
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$here" || exit 1
+if ! command -v bend >/dev/null 2>&1; then
+	echo 'bend2 test FAILED: pinned compiler unavailable (use nix develop .#bend2)' >&2
+	exit 1
+fi
+version="$(bend version)"
+if [ "$version" != 'bend 2.0.37' ]; then
+	printf 'bend2 test FAILED: expected bend 2.0.37, got %s\n' "$version" >&2
+	exit 1
+fi
+if [ ! -f bend/Core.bend ]; then
+	echo 'bend2 test FAILED: independent Bend core missing' >&2
+	exit 1
+fi
+source "$here/tests/fixture-cleanup.sh"
+scratch="$(mktemp -d --tmpdir random-bend2-test.XXXXXXXX)" || exit 1
+trap 'test_trash_on_exit "$scratch"' EXIT
+module="$scratch/core.mjs"
+probe="$scratch/probe"
+if [ -n "${RANDOM_BEND_LIBDIR:-}" ]; then
+	sha256sum --check --status "$RANDOM_BEND_LIBDIR/share/random-bend2-lib/core-source.sha256" || {
+		echo 'bend2 test FAILED: library snapshot is stale' >&2
+		exit 1
+	}
+	module="$RANDOM_BEND_LIBDIR/lib/javascript/random/core.mjs"
+elif ! bend bend/Core.bend -o "$module" >"$scratch/compiler.log" 2>&1; then
+	printf 'bend2 test FAILED: compiler rejected core\n' >&2
+	sed -n '1,100p' "$scratch/compiler.log" >&2
+	exit 1
+fi
+node tests/bend2_test.mjs "$module" || exit 1
+if [ -n "${RANDOM_BEND_PROBEDIR:-}" ]; then
+	sha256sum --check --status "$RANDOM_BEND_PROBEDIR/share/random-bend2-probe/probe-source.sha256" || {
+		echo 'bend2 test FAILED: native snapshot is stale' >&2
+		exit 1
+	}
+	probe="$RANDOM_BEND_PROBEDIR/bin/bend2-probe"
+elif ! bend bend/Probe.bend -o "$probe" >"$scratch/native.log" 2>&1; then
+	printf 'bend2 test FAILED: native compiler rejected probe\n' >&2
+	sed -n '1,100p' "$scratch/native.log" >&2
+	exit 1
+fi
+node tests/bend2_native_test.mjs "$probe"
