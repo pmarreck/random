@@ -836,6 +836,31 @@
         # tests/random_test, so fixed_test/golden_test/kernel_bc_sweep are
         # actually exercised here too, not just the CLI-behavior suite.
         checks.distribution-proofs = randomLeanProofs;
+        # Fast real-sandbox gate before the full matrix; never replaces it.
+        checks.bend2-sandbox = if system == "x86_64-linux" then pkgs.runCommand "random-bend2-sandbox" {
+          nativeBuildInputs = [ pkgs.bash pkgs.coreutils pkgs.gnugrep pkgs.gnused
+            pkgs.nodejs luajitFixed bendToolchain ];
+          BEND_NO_TELEMETRY = "1";
+          RANDOM_BEND_LIBDIR = "${randomBendLib}";
+          RANDOM_BEND_PROBEDIR = "${randomBendProbe}";
+          RANDOM_BEND_NATIVE_BENCH = "${bendBench.bendNative}/bin/bend2-bench";
+          RANDOM_BEND_MODEL_MODULE = "${bendBench.bendNative}/lib/javascript/model.mjs";
+          RANDOM_BEND_ZIG_BENCH = "${bendBench.zigNative}/bin/zig-bend2-bench";
+          RANDOM_BEND_RUST_BENCH = "${bendBench.rustNative}/bin/rust-bend2-bench";
+          RANDOM_BEND_PROBE = "${randomBendProbe}/bin/bend2-probe";
+          RANDOM_BEND_LUA_CLI = "${randomLua}/bin/random";
+          RANDOM_BEND_ZIG_CLI = "${randomZig}/bin/randomz";
+          RANDOM_BEND_RUST_CLI = "${randomr}/libexec/randomr";
+          RANDOM_BENDTT_REQUIRED = "${bendProofKernel}/bin/bendtt";
+        } ''
+          cp -r ${./.} work
+          chmod -R u+w work
+          cd work
+          export RANDOM_TEST_TRASH_DIR="$TMPDIR/fixture-trash"
+          patchShebangs bin tests experiments
+          FAST=1 bash ./test bend2
+          touch $out
+        '' else pkgs.runCommand "random-bend2-sandbox-not-applicable" { } "touch $out";
         checks.random-test = pkgs.runCommand "random-test"
           ({
             nativeBuildInputs = runtimeTools ++ testTools ++ zigTools ++ rustTools ++ leanTools ++ rocTools ++ [ bendToolchain ];
@@ -885,7 +910,7 @@
             # The Nix sandbox has no /usr/bin/env, so resolve shebangs in both the
             # program (bin/) and the test scripts (tests/) — `random --test` execs the
             # latter via its #!/usr/bin/env bash shebang.
-            patchShebangs bin tests lean/build-owned-cli
+            patchShebangs bin tests experiments lean/build-owned-cli
             export HOME="$TMPDIR"
             export PATH="$PWD/bin:$PATH"
             # ./test sets RANDOM_TEST_FILE itself; FAST=1 keeps this hermetic

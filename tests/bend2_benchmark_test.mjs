@@ -4,7 +4,9 @@ import {dirname,resolve} from 'node:path';
 import {readFileSync} from 'node:fs';
 
 function run(command,args=[]) {
-	return spawnSync(command,[...args].map(String),{encoding:'utf8',timeout:30000,maxBuffer:1<<20});
+	const result=spawnSync(command,[...args].map(String),{encoding:'utf8',timeout:30000,maxBuffer:1<<20});
+	assert.equal(result.error,undefined,`${command}: ${result.error}`);
+	return result;
 }
 for(const [command,manifest] of [
 	[process.env.RANDOM_BEND_NATIVE_BENCH,'random-bend2-bench'],

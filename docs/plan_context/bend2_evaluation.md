@@ -16,6 +16,9 @@ outcomes. No baseline was approved and no consumer was migrated. See the
 The new bounded benchmark controls are also required by `./test`.
 All 46 default suites passed; the three affected Bend suites also passed after
 final upstream-notice packaging and digest verification.
+The first CI pass found host-hidden script/ELF interpreter dependencies; an
+additional early `bend2-sandbox` gate checks the fixes without replacing any
+existing suite or CI target.
 There is no owner-decision blocker. Remaining work is cache/arithmetic
 optimization, stronger refinement laws, nonlinear distributions and full
 frontend/library coverage; none is silently claimed complete.

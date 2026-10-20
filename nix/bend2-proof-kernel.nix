@@ -37,7 +37,8 @@ in pkgs.stdenv.mkDerivation {
   src = upstream + "/bend2/bendtt.lean";
   dontUnpack = true;
   strictDeps = true;
-  nativeBuildInputs = [ lean pkgs.time ];
+  nativeBuildInputs = [ lean pkgs.time pkgs.autoPatchelfHook ];
+  buildInputs = [ pkgs.glibc ];
   buildPhase = ''
     runHook preBuild
     test "$(lean --version | cut -d, -f1)" = 'Lean (version 4.34.0'
@@ -59,6 +60,13 @@ in pkgs.stdenv.mkDerivation {
     install -Dm644 ${lean}/LICENSES $out/share/licenses/random-bend2-proof-kernel/Lean-LICENSES
     lean --version > $out/share/random-bend2-proof-kernel/lean-version
     runHook postInstall
+  '';
+  doInstallCheck = true;
+  installCheckPhase = ''
+    runHook preInstallCheck
+    test "$(patchelf --print-interpreter $out/bin/bendtt)" = \
+      '${pkgs.stdenv.cc.bintools.dynamicLinker}'
+    runHook postInstallCheck
   '';
   meta = {
     description = "Lean-built BendTT verdict kernel with recorded headline axiom dependencies";

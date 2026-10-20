@@ -1,6 +1,8 @@
 # Mechatron Prime CI targets for pmarreck/random.
 # One flake attribute per line; the worker fetches this file from the exact
 # pushed SHA.
+# Fail quickly on experimental Bend packaging; the full matrix remains below.
+checks.x86_64-linux.bend2-sandbox
 #
 # checks.x86_64-linux.random-test runs `FAST=1 bash ./test`, which executes all
 # suites except kernel_jit_diff (deep-mode only by design -- it is 30s of a 42s

@@ -33,6 +33,13 @@ Verification: all 46 default repository suites passed. After the notice-only
 packaging change, all three affected Bend suites passed again, including exact
 upstream notice digests. Deep-mode-only legacy checks are not claimed run.
 
+The first hermetic CI run exposed two packaging gaps hidden by the host:
+an unpatched `/usr/bin/env` test launcher and a proof-kernel ELF loader under
+`/lib64`. The package now patches both interpreter paths, checks the kernel's
+loader at installation, and runs an additional early real-sandbox gate before
+the unchanged full regression matrix. Its fixture Trash is explicitly writable
+inside that sandbox; no host home-directory fallback is needed.
+
 ## Compiler and proof boundary
 
 The compiler is pinned to upstream Bend 2.0.37, revision
