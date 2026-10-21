@@ -1,7 +1,11 @@
 #ifndef RANDOMROC_CLI_COMPAT_H
 #define RANDOMROC_CLI_COMPAT_H
 #include "../../include/randomroc.h"
-#define RANDOM_CLI_ROC 1
+#define RANDOM_CLI_CORE_SELECTION 1
+#define random_cli_shuffle_indices randomroc_shuffle_indices
+#define random_cli_weight_add randomroc_weight_add
+#define random_cli_weighted_total randomroc_weighted_total
+#define random_cli_weighted_index randomroc_weighted_index
 #define RANDOM_CLI_NAME "randomroc"
 #define RANDOM_CLI_KIND "roc"
 #define RANDOM_CLI_NORMAL_NAME "nrandomroc"
@@ -70,6 +74,10 @@ static inline int randomz_buffered_drbg_seek(randomz_buffered_drbg *state, uint6
 static inline int randomz_buffered_drbg_fill(randomz_buffered_drbg *state, uint8_t *out, size_t count)
 {
 	return randomroc_drbg_fill(&state->state, out, count);
+}
+static inline int randomz_buffered_drbg_get_state(const randomz_buffered_drbg *state, uint8_t *key, uint64_t *position)
+{
+	return randomroc_drbg_get_state(&state->state, key, position);
 }
 static inline void randomz_buffered_drbg_zeroize(randomz_buffered_drbg *state)
 {

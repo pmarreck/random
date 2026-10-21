@@ -20,17 +20,50 @@ source "$here/tests/fixture-cleanup.sh"
 scratch="$(mktemp -d --tmpdir random-bend2-test.XXXXXXXX)" || exit 1
 trap 'test_trash_on_exit "$scratch"' EXIT
 module="$scratch/core.mjs"
+fixed_module="$scratch/fixed.mjs"
+draw_module="$scratch/draw.mjs"
+table_module="$scratch/tables.mjs"
+sampler_module="$scratch/sampler.mjs"
+library_module="$scratch/index.mjs"
+count_module="$scratch/count.mjs"
+decimal_module="$scratch/decimal.mjs"
+chart_module="$scratch/chart.mjs"
 probe="$scratch/probe"
+fixed_probe="$scratch/fixed-probe"
+sampler_probe="$scratch/sampler-probe"
 if [ -n "${RANDOM_BEND_LIBDIR:-}" ]; then
 	sha256sum --check --status "$RANDOM_BEND_LIBDIR/share/random-bend2-lib/core-source.sha256" || {
 		echo 'bend2 test FAILED: library snapshot is stale' >&2
 		exit 1
 	}
 	module="$RANDOM_BEND_LIBDIR/lib/javascript/random/core.mjs"
+	fixed_module="$RANDOM_BEND_LIBDIR/lib/javascript/random/fixed.mjs"
+	draw_module="$RANDOM_BEND_LIBDIR/lib/javascript/random/draw.mjs"
+	table_module="$RANDOM_BEND_LIBDIR/lib/javascript/random/tables.mjs"
+	sampler_module="$RANDOM_BEND_LIBDIR/lib/javascript/random/sampler.mjs"
+	library_module="$RANDOM_BEND_LIBDIR/lib/javascript/random/index.mjs"
+	count_module="$RANDOM_BEND_LIBDIR/lib/javascript/random/count.mjs"
+	decimal_module="$RANDOM_BEND_LIBDIR/lib/javascript/random/decimal.mjs"
+	chart_module="$RANDOM_BEND_LIBDIR/lib/javascript/random/chart.mjs"
 	node tests/bend2_license_test.mjs "$RANDOM_BEND_LIBDIR" random-bend2-lib || exit 1
 elif ! bend bend/Core.bend -o "$module" >"$scratch/compiler.log" 2>&1; then
 	printf 'bend2 test FAILED: compiler rejected core\n' >&2
 	sed -n '1,100p' "$scratch/compiler.log" >&2
+	exit 1
+fi
+if [ -z "${RANDOM_BEND_LIBDIR:-}" ]; then
+	for entry in "Draw:$draw_module" "ZigguratTables:$table_module" "Sampler:$sampler_module" "Library:$library_module" \
+		"Count:$count_module" "Decimal:$decimal_module" "Chart:$chart_module"; do
+		if ! bend "bend/${entry%%:*}.bend" -o "${entry#*:}" >"$scratch/compiler.log" 2>&1; then
+			echo 'bend2 test FAILED: compiler rejected sampler module' >&2
+			sed -n '1,100p' "$scratch/compiler.log" >&2
+			exit 1
+		fi
+	done
+fi
+if [ -z "${RANDOM_BEND_LIBDIR:-}" ] && ! bend bend/Fixed.bend -o "$fixed_module" >"$scratch/fixed-compiler.log" 2>&1; then
+	echo 'bend2 test FAILED: compiler rejected fixed-point core' >&2
+	sed -n '1,100p' "$scratch/fixed-compiler.log" >&2
 	exit 1
 fi
 node tests/bend2_test.mjs "$module" || exit 1
@@ -40,10 +73,30 @@ if [ -n "${RANDOM_BEND_PROBEDIR:-}" ]; then
 		exit 1
 	}
 	probe="$RANDOM_BEND_PROBEDIR/bin/bend2-probe"
+	fixed_probe="$RANDOM_BEND_PROBEDIR/bin/bend2-fixed-probe"
+	sampler_probe="$RANDOM_BEND_PROBEDIR/bin/bend2-sampler-probe"
 	node tests/bend2_license_test.mjs "$RANDOM_BEND_PROBEDIR" random-bend2-probe || exit 1
 elif ! bend bend/Probe.bend -o "$probe" >"$scratch/native.log" 2>&1; then
 	printf 'bend2 test FAILED: native compiler rejected probe\n' >&2
 	sed -n '1,100p' "$scratch/native.log" >&2
 	exit 1
 fi
-node tests/bend2_native_test.mjs "$probe"
+if [ -z "${RANDOM_BEND_PROBEDIR:-}" ] && ! bend tests/fixtures/bend2-fixed-probe.bend -o "$fixed_probe" >"$scratch/fixed-native.log" 2>&1; then
+	echo 'bend2 test FAILED: native compiler rejected numeric probe' >&2
+	sed -n '1,100p' "$scratch/fixed-native.log" >&2
+	exit 1
+fi
+if [ -z "${RANDOM_BEND_PROBEDIR:-}" ] && ! bend tests/fixtures/bend2-sampler-probe.bend -o "$sampler_probe" >"$scratch/sampler-native.log" 2>&1; then
+	echo 'bend2 test FAILED: native compiler rejected sampler probe' >&2
+	sed -n '1,100p' "$scratch/sampler-native.log" >&2
+	exit 1
+fi
+node tests/bend2_native_test.mjs "$probe" || exit 1
+node tests/bend2_fixed_test.mjs "$fixed_module" "$fixed_probe" || exit 1
+node tests/bend2_draw_test.mjs "$draw_module" "$module" || exit 1
+node tests/bend2_sampler_test.mjs "$library_module" "$sampler_probe" || exit 1
+node tests/bend2_integer_sampler_test.mjs "$library_module" "$sampler_probe" || exit 1
+node tests/bend2_count_test.mjs "$count_module" || exit 1
+node tests/bend2_geometric_test.mjs "$library_module" || exit 1
+node tests/bend2_decimal_test.mjs "$decimal_module" || exit 1
+node tests/bend2_chart_test.mjs "$chart_module"

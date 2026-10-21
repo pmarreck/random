@@ -14,6 +14,9 @@ zig-out
 # Roc native build outputs
 roc-out
 
+# Private target/profile-separated Bend native products
+/.build-work/bend/
+
 # Lean/Lake build outputs
 lean/.lake
 proofs/.lake

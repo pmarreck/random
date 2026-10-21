@@ -7,7 +7,12 @@ cd "$here" || exit 1
 if [ "${RANDOM_BEND_PROFILE_SHELL:-0}" != 1 ]; then
 	exec nix develop .#bend2-profile -c env RANDOM_BEND_PROFILE_SHELL=1 "$0" "$@"
 fi
-./tests/bend2_benchmark_test || exit 1
 config=profiling-bend2.json
-case "${1:-}" in --cli) shift; config=profiling-bend2-cli.json ;; esac
+controls=./tests/bend2_benchmark_test
+case "${1:-}" in
+	--cli) shift; config=profiling-bend2-cli.json ;;
+	--full) shift; config=profiling-bend2-full.json; controls=./tests/bend_full_benchmark_test ;;
+	--full-cli) shift; config=profiling-bend2-full-cli.json; controls=./tests/bend_full_benchmark_test ;;
+esac
+"$controls" || exit 1
 exec performance-profile run --config "$config" --seed 42 "$@"

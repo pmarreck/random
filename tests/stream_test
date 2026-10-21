@@ -26,6 +26,13 @@ if [ "$(uname -s)" = Linux ] || [ -n "${STATE_TEST_ROC_CLI:-}" ]; then
 	fi
 	clis+=("$roc_cli")
 fi
+bend_cli="${STATE_TEST_BEND_CLI:-${RANDOM_BEND_CLI:-}}"
+if [ -z "$bend_cli" ]; then
+	source "$root/tests/bend_native_setup.sh"
+	bend_native_setup || exit 1
+	bend_cli="$RANDOM_BEND_CLI"
+fi
+clis+=("$bend_cli")
 oracle="${clis[0]}"
 fails=0
 checks=0
@@ -209,9 +216,12 @@ for cli in "${clis[@]}"; do
 		expected=$(head -c 8192 /dev/zero | sha256sum)
 		check_prefix "$cli" -c 8192 "$expected" --true-random --random-source /dev/zero -b
 		# Twice the resident-memory limit; also enforce an address-space cap
-		# except for Lean's fixed 1 GiB reserved stacks/allocator arena.
+		# except fixed runtime reservations: Lean's 1 GiB thread stacks and
+		# Bend's 8 GiB corpus plus 2 GiB evaluator stack. RSS is still capped
+		# at the SAME 128 MiB, including both runtimes' actual committed pages.
 		rss_only=0
 		[ "$cli" != "$lean_cli" ] || rss_only=1
+		[ "$cli" != "$bend_cli" ] || rss_only=1
 		expected=$(head -c 268435456 /dev/zero | sha256sum)
 		STREAM_TEST_IGNORE_SIGPIPE=1 STREAM_TEST_MEMORY_KIB=131072 STREAM_TEST_RSS_ONLY="$rss_only" check_prefix "$cli" -c 268435456 "$expected" \
 			--true-random --random-source /dev/zero -b

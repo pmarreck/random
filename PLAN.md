@@ -4,8 +4,6 @@ Completed work: [log](docs/PLAN_LOG.md). Historical directives and deferred risk
 
 ## Correctness and verification
 
-- [x] Measure exact fixed-point SIMD for Zig/Rust Ziggurat batches without changing stream or failure-prefix semantics; enable Rust AUTO and retain guarded Zig opt-in (report: docs/reports/2026-10-08-ziggurat-production.md; commit 27b626a; done 2026-10-09 01:45 EDT).
-- [x] Correct tiny-negative scalar/SIMD cosine endpoint reduction across all five cores, add production-linked Lean endpoint theorems and preserve frozen sampler streams (context: docs/plan_context/legacy_decisions.md; commit d0a473e; done 2026-10-14 15:29 EDT).
 - [ ] Prove production-linked distribution laws and explicit parameter-dependent deviation/failure bounds for uniform, normal, normalized integers, exponential, Poisson, log-normal, beta and geometric; preserve shared CLI acceptance and distinguish ideal-source assumptions from cross-language refinement (context: docs/plan_context/distribution_proofs.md).
 - [ ] Complete MAX-mantissa/general-multiplication Kani proofs and minimize non-reproducing SMT diagnostics (context: docs/reports/2026-09-30-kani-contracts.md).
 - [ ] Connect actual Lean `Blake3.xofAt`/`Drbg.fill` byte content to the abstract chunking theorem, beyond existing boundary differentials.
@@ -15,12 +13,18 @@ Completed work: [log](docs/PLAN_LOG.md). Historical directives and deferred risk
 
 - [x] Pin Bend 2.0.37 and implement independent seeded BLAKE3 bytes, checked chunk/resume behavior and signed bounded integers against frozen oracles; 45 suites passed (commit bc736a2; done 2026-10-20 13:10 EDT; context: docs/plan_context/bend2_evaluation.md).
 - [x] Check four executed Bend invariants with pinned-kernel verdicts and specification/implementation mutation controls (commit bc736a2 plus strengthened guards in this change; done 2026-10-20 14:00 EDT; context: docs/plan_context/bend2_evaluation.md).
-- [x] Measure optimized native/JS Bend against LuaJIT/Zig/Rust, preserving 78 observations and inconclusive outcomes without approving baselines or migrating consumers (done 2026-10-20 14:00 EDT; report: docs/reports/2026-10-20-bend2-evaluation.md).
-- [ ] Optimize Bend read-ahead/range preparation and wide remainder, then remeasure before considering production promotion (context: docs/reports/2026-10-20-bend2-evaluation.md).
-- [ ] Extend Bend nonlinear distributions, shared CLI/state continuation and supported native library exports; strengthen stream/arithmetic/sampler refinement laws beyond the four initial invariants (context: docs/plan_context/bend2_evaluation.md).
+- [x] Implement independent Bend fixed arithmetic and all current nonlinear samplers with exact intermediate/value/cursor controls (this change; done 2026-10-20 19:35 EDT; context: docs/plan_context/bend2_evaluation.md).
+- [x] Export independent Bend source/coherent-JS SDK, static/shared C ABI and CLI as isolated Nix outputs with installed-consumer checks (this change; done 2026-10-20 19:35 EDT; context: docs/plan_context/bend2_evaluation.md).
+- [ ] Measure caller-owned Bend deterministic read-ahead, prepared ranges/batches and exact wide-division/remainder improvements individually before considering promotion (context: docs/plan_context/bend2_evaluation.md).
+- [ ] Strengthen executable-linked Bend stream/arithmetic/sampler refinement beyond the four initial invariants and address documented runtime/erasure/stress gaps (context: docs/reports/2026-10-20-bend2-full-evaluation.md).
+
+## Event-addressed RNG investigation
+
+- [ ] Propose canonical event-local substream semantics and fair quality/performance experiments from the reviewed event-addressing brief, and obtain an architecture decision before adding a backend (context: docs/plan_context/bend2_evaluation.md#event-addressed-rng-investigation).
 
 ## Platform coverage
 
+- [ ] Execute native Bend C-ABI/CLI checks on aarch64 Linux/macOS before widening the Linux-x86_64-only runtime evidence.
 - [ ] Execute the Roc CLI/C ABI on native aarch64 Linux and extend official-platform packaging beyond Linux before widening runtime support claims.
 - [ ] Produce and execute Solaris/illumos and DragonFly artifacts before claiming runtime support; source selectors alone are not execution evidence.
 - [ ] Add native Lean aarch64 Linux/macOS runtime/digest legs and determine a supported Windows Lean toolchain.

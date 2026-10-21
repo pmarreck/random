@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# One native build graph: pure Bend core, owned C ABI, common C I/O frontend.
+# Private intermediates are target/profile-separated; no PATH publication.
+set -euo pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+case "$(uname -s)/$(uname -m)" in
+	Linux/x86_64) target=x86_64-linux-gnu; suffix=so; shared=(-shared -Wl,--gc-sections -Wl,-z,defs -Wl,-soname,librandomb.so); dead=(-Wl,--gc-sections); strip_flags=(--strip-unneeded) ;;
+	Linux/aarch64) target=aarch64-linux-gnu; suffix=so; shared=(-shared -Wl,--gc-sections -Wl,-z,defs -Wl,-soname,librandomb.so); dead=(-Wl,--gc-sections); strip_flags=(--strip-unneeded) ;;
+	Darwin/arm64|Darwin/aarch64) target=aarch64-macos; suffix=dylib; shared=(-dynamiclib -Wl,-dead_strip -Wl,-undefined,error -Wl,-install_name,@rpath/librandomb.dylib); dead=(-Wl,-dead_strip); strip_flags=(-x) ;;
+	*) echo 'Bend native host build supports Linux x86_64/aarch64 and macOS aarch64' >&2; exit 1 ;;
+esac
+output="${1:-$root/.build-work/bend/$target/Release}"
+mode="${2:---all}"
+case "$mode" in --all|--library-only|--cli-only) ;; *) echo "invalid Bend build mode: $mode" >&2; exit 2 ;; esac
+case "$output" in /nix/store/*) echo 'refusing a writable build prefix in the Nix store' >&2; exit 2 ;; esac
+mkdir -p "$output"
+output="$(cd "$output" && pwd -P)"
+case "$output" in /nix/store/*) echo 'refusing a build prefix symlink into the Nix store' >&2; exit 2 ;; esac
+work="$output/build"
+mkdir -p "$work"
+cd "$root"
+compiler="${CC:-cc}"
+archive="${RANDOM_BEND_NATIVE_LIBRARY:-$output/lib/librandomb.a}"
+if [ "$mode" != --cli-only ]; then
+	bend_compiler="${RANDOM_BEND_COMPILER:-bend}"
+	if [ "$("$bend_compiler" version)" != 'bend 2.0.37' ]; then echo 'native Bend ABI requires bend 2.0.37' >&2; exit 1; fi
+	export BEND_NO_TELEMETRY=1
+	"$bend_compiler" bend/NativeAPI.bend -o "$work/randomb.generated.c"
+	"$compiler" -O3 -fPIC -fvisibility=hidden -ffunction-sections -fdata-sections -pthread \
+		"-DRANDOMB_GENERATED_C=\"$work/randomb.generated.c\"" -c bend/native.c -o "$work/native.o"
+	"${AR:-ar}" rcs "$work/librandomb.a" "$work/native.o"
+	"$compiler" "${shared[@]}" -pthread "$work/native.o" -o "$work/librandomb.$suffix"
+	"${STRIP:-strip}" "${strip_flags[@]}" "$work/librandomb.$suffix"
+	sha256sum bend/Core.bend bend/Fixed.bend bend/Draw.bend bend/ZigguratTables.bend \
+		bend/Ziggurat.bend bend/Sampler.bend bend/Count.bend bend/Geometric.bend \
+		bend/Decimal.bend bend/Chart.bend bend/Batch.bend bend/Selection.bend \
+		bend/NativeAPI.bend bend/native.c bend/native_touch.c bend/native_touch.js \
+		include/randomb.h >"$work/native-source.sha256"
+	# Install only after both native artifacts have linked successfully.
+	mkdir -p "$output/lib" "$output/include" "$output/share/random-bend2-ffi"
+	install -m644 "$work/librandomb.a" "$output/lib/"
+	install -m755 "$work/librandomb.$suffix" "$output/lib/"
+	install -m644 include/randomb.h "$output/include/"
+	install -m644 "$work/native-source.sha256" "$output/share/random-bend2-ffi/"
+fi
+if [ "$mode" != --library-only ]; then
+	"$compiler" -std=c11 -O2 -Wall -Wextra -Werror -pthread "${dead[@]}" \
+		-include bend/cli-compat.h -Iinclude -Isrc \
+		src/randomz_cli.c src/distribution_view.c src/state_json.c "$archive" -o "$work/randomb"
+	"${STRIP:-strip}" "${strip_flags[@]}" "$work/randomb"
+	sha256sum bend/cli-compat.h include/randomb.h src/randomz_cli.c \
+		src/distribution_view.c src/distribution_view.h src/state_json.c src/state_json.h \
+		src/entropy_backend.h >"$work/cli-source.sha256"
+	mkdir -p "$output/bin" "$output/share/random-bend2"
+	install -m755 "$work/randomb" "$output/bin/randomb"
+	ln -sfn randomb "$output/bin/nrandomb"
+	ln -sfn randomb "$output/bin/drandomb"
+	install -m644 "$work/cli-source.sha256" "$output/share/random-bend2/"
+fi
+printf '%s\n' "$output"

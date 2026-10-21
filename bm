@@ -34,6 +34,8 @@ case "${1-}" in
 			'  --simd   Opt-in exact fixed-point Zig/Rust AVX2 experiments (x86_64)' \
 			'  --ziggurat  Opt-in fixed-point normal sampler experiment (Linux)' \
 			'  --bend2  Opt-in Bend 2 native/JS core comparison (x86_64 Linux)' \
+			'           --full: nine exact sampler workloads, six backends, CPU/wall, 1/12 cores' \
+			'           --full-cli: 13 workloads across all six CLIs, 1/12 cores' \
 			'' \
 			'Environment: BM_SKIP_BUILD=1, BM_RUNS, BM_WARMUP, BM_COUNT,' \
 			'BM_RAW_BYTES, BM_MACHINE_ID, BM_RESULTS_FILE, BM_RUST_TIMING_CLI,' \

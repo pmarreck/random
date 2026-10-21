@@ -462,15 +462,58 @@ through a caller-owned source. Rust exports the equivalent `Geometric` and
 ### Experimental Bend 2
 
 The optional Bend 2 experiment is separate from the five production backends.
-`nix build .#random-bend2-lib` exports an independent pure Bend source/generated
-JavaScript core; `.#random-bend2-probe` supplies a narrow native byte adapter,
-not a production-compatible CLI. It covers deterministic bytes, checked state
-and bounded integers. Four implementation laws pass a pinned kernel verdict;
-this is not a proof of the complete CSPRNG. See the
-[coverage, measured costs and remaining work](docs/reports/2026-10-20-bend2-evaluation.md).
-`./bm --bend2` compares native/JS Bend with LuaJIT, Zig and Rust; `--cli` after
-`--bend2` selects the separate hex-output comparison. Performance history must
-use an existing writable directory outside the repository.
+It implements its own BLAKE3, checked fixed-point arithmetic, every existing
+distribution (including arbitrary-width geometric counts), selection/shuffle,
+batch plans and canonical chart models. The C adapter marshals the Bend runtime;
+it does not delegate numeric work to Zig/Rust/LuaJIT. The common C I/O frontend
+supplies `randomb`, `drandomb` and `nrandomb`, with the same shared Bash CLI and
+cross-implementation continuation expectations.
+
+The independently consumable outputs are:
+
+| Flake output | Contents |
+| --- | --- |
+| `random-bend2` / `randomb` | Stripped CLI and aliases; no compiler or SDK dependency |
+| `random-bend2-ffi` | `include/randomb.h`, `lib/librandomb.a` and the shared library; no CLI |
+| `random-bend2-lib` | Pure Bend modules in `lib/bend/random/`, generated JS in `lib/javascript/random/` |
+| `random-bend2-probe` | Historical narrow byte probe, not a substitute for the full CLI |
+
+For JS, import **one coherent `index.mjs` graph**. Do not mix tagged values from
+separately emitted graphs; imported constructor names can differ. For Bend,
+copy the installed modules beside the consumer's sources, then import
+`./random/Library.bend`: the current compiler validates resolved path components
+as module identifiers, which prevents direct symlink imports through Nix store
+hashes. The native ABI uses
+caller-supplied byte callbacks, exact fixed pairs and BLIP counts, like Zig's.
+
+Native execution is currently verified on x86_64 Linux. Linux aarch64 and
+macOS aarch64 have build definitions, not native execution evidence; native
+Windows/WASM Bend outputs are not provided. The serial runtime reserves roughly
+10 GiB of **virtual** address space; resident memory is bounded separately.
+Callbacks may reenter the library, but calls serialize evaluator access. Batch
+SIMD requests fall back to scalar. Runtime exhaustion is fail-stop, and wiping
+a caller's DRBG does not promise to scrub temporary runtime heap copies. These
+are reasons to keep this an explicit experimental output, not a replacement
+for the production implementations.
+
+Four implementation laws pass a pinned kernel verdict; these do not prove the
+complete CSPRNG, samplers, probability laws or cryptographic security. The
+[full evaluation](docs/reports/2026-10-20-bend2-full-evaluation.md) covers
+functional/statistical checks, runtime/proof limits and all 403 retained timing
+observations. Native Bend's measured normal API costs about 11.6 µs/value,
+versus 64.5 ns for Zig and 56.3 ns for Rust in that experiment; buffering and
+runtime designs differ. No baseline was approved, and noisy cases remain marked.
+The [initial scoped report](docs/reports/2026-10-20-bend2-evaluation.md) preserves
+the byte-only checkpoint; [remaining work](docs/plan_context/bend2_evaluation.md)
+tracks promotion prerequisites.
+
+`./bm --bend2 --full` measures nine public sampler workloads across native/JS
+Bend, Zig, Rust, LuaJIT and Roc, with separate CPU/wall and 1/12-core cases.
+`./bm --bend2 --full-cli` measures all six CLIs, including Lean, for 13 output
+workloads with whole-process costs included. Payloads stay in RAM/pipes.
+The earlier `./bm --bend2` and `--bend2 --cli` narrow comparisons remain available.
+Performance history uses an existing writable directory outside the repository;
+new observations are not automatically approved baselines.
 
 ### Manual
 

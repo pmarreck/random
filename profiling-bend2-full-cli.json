@@ -1,0 +1,4536 @@
+{
+	"schema": "performance-project/v1",
+	"project": "random_bend2_full_cli",
+	"history_url": "file:///var/lib/performance-profiling",
+	"identity": {
+		"runtime": "Bend-2.0.37-Zig-Rust-Lean-LuaJIT-Roc-native-CLI",
+		"build_mode": "optimized",
+		"concurrency": 1
+	},
+	"cases": [
+		{
+			"cores": 1,
+			"name": "bend-bytes-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bend-normalized-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bend-hex-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bend-base64-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bend-uniform-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bend-wide-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bend-normal-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bend-exponential-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bend-poisson-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bend-geometric-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bend-sparse-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bend-lognormal-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bend-beta-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-bytes-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-normalized-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-hex-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-base64-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-uniform-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-wide-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-normal-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-exponential-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-poisson-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-geometric-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-sparse-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-lognormal-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-beta-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-bytes-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-normalized-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-hex-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-base64-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-uniform-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-wide-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-normal-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-exponential-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-poisson-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-geometric-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-sparse-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-lognormal-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-beta-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "lean-bytes-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "lean-normalized-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "lean-hex-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "lean-base64-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "lean-uniform-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "lean-wide-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "lean-normal-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "lean-exponential-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "lean-poisson-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "lean-geometric-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "lean-sparse-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "lean-lognormal-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "lean-beta-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-bytes-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-normalized-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-hex-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-base64-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-uniform-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-wide-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-normal-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-exponential-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-poisson-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-geometric-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-sparse-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-lognormal-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-beta-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-bytes-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-normalized-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-hex-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-base64-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-uniform-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-wide-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-normal-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-exponential-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-poisson-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-geometric-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-sparse-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-lognormal-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-beta-cli-1",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bend-bytes-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bend-normalized-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bend-hex-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bend-base64-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bend-uniform-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bend-wide-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bend-normal-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bend-exponential-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bend-poisson-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bend-geometric-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bend-sparse-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bend-lognormal-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bend-beta-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-bytes-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-normalized-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-hex-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-base64-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-uniform-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-wide-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-normal-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-exponential-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-poisson-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-geometric-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-sparse-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-lognormal-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-beta-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-bytes-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-normalized-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-hex-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-base64-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-uniform-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-wide-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-normal-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-exponential-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-poisson-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-geometric-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-sparse-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-lognormal-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-beta-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "lean-bytes-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "lean-normalized-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "lean-hex-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "lean-base64-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "lean-uniform-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "lean-wide-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "lean-normal-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "lean-exponential-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "lean-poisson-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "lean-geometric-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "lean-sparse-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "lean-lognormal-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "lean-beta-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-bytes-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-normalized-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-hex-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-base64-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-uniform-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-wide-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-normal-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-exponential-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-poisson-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-geometric-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-sparse-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-lognormal-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-beta-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-bytes-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-normalized-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-hex-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-base64-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				8192,
+				16384,
+				32768,
+				65536
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-uniform-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-wide-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-normal-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-exponential-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-poisson-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-geometric-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-sparse-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-lognormal-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-beta-cli-12",
+			"definition": "bend2-full-cli-sha256-and-cursor-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-cli-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				512,
+				1024,
+				2048,
+				4096
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		}
+	]
+}

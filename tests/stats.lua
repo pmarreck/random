@@ -2,6 +2,8 @@
 -- Samples are streamed from the selected CLI; no sample files are created.
 
 local cli = assert(arg[1], "CLI path required")
+local script_dir = arg[0]:match("^(.*)/") or "."
+local rounded_normal = dofile(script_dir .. "/rounded_normal_model.lua")
 local fast = os.getenv("FAST") == "1"
 local raw_count = tonumber(os.getenv("RANDOM_STATS_BYTES")) or (fast and 262144 or 4194304)
 local sample_count = tonumber(os.getenv("RANDOM_STATS_SAMPLES")) or (fast and 10000 or 50000)
@@ -218,6 +220,21 @@ local function evaluate_normal(name, values, mean_expected, sd_expected, transfo
   return failures == before
 end
 
+local function evaluate_rounded_normal(values, quiet)
+  local result = rounded_normal.from_values(values, 0.001)
+  local ok = evaluate_normal("rounded N(5,2)", values, 5,
+    math.sqrt(rounded_normal.variance), nil, quiet)
+  local support_ok = check(result.integer_support == true, "rounded normal integer support",
+    result.reason or "noninteger value", quiet)
+  local cdf_ok = check(result.ok, "rounded normal CDF",
+    string.format("max-error=%.6f envelope=%.6f", result.max_error, result.epsilon), quiet)
+  if not quiet then
+    print(string.format("  %-18s seven-point CDF error=%.6f envelope=%.6f %s",
+      "rounded normal", result.max_error, result.epsilon, cdf_ok and "PASS" or "FAIL"))
+  end
+  return ok and support_ok and cdf_ok
+end
+
 local function evaluate_uniform(values, quiet)
   local hist = {}
   for i = 0, 99 do hist[i] = 0 end
@@ -397,7 +414,7 @@ local uniform = read_numbers(string.format("-d --seed 81001 -c %d 0..99", sample
 evaluate_uniform(uniform, false)
 local normal = read_numbers(string.format(
   "-d --seed 81002 -n --mean 5 --stddev 2 -c %d", sample_count))
-evaluate_normal("normal(5,2)", normal, 5, 2, nil, false)
+evaluate_rounded_normal(normal, false)
 local exponential = read_numbers(string.format(
   "-d --seed 81003 --exponential -c %d", sample_count))
 evaluate_exponential(exponential, false)
@@ -448,7 +465,7 @@ for i = 1, 5000 do
   constant_geometric[i] = 3
 end
 before = failures; expect_rejected(evaluate_uniform(constant_uniform, true)); failures = before
-before = failures; expect_rejected(evaluate_normal("constant normal", constant_normal, 5, 2, nil, true)); failures = before
+before = failures; expect_rejected(evaluate_rounded_normal(constant_normal, true)); failures = before
 before = failures; expect_rejected(evaluate_exponential(constant_exp, true)); failures = before
 before = failures; expect_rejected(evaluate_poisson(constant_poisson, true)); failures = before
 before = failures; expect_rejected(evaluate_normal("constant log-normal logs", constant_lognormal, 0, 1,

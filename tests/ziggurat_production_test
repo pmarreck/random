@@ -2,7 +2,7 @@
 # Independent acceptance control for the owner-approved Ziggurat stream break.
 # Expectations are frozen from the validated isolated experiment, never a
 # production CLI. Every natively supported producer/consumer is required:
-# five on Linux; four on Darwin, plus Roc when explicitly selected.
+# six on Linux; five on Darwin, plus Roc when explicitly selected.
 # Explicit ZIGGURAT_TEST_*_CLI paths select existing artifacts.
 set -u
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -114,6 +114,14 @@ clis=("${ZIGGURAT_TEST_LUA_CLI:-$root/bin/random}"
 if [ "$include_roc" -eq 1 ]; then
 	clis+=("${ZIGGURAT_TEST_ROC_CLI:-${RANDOM_ROC_NATIVE_DIR:-$root/roc-out}/bin/randomroc}")
 fi
+bend_cli="${ZIGGURAT_TEST_BEND_CLI:-${RANDOM_BEND_CLI:-}}"
+if [ -z "$bend_cli" ]; then
+	source "$root/tests/bend_native_setup.sh"
+	if ! bend_native_setup; then fail 'Bend native build/selection failed'; exit 1; fi
+	bend_cli="$RANDOM_BEND_CLI"
+fi
+labels+=(bend)
+clis+=("$bend_cli")
 for i in "${!clis[@]}"; do
 	export RANDOM_TEST_CLI="${clis[i]}"
 	export RANDOM_TEST_CLI_KIND="${labels[i]}"

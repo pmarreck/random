@@ -44,8 +44,8 @@
 #define RANDOM_CLI_SEED_HELP "  DRANDOMZ_SEED     "
 #define RANDOM_CLI_KIND "zig"
 #endif
-#ifndef RANDOM_CLI_ROC
-#define RANDOM_CLI_ROC 0
+#ifndef RANDOM_CLI_CORE_SELECTION
+#define RANDOM_CLI_CORE_SELECTION 0
 #endif
 
 /* Distinct from failure: do not emit success metadata after consumer closure. */
@@ -1799,12 +1799,12 @@ static int handle_stdin_operation(const options *opts, rng_source *source)
 			fputc('\n', stdout);
 		}
 	} else if (opts->shuffle) {
-#if RANDOM_CLI_ROC
+#if RANDOM_CLI_CORE_SELECTION
 		int64_t *indices = list.count <= SIZE_MAX / sizeof(*indices) ?
 			malloc(list.count * sizeof(*indices)) : NULL;
 		size_t written = 0;
 		status = indices == NULL ? RANDOMZ_BUFFER_TOO_SMALL :
-			randomroc_shuffle_indices(source->fill, source->context,
+			random_cli_shuffle_indices(source->fill, source->context,
 				indices, list.count, &written);
 #else
 		for (size_t i = list.count; i > 1 && status == RANDOMZ_OK; --i) {
@@ -1821,7 +1821,7 @@ static int handle_stdin_operation(const options *opts, rng_source *source)
 			for (size_t i = 0; i < list.count; ++i) {
 				if (i > 0) fputs(opts->delimiter, stdout);
 				item_span item = list.items[
-#if RANDOM_CLI_ROC
+#if RANDOM_CLI_CORE_SELECTION
 					indices[i]
 #else
 					i
@@ -1831,7 +1831,7 @@ static int handle_stdin_operation(const options *opts, rng_source *source)
 			}
 			fputc('\n', stdout);
 		}
-#if RANDOM_CLI_ROC
+#if RANDOM_CLI_CORE_SELECTION
 		free(indices);
 #endif
 	} else {
@@ -1859,8 +1859,8 @@ static int handle_stdin_operation(const options *opts, rng_source *source)
 				break;
 			}
 			if (
-#if RANDOM_CLI_ROC
-				randomroc_weight_add(total, weights[i], &total) != RANDOMZ_OK
+#if RANDOM_CLI_CORE_SELECTION
+				random_cli_weight_add(total, weights[i], &total) != RANDOMZ_OK
 #else
 				weights[i] > MAX_EXACT_INTEGER - total
 #endif
@@ -1869,16 +1869,16 @@ static int handle_stdin_operation(const options *opts, rng_source *source)
 				status = RANDOMZ_INVALID_ARGUMENT;
 				break;
 			}
-#if !RANDOM_CLI_ROC
+#if !RANDOM_CLI_CORE_SELECTION
 			total += weights[i];
 #endif
 			*colon = '\0';
 			list.items[i].length = (size_t)(colon - list.items[i].data);
 		}
-#if RANDOM_CLI_ROC
+#if RANDOM_CLI_CORE_SELECTION
 		uint8_t reason = 0;
 		if (status == RANDOMZ_OK) {
-			status = randomroc_weighted_total(weights, list.count, &total, &reason);
+			status = random_cli_weighted_total(weights, list.count, &total, &reason);
 			if (reason == 2) print_error("total weighted-item weight must be no larger than 2^53");
 			else if (reason == 3) print_error("total weighted-item weight must be positive");
 		}
@@ -1889,9 +1889,9 @@ static int handle_stdin_operation(const options *opts, rng_source *source)
 		}
 #endif
 		if (status == RANDOMZ_OK) {
-#if RANDOM_CLI_ROC
+#if RANDOM_CLI_CORE_SELECTION
 			int64_t index;
-			status = randomroc_weighted_index(source->fill, source->context,
+			status = random_cli_weighted_index(source->fill, source->context,
 				weights, list.count, &index, &reason);
 			if (status == RANDOMZ_OK) {
 				item_span item = list.items[index];

@@ -105,3 +105,11 @@ Completed PLAN.md items retired by plan-retire, oldest retirement first.
 ## Retired 2026-10-14
 
 - [x] [Correctness and verification] Replace Box–Muller with fixed-point Ziggurat across all five implementations, using frozen shared oracles, cross-language resumption, actual CLI measurements and an explicit breaking continuation version (report: docs/reports/2026-10-08-ziggurat-production.md; commit 27b626a; done 2026-10-09 01:45 EDT).
+
+## Retired 2026-10-20
+
+- [x] [Correctness and verification] Measure exact fixed-point SIMD for Zig/Rust Ziggurat batches without changing stream or failure-prefix semantics; enable Rust AUTO and retain guarded Zig opt-in (report: docs/reports/2026-10-08-ziggurat-production.md; commit 27b626a; done 2026-10-09 01:45 EDT).
+- [x] [Correctness and verification] Correct tiny-negative scalar/SIMD cosine endpoint reduction across all five cores, add production-linked Lean endpoint theorems and preserve frozen sampler streams (context: docs/plan_context/legacy_decisions.md; commit d0a473e; done 2026-10-14 15:29 EDT).
+- [x] [Experimental Bend 2 backend] Measure optimized native/JS Bend against LuaJIT/Zig/Rust, preserving 78 observations and inconclusive outcomes without approving baselines or migrating consumers (done 2026-10-20 14:00 EDT; report: docs/reports/2026-10-20-bend2-evaluation.md).
+- [x] [Experimental Bend 2 backend] Add the native Bend C-FFI CLI with shared Bash/help/stream/six-way continuation expectations (this change; done 2026-10-20 19:35 EDT; report: docs/reports/2026-10-20-bend2-full-evaluation.md).
+- [x] [Experimental Bend 2 backend] Complete 216 sampler and 156 six-CLI performance cases, retaining all 403 observations including original timeouts and noisy outcomes without approving baselines (this change; done 2026-10-20 19:35 EDT; report: docs/reports/2026-10-20-bend2-full-evaluation.md).

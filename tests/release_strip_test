@@ -32,6 +32,13 @@ if [ "$(uname -s)" = Linux ] || [ -n "${RELEASE_STRIP_ROC_CLI:-}" ]; then
 	fi
 	specs+=("Roc:$roc_cli")
 fi
+bend_cli="${RELEASE_STRIP_BEND_CLI:-${RANDOM_BEND_CLI:-}}"
+if [ -z "$bend_cli" ]; then
+	source "$root/tests/bend_native_setup.sh"
+	bend_native_setup || exit 1
+	bend_cli="$RANDOM_BEND_CLI"
+fi
+specs+=("Bend:$bend_cli")
 fails=0
 for spec in "${specs[@]}"; do
 	label="${spec%%:*}"

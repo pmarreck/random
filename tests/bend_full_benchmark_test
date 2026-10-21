@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Bounded control of the optional full experiment, not historical timing.
+set -u
+ulimit -c 0 || exit 1
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" || exit 1
+cd "$root" || exit 1
+if [ "$(uname -s)/$(uname -m)" != Linux/x86_64 ]; then
+	echo 'Full Bend performance instrumentation supports x86_64 Linux; core/CLI acceptance remains required.'
+	exit 0
+fi
+node tests/bend2_full_benchmark_test.mjs || exit 1
+node tests/performance_budget_test.mjs || exit 1

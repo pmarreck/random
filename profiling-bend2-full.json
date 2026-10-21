@@ -1,0 +1,6276 @@
+{
+	"schema": "performance-project/v1",
+	"project": "random_bend2_samplers",
+	"history_url": "file:///var/lib/performance-profiling",
+	"identity": {
+		"runtime": "Bend-2.0.37-native-Node24-Zig-Rust-LuaJIT-Roc",
+		"build_mode": "optimized",
+		"concurrency": 1
+	},
+	"cases": [
+		{
+			"cores": 1,
+			"name": "bendffi-normal-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendffi-normal-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendffi-normalint-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendffi-normalint-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendffi-exponential-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendffi-exponential-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendffi-poisson-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendffi-poisson-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendffi-lognormal-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendffi-lognormal-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendffi-beta-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendffi-beta-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendffi-geometric-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendffi-geometric-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendffi-sparse-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendffi-sparse-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendffi-batch-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendffi-batch-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendjs-normal-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendjs-normal-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendjs-normalint-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendjs-normalint-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendjs-exponential-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendjs-exponential-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendjs-poisson-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendjs-poisson-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendjs-lognormal-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendjs-lognormal-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendjs-beta-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendjs-beta-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendjs-geometric-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendjs-geometric-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendjs-sparse-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendjs-sparse-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendjs-batch-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "bendjs-batch-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-normal-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-normal-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-normalint-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-normalint-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-exponential-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-exponential-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-poisson-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-poisson-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-lognormal-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-lognormal-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-beta-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-beta-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-geometric-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-geometric-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-sparse-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-sparse-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-batch-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "zig-batch-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-normal-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-normal-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-normalint-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-normalint-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-exponential-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-exponential-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-poisson-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-poisson-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-lognormal-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-lognormal-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-beta-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-beta-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-geometric-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-geometric-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-sparse-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-sparse-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-batch-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "rust-batch-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-normal-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-normal-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-normalint-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-normalint-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-exponential-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-exponential-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-poisson-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-poisson-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-lognormal-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-lognormal-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-beta-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-beta-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-geometric-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-geometric-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-sparse-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-sparse-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-batch-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "luajit-batch-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-normal-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-normal-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-normalint-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-normalint-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-exponential-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-exponential-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-poisson-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-poisson-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-lognormal-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-lognormal-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-beta-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-beta-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-geometric-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-geometric-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-sparse-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-sparse-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-batch-cpu-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 1,
+			"name": "roc-batch-wall-1",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendffi-normal-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendffi-normal-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendffi-normalint-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendffi-normalint-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendffi-exponential-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendffi-exponential-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendffi-poisson-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendffi-poisson-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendffi-lognormal-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendffi-lognormal-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendffi-beta-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendffi-beta-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendffi-geometric-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendffi-geometric-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendffi-sparse-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendffi-sparse-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendffi-batch-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendffi-batch-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendjs-normal-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendjs-normal-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendjs-normalint-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendjs-normalint-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendjs-exponential-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendjs-exponential-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendjs-poisson-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendjs-poisson-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendjs-lognormal-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendjs-lognormal-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendjs-beta-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendjs-beta-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendjs-geometric-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendjs-geometric-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendjs-sparse-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendjs-sparse-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendjs-batch-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "bendjs-batch-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-normal-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-normal-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-normalint-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-normalint-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-exponential-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-exponential-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-poisson-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-poisson-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-lognormal-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-lognormal-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-beta-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-beta-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-geometric-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-geometric-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-sparse-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-sparse-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-batch-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "zig-batch-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-normal-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-normal-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-normalint-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-normalint-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-exponential-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-exponential-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-poisson-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-poisson-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-lognormal-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-lognormal-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-beta-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-beta-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-geometric-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-geometric-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-sparse-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-sparse-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-batch-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "rust-batch-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-normal-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-normal-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-normalint-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-normalint-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-exponential-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-exponential-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-poisson-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-poisson-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-lognormal-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-lognormal-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-beta-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-beta-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-geometric-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-geometric-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-sparse-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-sparse-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-batch-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "luajit-batch-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-normal-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-normal-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-normalint-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-normalint-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-exponential-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-exponential-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-poisson-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-poisson-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-lognormal-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-lognormal-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-beta-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-beta-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-geometric-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-geometric-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-sparse-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-sparse-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-batch-cpu-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "cpu_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		},
+		{
+			"cores": 12,
+			"name": "roc-batch-wall-12",
+			"definition": "bend2-full-samplers-public-api-v2-deadline300s",
+			"timeout_ms": 300000,
+			"mode": "bm",
+			"metric": "wall_ns",
+			"comparison": "absolute",
+			"command": [
+				"node",
+				"experiments/bend2-full-profile.mjs",
+				"{case}",
+				"{sizes}",
+				"{seed}"
+			],
+			"sizes": [
+				256,
+				512,
+				1024,
+				2048
+			],
+			"bounds": [
+				1,
+				100000000000
+			],
+			"policy": {
+				"max_cv": 0.15
+			}
+		}
+	]
+}

@@ -1,4 +1,5 @@
-/* Measure the public buffered Zig C ABI; no alternative generator lives here. */
+/* Common public C ABI probe. Backend bindings select the actual library;
+ * no alternative generator or sampler lives here. */
 #include "randomz.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -6,6 +7,14 @@
 #include <string.h>
 #include <sys/resource.h>
 #include <time.h>
+#ifndef RANDOM_BENCH_SOURCE
+#define RANDOM_BENCH_SOURCE "Zig buffered C ABI"
+#endif
+#ifndef RANDOM_BENCH_BUILD_MODE
+#define RANDOM_BENCH_BUILD_MODE "ReleaseFast-C-driver-O3"
+#endif
+
+static randomz_fixed zero, one, rate, lambda, mean, stddev, shape, quarter, sparse;
 
 static void require(int ok, const char *message) {
 	if (!ok) { fprintf(stderr, "%s\n", message); exit(1); }
@@ -21,16 +30,50 @@ static uint32_t mix(uint32_t h, uint32_t value) { return ((h<<5)|(h>>27))^value;
 static int fill(void *state, uint8_t *out, size_t n) {
 	return randomz_buffered_drbg_fill(state, out, n);
 }
+static uint32_t integer_hash(uint32_t hash, int64_t value) {
+	return mix(mix(hash, (uint32_t)(uint64_t)value), (uint32_t)((uint64_t)value >> 32));
+}
 static uint32_t work(randomz_buffered_drbg *source, unsigned kind, size_t n, uint8_t *out, uint32_t hash) {
 	if (kind == 0) {
 		require(fill(source, out, n) == RANDOMZ_OK, "byte generation failed");
 		for (size_t i=0;i<n;i++) hash=mix(hash,out[i]);
-	} else {
+	} else if (kind <= 2) {
 		const int64_t end = kind == 1 ? 6 : INT64_C(4503599627370496);
 		for (size_t i=0;i<n;i++) {
 			int64_t value;
 			require(randomz_range(fill,source,1,end,&value)==RANDOMZ_OK,"range failed");
 			hash=mix(mix(hash,(uint32_t)(uint64_t)value),(uint32_t)((uint64_t)value>>32));
+		}
+	} else if (kind == 11) {
+		int64_t values[96];
+		for (size_t done = 0; done < n;) {
+			size_t count = n - done < 96 ? n - done : 96, written = 0;
+			require(randomz_normal_int_batch(fill, source, 0, 255, values, count, &written, RANDOMZ_BATCH_AUTO) == RANDOMZ_OK && written == count, "batch failed");
+			for (size_t i = 0; i < count; i++) hash = integer_hash(hash, values[i]);
+			done += count;
+		}
+	} else {
+		for (size_t i = 0; i < n; i++) {
+			randomz_fixed value;
+			int64_t integer;
+			int status;
+			switch (kind) {
+			case 3: status = randomz_normal(fill, source, zero, one, &value); break;
+			case 4: status = randomz_normal_int(fill, source, 0, 255, &integer); break;
+			case 5: status = randomz_exponential(fill, source, rate, &value); break;
+			case 6: status = randomz_poisson(fill, source, lambda, &integer); break;
+			case 7: status = randomz_log_normal(fill, source, mean, stddev, &value); break;
+			case 8: status = randomz_beta(fill, source, one, shape, &value); break;
+			default: {
+				uint8_t encoded[512]; size_t written = 0;
+				status = randomz_geometric(fill, source, kind == 9 ? quarter : sparse, encoded, sizeof encoded, &written);
+				require(status == RANDOMZ_OK, "geometric failed");
+				for (size_t j = 0; j < written; j++) hash = mix(hash, encoded[j]);
+				continue;
+			}}
+			require(status == RANDOMZ_OK, "sampler failed");
+			if (kind == 4 || kind == 6) hash = integer_hash(hash, integer);
+			else hash = mix(integer_hash(hash, value.m), (uint32_t)value.e);
 		}
 	}
 	return hash;
@@ -66,7 +109,15 @@ int main(int argc,char **argv) {
 	const uint32_t kind=number(argv[1]),n=number(argv[2]),repeats=number(argv[3]);
 	const int oracle=strcmp(argv[4],"-")==0;
 	const uint32_t expected=oracle?0:number(argv[4]),first=number(argv[5]),warm=number(argv[6]),seed=number(argv[7]);
-	require(kind<=2 && n>=1 && n<=8192 && repeats>=1 && repeats<=1000000,"invalid arguments");
+	require(kind<=11 && n>=1 && n<=8192 && repeats>=1 && repeats<=1000000,"invalid arguments");
+	if (kind >= 3) {
+		zero = randomz_fixed_from_int(0); one = randomz_fixed_from_int(1);
+		rate = randomz_fixed_from_int(4); lambda = randomz_fixed_from_int(5); shape = randomz_fixed_from_int(3);
+		require(randomz_fixed_parse("-0.25", 5, &mean) == RANDOMZ_OK, "mean parse failed");
+		require(randomz_fixed_parse("1.75", 4, &stddev) == RANDOMZ_OK, "stddev parse failed");
+		quarter = (randomz_fixed){INT64_C(4611686018427387904), -2};
+		sparse = (randomz_fixed){INT64_C(4611686018427387904), -100};
+	}
 	uint8_t material[32]={0};
 	for(unsigned i=0;i<4;i++) material[31-i]=(uint8_t)(seed>>(i*8));
 	randomz_buffered_drbg source;
@@ -94,7 +145,9 @@ int main(int argc,char **argv) {
 		require(cpu[sample]>0 && wall[sample]>0,"zero normalized sample");
 	}
 	const uint64_t rss=post_exec_rss();
-	printf("{\"schema\":\"performance-measurement/v1\",\"correct\":true,\"build_mode\":\"optimized\",\"backend_build_mode\":\"ReleaseFast-C-driver-O3\",\"allocator_coverage\":\"probe output malloc only; library/runtime allocations uninstrumented; RSS supplemental\",\"source_backend\":\"Zig buffered C ABI\",\"rss_method\":\"Linux /proc/self/status VmHWM; supplemental approximate post-exec high water\",\"output_requested_bytes\":%u,\"state_bytes\":%zu,\"iterations\":%u,\"peak_rss_bytes\":%llu,\"rows\":[{\"size\":%u,\"samples\":{\"cpu_ns\":[",kind==0?n:0,sizeof(source),repeats,(unsigned long long)rss,n);
+	uint8_t final_key[32]; uint64_t position;
+	require(randomz_buffered_drbg_get_state(&source,final_key,&position)==RANDOMZ_OK,"final state unavailable");
+	printf("{\"schema\":\"performance-measurement/v1\",\"correct\":true,\"build_mode\":\"optimized\",\"backend_build_mode\":\"%s\",\"allocator_coverage\":\"probe output malloc only; library/runtime allocations uninstrumented; RSS supplemental\",\"source_backend\":\"%s\",\"rss_method\":\"Linux /proc/self/status VmHWM; supplemental approximate post-exec high water\",\"output_requested_bytes\":%u,\"state_bytes\":%zu,\"iterations\":%u,\"position\":\"%llu\",\"peak_rss_bytes\":%llu,\"rows\":[{\"size\":%u,\"samples\":{\"cpu_ns\":[",RANDOM_BENCH_BUILD_MODE,RANDOM_BENCH_SOURCE,kind==0?n:0,sizeof(source),repeats,(unsigned long long)position,(unsigned long long)rss,n);
 	for(unsigned i=0;i<7;i++) printf("%s%llu",i?",":"",(unsigned long long)cpu[i]);
 	fputs("],\"wall_ns\":[",stdout);
 	for(unsigned i=0;i<7;i++) printf("%s%llu",i?",":"",(unsigned long long)wall[i]);

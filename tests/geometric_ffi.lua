@@ -3,7 +3,8 @@ local ffi = require("ffi")
 local fx = require("fixed")
 local oracle = require("drbg")
 local counts = require("unsigned_count")
-ffi.cdef[[
+local prefix = arg[2] or 'randomz'
+local declarations = ([[
 typedef struct { int64_t m; int32_t e; } geometric_fixed;
 typedef int (*geometric_fill_fn)(void *, uint8_t *, size_t);
 int randomz_geometric(geometric_fill_fn, void *, geometric_fixed,
@@ -13,8 +14,12 @@ int randomz_count_format(const uint8_t *, size_t, uint8_t, uint32_t *, size_t,
  char *, size_t, size_t *);
 int randomz_distribution_curve(int, geometric_fixed, geometric_fixed,
  uint16_t *, size_t, size_t *, geometric_fixed *, geometric_fixed *);
-]]
-local library = ffi.load(assert(arg[1]))
+]]):gsub('randomz_', prefix .. '_')
+ffi.cdef(declarations)
+local native = ffi.load(assert(arg[1]))
+local library = setmetatable({}, {__index = function(_, key)
+	return native[key:gsub('^randomz_', prefix .. '_')]
+end})
 for _, exponent in ipairs({-30,-62,-63,-100,-1000}) do
 	local heights, size = ffi.new("uint16_t[9]"), ffi.new("size_t[1]")
 	local minimum, maximum = ffi.new("geometric_fixed[1]"), ffi.new("geometric_fixed[1]")

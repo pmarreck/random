@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Exactly the shared Bash CLI oracle, including all distribution/view modes.
+set -u
+ulimit -c 0 || exit 1
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" || exit 1
+cd "$root" || exit 1
+source "$root/tests/bend_native_setup.sh" || exit 1
+bend_native_setup || exit 1
+CANDIDATE_KIND=bend CANDIDATE_CLI="$RANDOM_BEND_CLI" "$root/tests/frontend_differential" || exit 1

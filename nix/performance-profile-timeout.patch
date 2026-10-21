@@ -1,0 +1,15 @@
+# Pinned performance-profile 0.1.0: expose/validate/record per-case deadlines.
+# No RNG, timing, retry, baseline or verdict policy is changed.
+--- a/src/config.lua
++++ b/src/config.lua
+@@ -36,0 +37,2 @@
++		if c.timeout_ms==nil then c.timeout_ms=30000 end
++		assert(number(c.timeout_ms) and c.timeout_ms>=1 and c.timeout_ms<=3600000 and c.timeout_ms%1==0,'invalid per-case timeout/deadline')
+--- a/bin/performance-profile
++++ b/bin/performance-profile
+@@ -55 +55 @@
+-			r.definition={name=r.case,metric=r.metric,mode=r.mode,sizes=r.definition.sizes,bounds=r.definition.bounds,policy=r.policy}
++			r.definition={name=r.case,metric=r.metric,mode=r.mode,sizes=r.definition.sizes,bounds=r.definition.bounds,policy=r.policy,timeout_ms=r.definition.timeout_ms}
+@@ -80 +80 @@
+-				local r=process.run(argv,{cwd=root,ready_marker=c.ready_marker,env={PERFORMANCE_CORES=tostring(c.cores)}})
++				local r=process.run(argv,{cwd=root,ready_marker=c.ready_marker,timeout_ms=c.timeout_ms,env={PERFORMANCE_CORES=tostring(c.cores)}})

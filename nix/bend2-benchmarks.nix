@@ -1,4 +1,4 @@
-{ pkgs, bendToolchain, randomZigLib, upstream }:
+{ pkgs, bendToolchain, randomZigLib, randomBendNative, randomRocNative, upstream }:
 {
   bendNative = pkgs.stdenv.mkDerivation {
     pname = "random-bend2-bench-experimental";
@@ -66,6 +66,69 @@
     '';
     meta.platforms = [ "x86_64-linux" ];
   };
+  bendSamplers = pkgs.clangStdenv.mkDerivation {
+    pname = "random-bend2-sampler-bench-experimental";
+    version = "0.4.0";
+    src = ../.;
+    strictDeps = true;
+    buildInputs = [ randomBendNative ];
+    stripDebugList = [ ];
+    stripAllList = [ "bin" ];
+    buildPhase = ''
+      runHook preBuild
+      $CC -std=c11 -D_POSIX_C_SOURCE=200809L -O3 -Wall -Wextra -Werror \
+        -include bend/cli-compat.h -Iinclude experiments/bend2_zig_bench.c \
+        '-DRANDOM_BENCH_SOURCE="Bend plain C ABI"' \
+        '-DRANDOM_BENCH_BUILD_MODE="Bend-2.0.37-C-O3"' \
+        -L${randomBendNative}/lib -Wl,-rpath,${randomBendNative}/lib -lrandomb -o bend2-sampler-bench
+      cp ${randomBendNative}/share/random-bend2-ffi/native-source.sha256 source.sha256
+      chmod u+w source.sha256
+      sha256sum experiments/bend2_zig_bench.c bend/cli-compat.h >> source.sha256
+      runHook postBuild
+    '';
+    installPhase = ''
+      runHook preInstall
+      install -Dm755 bend2-sampler-bench $out/bin/bend2-sampler-bench
+      install -Dm644 source.sha256 $out/share/random-bend2-sampler-bench/source.sha256
+      runHook postInstall
+    '';
+    meta.platforms = [ "x86_64-linux" ];
+  };
+  rocSamplers = pkgs.stdenv.mkDerivation {
+    pname = "random-roc-bend2-sampler-comparison";
+    version = "0.4.0";
+    src = ../.;
+    strictDeps = true;
+    buildInputs = [ randomRocNative ];
+    stripDebugList = [ ];
+    stripAllList = [ "bin" ];
+    buildPhase = ''
+      runHook preBuild
+      $CC -std=c11 -D_POSIX_C_SOURCE=200809L -O3 -Wall -Wextra -Werror \
+        -include roc/platform/cli-compat.h -Iinclude experiments/bend2_zig_bench.c \
+        '-DRANDOM_BENCH_SOURCE="Roc plain C ABI"' \
+        '-DRANDOM_BENCH_BUILD_MODE="Roc-speed-C-driver-O3"' \
+        -L${randomRocNative}/lib -Wl,-rpath,${randomRocNative}/lib -lrandomroc -o roc-bend2-sampler-bench
+      find roc -type f -print0 | sort -z | xargs -0 sha256sum > source.sha256
+      sha256sum experiments/bend2_zig_bench.c include/randomroc.h >> source.sha256
+      runHook postBuild
+    '';
+    installPhase = ''
+      runHook preInstall
+      install -Dm755 roc-bend2-sampler-bench $out/bin/roc-bend2-sampler-bench
+      install -Dm644 source.sha256 $out/share/random-roc-bend2-sampler-bench/source.sha256
+      runHook postInstall
+    '';
+    meta.platforms = [ "x86_64-linux" ];
+  };
+  cliDriver = pkgs.runCommand "random-bend2-full-cli-driver" {
+    nativeBuildInputs = [ pkgs.stdenv.cc ];
+  } ''
+    mkdir -p $out/bin
+    $CC -std=c11 -O3 -DNDEBUG -Wall -Wextra -Werror \
+      ${../experiments/ziggurat_cli_bench.c} -o $out/bin/bend2-full-cli-driver
+    strip --strip-unneeded $out/bin/bend2-full-cli-driver
+  '';
   rustNative = pkgs.rustPlatform.buildRustPackage {
     pname = "random-rust-bend2-comparison-probe";
     version = "0.4.0";

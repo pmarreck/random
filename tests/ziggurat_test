@@ -102,7 +102,7 @@ stored="$(<experiments/ziggurat_tables.zig)"
 if [ "$generated" != "$stored" ]; then echo 'Ziggurat table regeneration differs at 512 bits' >&2; exit 1; fi
 for entry in zig:src/ziggurat_tables.zig lua:lib/ziggurat_tables.lua \
 	rust:rust/randomr/src/fixed/ziggurat_tables.rs lean:lean/Randoml/ZigguratTables.lean \
-	roc:roc/ZigguratTables.roc; do
+	roc:roc/ZigguratTables.roc bend:bend/ZigguratTables.bend; do
 	format="${entry%%:*}"; path="${entry#*:}"
 	# Ignore formatter-only punctuation/whitespace, not any signed decimal
 	# literal, ordering, or count. Each table is also compiled and exercised

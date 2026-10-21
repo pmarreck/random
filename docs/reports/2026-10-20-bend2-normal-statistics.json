@@ -1,0 +1,531 @@
+{
+	"schema": "random-bend-normal-statistics/v1",
+	"date": "2026-10-20",
+	"qualification": "The three-seed CLI follow-up was declared before its million-value extensions, but seed81002 already had an inspected 50000-value prefix. Retain the failed continuous-null analysis. Corrected rounded CLI results are exploratory/post-diagnostic reinterpretations of exactly the same measurements; nominal .01/3 envelopes do not restore post-selection coverage. The direct seed81002 core run shares the underlying stream. The separate seed81032 holdout had model, seven thresholds, N and alpha fixed before running and is not pooled with prior checks into an overall confidence claim. Envelopes assume IID ideal target-law draws and check only seven CDF points; no measured full-CDF supremum, IID proof, global algorithmic deviation certificate or security certification.",
+	"original_sanity": {
+		"seed": 81002,
+		"n": 50000,
+		"mean": 5.01824,
+		"sd": 2.02249
+	},
+	"incorrect_cli_continuous_null": {
+		"schema": "random-bend-normal-followup/v1",
+		"date": "2026-10-20",
+		"original": {
+			"seed": 81002,
+			"n": 50000,
+			"mean": 5.01824,
+			"sd": 2.02249
+		},
+		"seeds": [
+			81002,
+			81012,
+			81022
+		],
+		"n": 1000000,
+		"family_alpha": 0.01,
+		"checked_cdf_envelope": 0.0017884252367957887,
+		"qualification": "Three predefined streams; original seed extension overlaps its earlier prefix. Conditional IID-normal DKW envelope at seven checked points, not a measured full CDF, security proof or algorithmic deviation certificate.",
+		"records": [
+			{
+				"backend": "bend",
+				"seed": 81002,
+				"n": 1000000,
+				"mean": 5.001874999999798,
+				"sd": 2.020317669173616,
+				"cdf": [
+					{
+						"z": -3,
+						"expected": 0.0013498980316300959,
+						"observed": 0.002971,
+						"absolute_error": 0.0016211019683699042
+					},
+					{
+						"z": -2,
+						"expected": 0.02275013194817921,
+						"observed": 0.040076,
+						"absolute_error": 0.017325868051820792
+					},
+					{
+						"z": -1,
+						"expected": 0.15865525393145707,
+						"observed": 0.226039,
+						"absolute_error": 0.06738374606854292
+					},
+					{
+						"z": 0,
+						"expected": 0.5,
+						"observed": 0.598123,
+						"absolute_error": 0.09812299999999996
+					},
+					{
+						"z": 1,
+						"expected": 0.8413447460685429,
+						"observed": 0.894539,
+						"absolute_error": 0.05319425393145705
+					},
+					{
+						"z": 2,
+						"expected": 0.9772498680518208,
+						"observed": 0.987768,
+						"absolute_error": 0.010518131948179188
+					},
+					{
+						"z": 3,
+						"expected": 0.9986501019683699,
+						"observed": 0.999433,
+						"absolute_error": 0.0007828980316301193
+					}
+				],
+				"max_checked_cdf_error": 0.09812299999999996,
+				"sha256": "cd8cdb2809398b058889805982bf5ac6d2702cad0a9fd8bcee90893a4d316aa2",
+				"state": {
+					"sv": 3,
+					"rv": "0.4.0",
+					"seed": "0x0000000000000000000000000000000000000000000000000000000000013c6a",
+					"next_pos": "8176120",
+					"args": {
+						"distribution": "normal",
+						"count": "1000000",
+						"mean": "5",
+						"stddev": "2",
+						"encoding": "text",
+						"delim": "\n"
+					},
+					"notices": [],
+					"warnings": []
+				},
+				"oracle": "Zig complete SHA-256/state matched"
+			},
+			{
+				"backend": "bend",
+				"seed": 81012,
+				"n": 1000000,
+				"mean": 5.002298999999916,
+				"sd": 2.0181743518831636,
+				"cdf": [
+					{
+						"z": -3,
+						"expected": 0.0013498980316300959,
+						"observed": 0.002867,
+						"absolute_error": 0.0015171019683699043
+					},
+					{
+						"z": -2,
+						"expected": 0.02275013194817921,
+						"observed": 0.039711,
+						"absolute_error": 0.016960868051820795
+					},
+					{
+						"z": -1,
+						"expected": 0.15865525393145707,
+						"observed": 0.226022,
+						"absolute_error": 0.06736674606854293
+					},
+					{
+						"z": 0,
+						"expected": 0.5,
+						"observed": 0.598464,
+						"absolute_error": 0.098464
+					},
+					{
+						"z": 1,
+						"expected": 0.8413447460685429,
+						"observed": 0.894247,
+						"absolute_error": 0.05290225393145709
+					},
+					{
+						"z": 2,
+						"expected": 0.9772498680518208,
+						"observed": 0.987924,
+						"absolute_error": 0.010674131948179233
+					},
+					{
+						"z": 3,
+						"expected": 0.9986501019683699,
+						"observed": 0.999471,
+						"absolute_error": 0.0008208980316301018
+					}
+				],
+				"max_checked_cdf_error": 0.098464,
+				"sha256": "bbecbf81c8de55ec863679dd1fd39fe1e5b2453649b0d9ce23a53bf477949fe2",
+				"state": {
+					"sv": 3,
+					"rv": "0.4.0",
+					"seed": "0x0000000000000000000000000000000000000000000000000000000000013c74",
+					"next_pos": "8177376",
+					"args": {
+						"distribution": "normal",
+						"count": "1000000",
+						"mean": "5",
+						"stddev": "2",
+						"encoding": "text",
+						"delim": "\n"
+					},
+					"notices": [],
+					"warnings": []
+				},
+				"oracle": "Zig complete SHA-256/state matched"
+			},
+			{
+				"backend": "bend",
+				"seed": 81022,
+				"n": 1000000,
+				"mean": 4.999675999999859,
+				"sd": 2.020094526259612,
+				"cdf": [
+					{
+						"z": -3,
+						"expected": 0.0013498980316300959,
+						"observed": 0.003027,
+						"absolute_error": 0.0016771019683699043
+					},
+					{
+						"z": -2,
+						"expected": 0.02275013194817921,
+						"observed": 0.040051,
+						"absolute_error": 0.017300868051820795
+					},
+					{
+						"z": -1,
+						"expected": 0.15865525393145707,
+						"observed": 0.226401,
+						"absolute_error": 0.06774574606854292
+					},
+					{
+						"z": 0,
+						"expected": 0.5,
+						"observed": 0.598767,
+						"absolute_error": 0.09876700000000005
+					},
+					{
+						"z": 1,
+						"expected": 0.8413447460685429,
+						"observed": 0.894401,
+						"absolute_error": 0.053056253931457076
+					},
+					{
+						"z": 2,
+						"expected": 0.9772498680518208,
+						"observed": 0.987661,
+						"absolute_error": 0.01041113194817922
+					},
+					{
+						"z": 3,
+						"expected": 0.9986501019683699,
+						"observed": 0.999406,
+						"absolute_error": 0.00075589803163012
+					}
+				],
+				"max_checked_cdf_error": 0.09876700000000005,
+				"sha256": "dfd63477a0a27d88c7233e896f4bd57086fe8cdd0ec6be2767df355a1ae6abcf",
+				"state": {
+					"sv": 3,
+					"rv": "0.4.0",
+					"seed": "0x0000000000000000000000000000000000000000000000000000000000013c7e",
+					"next_pos": "8177320",
+					"args": {
+						"distribution": "normal",
+						"count": "1000000",
+						"mean": "5",
+						"stddev": "2",
+						"encoding": "text",
+						"delim": "\n"
+					},
+					"notices": [],
+					"warnings": []
+				},
+				"oracle": "Zig complete SHA-256/state matched"
+			}
+		]
+	},
+	"corrected_rounded_cli": {
+		"law": "round(N(5,2)); F(k)=Phi((k+0.5-5)/2)",
+		"variance_reference": 4.083333333333333,
+		"expected_sd": 2.0207259421636903,
+		"family_alpha": 0.01,
+		"streams": 3,
+		"envelope": 0.0017884252367957887,
+		"records": [
+			{
+				"seed": 81002,
+				"n": 1000000,
+				"mean": 5.001874999999798,
+				"sd": 2.020317669173616,
+				"sha256": "cd8cdb2809398b058889805982bf5ac6d2702cad0a9fd8bcee90893a4d316aa2",
+				"next_pos": "8176120",
+				"oracle": "Zig complete SHA-256/state matched",
+				"cdf": [
+					{
+						"x": -1,
+						"count": 2971,
+						"expected": 0.002979763235054555,
+						"absolute_error": 0.000008763235054554987
+					},
+					{
+						"x": 1,
+						"count": 40076,
+						"expected": 0.040059156863817086,
+						"absolute_error": 0.000016843136182914664
+					},
+					{
+						"x": 3,
+						"count": 226039,
+						"expected": 0.2266273523768682,
+						"absolute_error": 0.0005883523768682175
+					},
+					{
+						"x": 5,
+						"count": 598123,
+						"expected": 0.5987063256829237,
+						"absolute_error": 0.000583325682923741
+					},
+					{
+						"x": 7,
+						"count": 894539,
+						"expected": 0.8943502263331446,
+						"absolute_error": 0.00018877366685532415
+					},
+					{
+						"x": 9,
+						"count": 987768,
+						"expected": 0.9877755273449553,
+						"absolute_error": 0.0000075273449553492355
+					},
+					{
+						"x": 11,
+						"count": 999433,
+						"expected": 0.9994229749576092,
+						"absolute_error": 0.000010025042390782168
+					}
+				],
+				"max_checked_cdf_error": 0.0005883523768682175
+			},
+			{
+				"seed": 81012,
+				"n": 1000000,
+				"mean": 5.002298999999916,
+				"sd": 2.0181743518831636,
+				"sha256": "bbecbf81c8de55ec863679dd1fd39fe1e5b2453649b0d9ce23a53bf477949fe2",
+				"next_pos": "8177376",
+				"oracle": "Zig complete SHA-256/state matched",
+				"cdf": [
+					{
+						"x": -1,
+						"count": 2867,
+						"expected": 0.002979763235054555,
+						"absolute_error": 0.00011276323505455491
+					},
+					{
+						"x": 1,
+						"count": 39711,
+						"expected": 0.040059156863817086,
+						"absolute_error": 0.0003481568638170826
+					},
+					{
+						"x": 3,
+						"count": 226022,
+						"expected": 0.2266273523768682,
+						"absolute_error": 0.0006053523768682068
+					},
+					{
+						"x": 5,
+						"count": 598464,
+						"expected": 0.5987063256829237,
+						"absolute_error": 0.00024232568292370527
+					},
+					{
+						"x": 7,
+						"count": 894247,
+						"expected": 0.8943502263331446,
+						"absolute_error": 0.00010322633314463481
+					},
+					{
+						"x": 9,
+						"count": 987924,
+						"expected": 0.9877755273449553,
+						"absolute_error": 0.00014847265504469576
+					},
+					{
+						"x": 11,
+						"count": 999471,
+						"expected": 0.9994229749576092,
+						"absolute_error": 0.00004802504239076466
+					}
+				],
+				"max_checked_cdf_error": 0.0006053523768682068
+			},
+			{
+				"seed": 81022,
+				"n": 1000000,
+				"mean": 4.999675999999859,
+				"sd": 2.020094526259612,
+				"sha256": "dfd63477a0a27d88c7233e896f4bd57086fe8cdd0ec6be2767df355a1ae6abcf",
+				"next_pos": "8177320",
+				"oracle": "Zig complete SHA-256/state matched",
+				"cdf": [
+					{
+						"x": -1,
+						"count": 3027,
+						"expected": 0.002979763235054555,
+						"absolute_error": 0.000047236764945445073
+					},
+					{
+						"x": 1,
+						"count": 40051,
+						"expected": 0.040059156863817086,
+						"absolute_error": 0.000008156863817082582
+					},
+					{
+						"x": 3,
+						"count": 226401,
+						"expected": 0.2266273523768682,
+						"absolute_error": 0.0002263523768682163
+					},
+					{
+						"x": 5,
+						"count": 598767,
+						"expected": 0.5987063256829237,
+						"absolute_error": 0.00006067431707634796
+					},
+					{
+						"x": 7,
+						"count": 894401,
+						"expected": 0.8943502263331446,
+						"absolute_error": 0.00005077366685535267
+					},
+					{
+						"x": 9,
+						"count": 987661,
+						"expected": 0.9877755273449553,
+						"absolute_error": 0.00011452734495531747
+					},
+					{
+						"x": 11,
+						"count": 999406,
+						"expected": 0.9994229749576092,
+						"absolute_error": 0.00001697495760921708
+					}
+				],
+				"max_checked_cdf_error": 0.0002263523768682163
+			}
+		],
+		"qualification": "Exploratory/post-diagnostic same-sample analysis. Envelope is a nominal conditional .01/3 allocation under an IID rounded-normal null, not post-selection confidence coverage."
+	},
+	"direct_continuous_core": {
+		"seed": 81002,
+		"n": 1000000,
+		"mean": 5.002175529343045,
+		"sd": 1.9999689897598205,
+		"every_fixed_value_and_cursor_matched_zig": true,
+		"next_pos": "8176120",
+		"max_checked_cdf_error": 0.0007599999999999829,
+		"conditional_envelope": 0.0016276236307187293,
+		"family_alpha": 0.01,
+		"cdf": [
+			{
+				"z": -3,
+				"count": 1358,
+				"expected": 0.0013498980316300946,
+				"absolute_error": 0.000008101968369905472
+			},
+			{
+				"z": -2,
+				"count": 22814,
+				"expected": 0.02275013194817921,
+				"absolute_error": 0.00006386805182079236
+			},
+			{
+				"z": -1,
+				"count": 158325,
+				"expected": 0.15865525393145705,
+				"absolute_error": 0.00033025393145705295
+			},
+			{
+				"z": 0,
+				"count": 499240,
+				"expected": 0.5,
+				"absolute_error": 0.0007599999999999829
+			},
+			{
+				"z": 1,
+				"count": 841317,
+				"expected": 0.8413447460685429,
+				"absolute_error": 0.000027746068542944258
+			},
+			{
+				"z": 2,
+				"count": 977150,
+				"expected": 0.9772498680518208,
+				"absolute_error": 0.00009986805182082836
+			},
+			{
+				"z": 3,
+				"count": 998586,
+				"expected": 0.9986501019683699,
+				"absolute_error": 0.00006410196836992288
+			}
+		],
+		"qualification": "Shares the seed81002 underlying stream with its rounded CLI prefix/extension; not independent confirmation."
+	},
+	"cli_executable_sha256": {
+		"bend": "44dff24247c7c7eeae54116f921675c450a35dd52d0cf4e52ee059c7b24658fb",
+		"zig": "59861b7fe9ec2e9342d6211a93b7217580068ed964bebd19463ee1e9f10187da"
+	},
+	"predeclared_continuous_holdout": {
+		"qualification": "Fresh seed81032; continuous normal(5,2), seven standardized thresholds -3..3, N=1000000 and alpha=.01 fixed before sampling. A separate conditional check, not pooled with previous analyses. Fixed DRBG seeds do not prove IID.",
+		"seed": 81032,
+		"n": 1000000,
+		"mean": 5.001234531237572,
+		"sd": 1.99878740415064,
+		"every_fixed_value_and_cursor_matched_zig": true,
+		"next_pos": "8176232",
+		"max_checked_cdf_error": 0.0004912539314570474,
+		"conditional_envelope": 0.0016276236307187293,
+		"family_alpha": 0.01,
+		"cdf": [
+			{
+				"z": -3,
+				"count": 1388,
+				"expected": 0.0013498980316300946,
+				"absolute_error": 0.000038101968369905334
+			},
+			{
+				"z": -2,
+				"count": 22671,
+				"expected": 0.02275013194817921,
+				"absolute_error": 0.0000791319481792084
+			},
+			{
+				"z": -1,
+				"count": 158164,
+				"expected": 0.15865525393145705,
+				"absolute_error": 0.0004912539314570474
+			},
+			{
+				"z": 0,
+				"count": 499705,
+				"expected": 0.5,
+				"absolute_error": 0.0002949999999999897
+			},
+			{
+				"z": 1,
+				"count": 841718,
+				"expected": 0.8413447460685429,
+				"absolute_error": 0.00037325393145704044
+			},
+			{
+				"z": 2,
+				"count": 977343,
+				"expected": 0.9772498680518208,
+				"absolute_error": 0.00009313194817917037
+			},
+			{
+				"z": 3,
+				"count": 998616,
+				"expected": 0.9986501019683699,
+				"absolute_error": 0.00003410196836994839
+			}
+		]
+	}
+}

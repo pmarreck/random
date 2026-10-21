@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared CLI help contract, including an explicitly selected Roc frontend.
+# Shared CLI help contract across every natively supported frontend.
 #
 # Intentional implementation namespaces are normalized to the LuaJIT spelling;
 # every other byte of stdout is part of the shared contract. Commands are
@@ -38,6 +38,14 @@ if [ -n "$roc_cli" ]; then
 	labels+=(roc)
 	clis+=("$roc_cli")
 fi
+bend_cli="${HELP_TEST_BEND_CLI:-${RANDOM_BEND_CLI:-}}"
+if [ -z "$bend_cli" ]; then
+	source "$root/tests/bend_native_setup.sh"
+	bend_native_setup || exit 1
+	bend_cli="$RANDOM_BEND_CLI"
+fi
+labels+=(bend)
+clis+=("$bend_cli")
 for index in "${!clis[@]}"; do
 	if [ ! -x "${clis[index]}" ]; then
 		echo "help test RED: ${labels[index]} CLI is not executable: ${clis[index]}" >&2
@@ -52,15 +60,17 @@ normalize_help()
 {
 	sed \
 		-e 's/^  DRANDOMROC_SEED   /  DRANDOM_SEED      /' \
-		-e 's/^  DRANDOM[ZRL]_SEED     /  DRANDOM_SEED      /' \
+		-e 's/^  DRANDOM[ZRLB]_SEED     /  DRANDOM_SEED      /' \
 		-e 's/DRANDOMROC_SEED/DRANDOM_SEED/g' \
 		-e 's/DRANDOMZ_SEED/DRANDOM_SEED/g' \
 		-e 's/DRANDOMR_SEED/DRANDOM_SEED/g' \
 		-e 's/DRANDOML_SEED/DRANDOM_SEED/g' \
+		-e 's/DRANDOMB_SEED/DRANDOM_SEED/g' \
 		-e 's/randomroc/random/g' \
 		-e 's/randomz/random/g' \
 		-e 's/randomr/random/g' \
-		-e 's/randoml/random/g'
+		-e 's/randoml/random/g' \
+		-e 's/randomb/random/g'
 }
 
 capture_help()

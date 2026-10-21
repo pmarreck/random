@@ -1,4 +1,83 @@
-# Code review — production Ziggurat and exact SIMD
+# Code review — expanded experimental Bend implementation
+
+2026-10-20 · Codex, with fresh-context reviewer
+`/root/bend_native_fresh_review` · base `e3ffa95653d0913af81029a95bbdcfb2072fda7d`
+plus the expanded uncommitted port. No unresolved implementation finding in
+the inspected scope. This was a read-only source review with small existing-
+artifact probes, not independent execution of the full release matrix.
+
+Coverage: independent Bend BLAKE3, limbs/fixed arithmetic, draw effects,
+nonlinear samplers, BLIP/count/decimal codecs, canonical charts, batch and
+selection plans; boxed native-runtime ownership and callback reentry; shared
+C frontend wiring; Nix source/CLI/FFI separation; the changed Rust, C, Lua and
+JS sampler benchmarks and whole-process output controls. The reviewer inspected
+pinned generated runtime ownership/setup, not just handwritten marshalling.
+It did not audit all generated strip literals manually; exact all-strip and
+MPFR regeneration controls supply that evidence.
+
+DCR-001 (medium severity, high confidence; resolved): the newly added installed
+SDK consumer expected cursor 8 after seed42/d20, and compared a qualified
+generated JS constructor with an unqualified tag. Independent LuaJIT execution
+returns value18 at cursor4. The corrected fixture compares semantic limbs and
+expects cursor4; the reviewer independently passed it against the installed
+coherent facade. The generator was not changed to satisfy a wrong expectation.
+
+The author separately reproduced and fixed invalid seek/restore status drift
+and premature `written` mutation on invalid geometric/count-format input.
+The reviewer revalidated the pure Prepare→opaque Ready→Sample/Format transfer:
+prepared lists remain owned under the evaluator gate, are transferred rather
+than recomputed, and invalid parameters precede caller metadata mutation.
+Existing shared geometric FFI expectations now also run against Bend.
+
+DCR-002 (medium severity, high confidence; resolved): the new required deadline fixture
+depended on the patched profiler, but only CI/profile shells declared it.
+The default-shell dependency assertion failed before correction and passes
+after declaring the same patched package. Git is now an explicit test tool,
+rather than an accidental inherited executable. The actual normal-shell runtime
+deadline fixture also passed; the reviewer verified the dependency correction
+but did not repeat that run.
+
+DCR-003 (low severity, high confidence; resolved): the new statistical helper
+trusted Lua's length operator and `ipairs` to establish array density. A hole
+could admit only a prefix of cumulative counts or silently shorten values.
+Dense production samples were unaffected. Persistent hole/extra-key controls
+failed before correction; raw positive-integer key validation and numeric-slot
+traversal now reject malformed arrays. All 45 model controls pass.
+
+The statistical follow-up also corrected the CLI's null: custom normal samples
+are integer-rounded, so continuous-normal moments/CDF targets were wrong.
+Independent 512-bit MPFR checks confirm the seven rounded references and
+numerical variance. The reviewer verified preserved same-sample measurements,
+envelope calculations and source linkage. Corrected CLI analyses are explicitly
+exploratory/post-diagnostic; seed81002 prefix/extension/core observations overlap.
+The separately predeclared seed81032 core holdout has its own conditional
+seven-point check, not a pooled confidence claim. No generator change or new
+probability/security proof followed from this diagnosis. The parent owns the
+million-value runs and corrected 81-check statistics; the reviewer did not
+rerun them.
+
+Supplementary source review verified that the deadline patch changes only
+admission/defaulting, forwarding the existing process-runner option and stored
+metadata. It verified that exactly the 31 original timed-out identities are
+selected for a separate versioned repair run, excluding all 14 original noisy
+cases. All original observations remain retained; one timeout occurred on the
+engine's permitted second attempt. Neither the patch nor repair approves an
+epoch or changes workloads, retry policy or noise tolerances. Deadline tests
+exercise a direct child; descendant-process cancellation was not established.
+
+Limits: per-sample value hashes are checked, but only the final timed sampler
+cursor is reported; whole-CLI preflight checks SHA-256 and full state, while
+timed children check output fold/status and suppress stderr. These are finite
+controls, not collision-resistant proofs of all executed work. No sanitizer,
+allocation-failure injection, multithread/fork/unload stress, native non-x86_64
+execution or new probability/security theorem was performed by the reviewer.
+Runtime high-water reuse is not a complete live-allocation leak census.
+The parent owns full current-suite, isolated SDK/package and timing verification;
+source review is not production-promotion approval.
+
+---
+
+# Previous review — production Ziggurat and exact SIMD
 
 2026-10-09 · Codex, with fresh-context reviewer
 `/root/ziggurat_production_review` · base `89b2213664f5` plus the production
