@@ -4,12 +4,12 @@ Completed work: [log](docs/PLAN_LOG.md). Historical directives and deferred risk
 
 ## Canonical cross-platform build architecture
 
-- [ ] Adopt the cross-platform-project-build-arch contract with a tracked CANONICAL_IMPL selecting zig, validated canonization and independent implementation/platform build scopes.
-- [ ] Namespace complete products by implementation/PF/VARIANT/profile and atomically publish only the canonical command set in bin/PF, preserving working selections on failure and foreign builds.
-- [ ] Make the default Nix output select the canonical Zig/C CLI while retaining separately consumable language-specific CLIs, libraries and an explicitly named aggregate.
-- [ ] Add failing Bash conformance tests for selection, scopes, hostile inputs, ABI/profile isolation, publication rollback and concurrency; include them in ./test and verify a real canonical host build.
-- [ ] Migrate build/run/test helpers, packaging and documentation together, retain recoverable legacy products and report unexecuted foreign-platform checks without changing global shell configuration.
-- [ ] Make every CLI's one-line --about identify its actual PF and applicable ABI variant, ignoring conflicting runtime target variables for compiled outputs.
+- [x] Adopt the cross-platform-project-build-arch contract with a tracked CANONICAL_IMPL selecting zig, validated canonization and independent implementation/platform build scopes (commit db8bdac; done 2026-10-23 17:07 EDT).
+- [x] Namespace complete products by implementation/PF/VARIANT/profile and atomically publish only the canonical command set in bin/PF, preserving working selections on failure and foreign builds (commit db8bdac; done 2026-10-23 17:07 EDT).
+- [x] Make the default Nix output select the canonical Zig/C CLI while retaining separately consumable language-specific CLIs, libraries and an explicitly named aggregate (commit db8bdac; done 2026-10-23 17:07 EDT).
+- [x] Add failing Bash conformance tests for selection, scopes, hostile inputs, ABI/profile isolation, publication rollback and concurrency; include them in ./test and verify a real canonical host build (commit db8bdac; done 2026-10-23 17:07 EDT).
+- [x] Migrate build/run/test helpers, packaging and documentation together, retain recoverable legacy products and report unexecuted foreign-platform checks without changing global shell configuration (commit db8bdac; done 2026-10-23 17:07 EDT).
+- [x] Make every CLI's one-line --about identify its actual PF and applicable ABI variant, ignoring conflicting runtime target variables for compiled outputs (commit db8bdac; done 2026-10-23 17:07 EDT).
 
 ## Correctness and verification
 
