@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/product_paths.sh"
 # Public LuaJIT library imports and exact differential oracles, without payload files.
 set -u
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -6,7 +7,7 @@ export LUA_PATH="${RANDOM_LUA_LIBRARY_PATH:-$root/lib}/?.lua;;"
 luajit "$root/tests/luajit_library.lua" || exit 1
 rust_target=$(cd "$root" && cargo metadata --no-deps --format-version 1 | jq -er .target_directory) || exit 1
 rust_cli="$rust_target/release/randomr"
-clis=("$root/bin/random" "$root/zig-out/bin/randomz" "$rust_cli" "$root/zig-out/bin/randoml")
+clis=("$root/luajit/random" "$RANDOM_TEST_ZIG_OUT/bin/randomz" "$rust_cli" "$RANDOM_TEST_LEAN_OUT/bin/randoml")
 for cli in "${clis[@]}"; do
 	if [ ! -x "$cli" ]; then
 		printf 'LuaJIT library oracle is not executable: %s (build the frontends first)\n' "$cli" >&2

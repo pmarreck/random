@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include "build_platform.h"
 
 #if RANDOMZ_ENTROPY_BACKEND_BCRYPT
 #include <windows.h>
@@ -309,8 +310,8 @@ static void print_about(void)
 	} else {
 		description = "CSPRNG with OS entropy, cross-platform-identical deterministic streams, and alternate distributions";
 	}
-	printf("%s v%s (%s/%s): %s\n", program_name, RANDOMZ_VERSION,
-		platform_name(), architecture_name(), description);
+	printf("%s v%s (%s/%s): %s; %s\n", program_name, RANDOMZ_VERSION,
+		platform_name(), architecture_name(), description, RANDOM_BUILD_ID);
 }
 
 static bool equals_case_insensitive(const char *left, const char *right)

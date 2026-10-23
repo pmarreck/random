@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/product_paths.sh"
 # Prove randoml owns its production behavior rather than delegating to another frontend.
 set -u
 set -o pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-randoml="${RANDOML_BIN:-$root/zig-out/bin/randoml}"
-oracle="${RANDOM_BIN:-$root/bin/random}"
+randoml="${RANDOML_BIN:-$RANDOM_TEST_LEAN_OUT/bin/randoml}"
+oracle="${RANDOM_BIN:-$root/luajit/random}"
 
 if [ -z "${RANDOML_BIN:-}" ]; then
 	"$root/lean/build-owned-cli" "$randoml" || exit 1

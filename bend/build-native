@@ -48,7 +48,7 @@ if [ "$mode" != --library-only ]; then
 		-include bend/cli-compat.h -Iinclude -Isrc \
 		src/randomz_cli.c src/distribution_view.c src/state_json.c "$archive" -o "$work/randomb"
 	"${STRIP:-strip}" "${strip_flags[@]}" "$work/randomb"
-	sha256sum bend/cli-compat.h include/randomb.h src/randomz_cli.c \
+	sha256sum bend/cli-compat.h include/randomb.h src/randomz_cli.c src/build_platform.h \
 		src/distribution_view.c src/distribution_view.h src/state_json.c src/state_json.h \
 		src/entropy_backend.h >"$work/cli-source.sha256"
 	mkdir -p "$output/bin" "$output/share/random-bend2"

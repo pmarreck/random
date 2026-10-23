@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "build_platform.h"
 
 #if RANDOMZ_ENTROPY_BACKEND_BCRYPT
 #include <windows.h>
@@ -283,4 +284,9 @@ lean_object *randoml_architecture_name(void)
 #else
 	return lean_mk_string("unknown");
 #endif
+}
+
+lean_object *randoml_build_identity(void)
+{
+	return lean_mk_string(RANDOM_BUILD_ID);
 }

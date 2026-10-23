@@ -2,7 +2,7 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixture-cleanup.sh"
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export PATH="$here/../bin:$PATH"
+export PATH="$here/../luajit:$PATH"
 # shellcheck source=cli_test_setup.sh
 source "$here/cli_test_setup.sh"
 if ! cli_test_setup; then exit 1; fi
@@ -79,9 +79,11 @@ test_random() {
 	# requiring LuaJIT merely to self-test the Zig, Rust, or Lean package.
 	# Keep these mappings synchronized with all four frontends.
 	local about_os about_arch
+	local about_pf_os about_pf_arch about_conflict
 	case "$(uname -s)" in
 		Darwin) about_os=OSX ;;
 		Linux) about_os=Linux ;;
+		MINGW*|MSYS*|CYGWIN*|Windows_NT) about_os=Windows ;;
 		FreeBSD) about_os=FreeBSD ;;
 		NetBSD) about_os=NetBSD ;;
 		OpenBSD) about_os=OpenBSD ;;
@@ -90,13 +92,29 @@ test_random() {
 		*) about_os=Unknown ;;
 	esac
 	case "$(uname -m)" in
-		aarch64|arm64) about_arch=arm64 ;;
-		x86_64|amd64) about_arch=x64 ;;
+		aarch64|arm64|ARM64) about_arch=arm64 ;;
+		x86_64|amd64|AMD64) about_arch=x64 ;;
 		i386|i486|i586|i686) about_arch=x86 ;;
 		*) about_arch=unknown ;;
 	esac
+	case "$(uname -s)" in
+		Darwin) about_pf_os=macos ;;
+		Linux) about_pf_os=linux ;;
+		MINGW*|MSYS*|CYGWIN*|Windows_NT) about_pf_os=mswin ;;
+		*) about_pf_os=unknown ;;
+	esac
+	case "$(uname -m)" in
+		aarch64|arm64|ARM64) about_pf_arch=arm64 ;;
+		x86_64|amd64|AMD64) about_pf_arch=amd64 ;;
+		*) about_pf_arch=unknown ;;
+	esac
+	about_conflict=$(PF=bogus ARCH=bogus OS=bogus PLATFORM=bogus VARIANT=bogus random --about 2>/dev/null)
 
 	if [ -n "$about_output" ] && [ "$about_lines" -eq 1 ] && [ "$about_a_output" = "$about_output" ] && \
+	   [ "$about_conflict" = "$about_output" ] && \
+	   [[ "$about_output" =~ (^|[[:space:]])PF=$about_pf_os-$about_pf_arch([[:space:]]|$) ]] && \
+	   { [[ "$about_pf_os" == macos && "$about_output" != *VARIANT=* ]] || \
+	     [[ "$about_pf_os" != macos && "$about_output" =~ (^|[[:space:]])VARIANT=(gnu|musl)([[:space:]]|$) ]]; } && \
 	   [[ "$about_output" == *"$about_os"* ]] && [[ "$about_output" == *"$about_arch"* ]] && \
 	   [[ "$about_output" =~ v[0-9]+\.[0-9]+ ]] && \
 	   [[ "$about_output" == *"CSPRNG"* ]] && \

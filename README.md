@@ -22,8 +22,10 @@ A seeded BLAKE3 keyed XOF powers cross-platform-identical deterministic streams;
 stdin operations and multiple output encodings make the same small tool useful
 beyond number generation.
 
-The equivalent command families are: `random`/`nrandom`/`drandom` use
-LuaJIT, `randomz`/`nrandomz`/`drandomz` use the C frontend over Zig, and
+The default `random`/`nrandom`/`drandom` commands select the canonical
+implementation, currently the C frontend over Zig. The original LuaJIT command
+family remains available from `luajit/` or the explicit `random-luajit` Nix
+package. Backend-specific `randomz`/`nrandomz`/`drandomz` use Zig, and
 `randomr`/`nrandomr`/`drandomr` use Rust. `randoml`/`nrandoml`/`drandoml` use
 the independent Lean implementation described above; Linux additionally supplies
 `randomroc`/`nrandomroc`/`drandomroc`. The invocation name selects normalized or
@@ -377,6 +379,7 @@ LuaJIT-only gist has no separately visible license.
 ### Nix (flake)
 
 ```sh
+nix run github:pmarreck/random                # Canonical implementation (currently Zig/C)
 nix run github:pmarreck/random#random-luajit  # LuaJIT oracle only
 nix run github:pmarreck/random#random-zig     # C CLI over the Zig core
 nix run github:pmarreck/random#random-rust    # Rust CLI
@@ -396,11 +399,13 @@ Each language-specific package closes over only the runtime and build tools
 needed by that implementation. Blocking checks prove that `random-luajit`
 has no Zig, Rust/Cargo, Lean, or other implementation package among its direct
 derivation inputs or transitive installed closure. `random-all` is the explicit
-aggregate (all five on Linux, four elsewhere); the unqualified flake default
-remains an alias for it for backwards
-compatibility. The older
-`random`, `randomz`, `randomr`, and `randoml` output names remain compatibility
-aliases for the aggregate, Zig, Rust, and Lean packages respectively.
+aggregate (five production implementations on Linux, four elsewhere). The
+unqualified default and `#random` now follow the tracked `CANONICAL_IMPL`,
+currently `zig`; they do not pull in the other language toolchains. The aggregate
+uses that same canonical `random`/`nrandom`/`drandom` command family and exposes
+the LuaJIT oracle as `random-luajit`. `#randomz`, `#randomr` and `#randoml` remain
+aliases for their individual language packages. The experimental Bend outputs
+remain separate from `#random-all`.
 
 The original four `*-lib` outputs are independently consumable and contain no CLI:
 `random-luajit-lib/lib` holds the Lua modules; `random-zig-lib` exposes the Zig
@@ -515,12 +520,87 @@ The earlier `./bm --bend2` and `--bend2 --cli` narrow comparisons remain availab
 Performance history uses an existing writable directory outside the repository;
 new observations are not automatically approved baselines.
 
-### Manual
+### Build and run
 
-For the LuaJIT oracle, put `bin/` on your `PATH`; it requires `luajit`. For the
-C CLI and static/shared libraries, run `zig build -Doptimize=ReleaseFast` and use
-`zig-out/bin/randomz`, `zig-out/include/randomz.h`, and
-`zig-out/lib/librandomz.a` or the platform shared library. Zig programs consume
+`./build` builds only the canonical implementation for the current execution
+platform, optimized and using Nix by default. Zig remains a pure core with a C
+frontend calling its public C ABI; canonization changes command selection, not
+the algorithm or any seeded stream.
+The canonical Zig CLI retains its backend namespace: use `DRANDOMZ_SEED` and
+`RANDOMZ_CHART_TYPE`; LuaJIT's separate seed namespace remains `DRANDOM_SEED`.
+Every CLI's one-line `--about` includes its canonical platform, such as
+`PF=linux-amd64 VARIANT=musl`. Compiled CLIs report their compilation target,
+not runtime target environment variables. LuaJIT reports its execution platform;
+macOS omits the inapplicable variant.
+
+```sh
+./build                         # Zig/C, host platform, ReleaseFast
+./run --seed 42 d20 --count 10   # Ensure a current build and launch that generation
+./build canonize rust           # Record intent only; no build or command switch
+./build canonize zig            # This repository's selected default
+./build --all-implementations    # Every declared host implementation, including Bend
+./build --all-platforms          # Canonical implementation's declared platforms
+./build --all                    # Both scopes, including required remote/native builders
+./build --backend=direct         # Invoke the Zig graph without Nix
+./build --debug                  # Explicit Debug product
+./build --test                   # Zig ReleaseSafe product and native unit tests
+./build --impl zig --variant gnu # Explicit GNU ABI instead of portable Linux musl
+```
+
+The short scope aliases are `--all-impls` and `--all-plats`. Scope flags are
+independent, order-insensitive and idempotent. `--impl`, `--platform`, `--variant`
+and `--profile` select an isolated product without changing `CANONICAL_IMPL`.
+Only a successful canonical build publishes the public command set. Unknown,
+empty, padded or multiline selections are errors; the file is never shell code.
+Repeated canonization preserves the existing file. A failed build or verification
+keeps the previous working public commands, and concurrent publishers use a
+fail-fast lock with an explicit retry diagnostic.
+
+Build platforms use `linux-amd64`, `linux-arm64`, `macos-arm64`, `mswin-amd64`
+and `mswin-arm64`. Compiler triples and Nix system names retain their required
+tool spellings. Complete products live at `IMPL-out/PF/[VARIANT/]PROFILE`, with
+`gnu`/`musl` omitted entirely on macOS. For example:
+
+```text
+zig-out/linux-amd64/musl/ReleaseFast/{bin,lib,include,share,tests}
+zig-out/macos-arm64/ReleaseFast/{bin,lib,include,share,tests}
+bin/linux-amd64/{random,nrandom,drandom,randomz,nrandomz,drandomz}
+```
+
+Nix generations retain GC-root output links under `.nix-out/`; direct builds
+use fresh owned trees under `.build-work/`. Direct compilation never writes
+through a Nix store link. The publication layer verifies real executable headers
+and object/archive structure, retains resources and unknown user files, and
+switches the host command set together. Native Windows publication copies
+ordinary `.exe` files and adjacent DLL/resources instead of requiring symlinks.
+Its native runtime behavior still needs a Windows-hosted gate; cross-compilation
+and Linux-hosted copy-layout tests are not Windows execution evidence.
+
+Automatic project PATH discovery should select only `bin/<host-PF>/`, followed
+by generic `bin/`. Do not recursively add foreign-platform children, `result/bin`
+or flat `zig-out/bin`. This project does not modify global shell configuration.
+The small generic `bin/random` fallback keeps already-open/cached legacy shells
+working, without freshness polling, downloads or Nix evaluation; a fresh PATH
+selects the published executable directly. Refresh PATH/rehash after migration.
+Unrecognized legacy products remain recoverable and are not deleted.
+
+Other implementations remain runnable at their namespaced product paths. Rust
+retains both Windows CPU build targets, including its `gnullvm` ARM64 target.
+Lean, LuaJIT and Bend have three Unix build definitions; Roc has two Linux
+definitions. Some non-Zig foreign builds require a native Nix builder. Missing
+required builders fail the requested scope rather than silently reducing it.
+Only Zig currently exposes the top-level direct/Debug/ReleaseSafe adapters;
+other implementations retain their native commands below and their isolated
+Nix release outputs. The build-control tests run through `./test` independently
+of the unchanged cross-language numerical/CLI oracles.
+
+### Native graphs and importable libraries
+
+For the LuaJIT oracle, put `luajit/` on PATH; it requires `luajit`. For the C
+CLI and static/shared libraries, the direct equivalent on Linux amd64 is
+`zig build -Doptimize=ReleaseFast -Dtarget=x86_64-linux-musl --prefix PREFIX`.
+Use `nix develop .#zig` for only the Zig build tools. `PREFIX` is a writable
+installation tree, not a link into the store. Zig programs consume
 the exported `randomz` module from this repository's `build.zig`. `nrandomz` and
 `drandomz` are installed aliases;
 the Nix package installs them as symlinks. Zig release artifacts are stripped
@@ -589,13 +669,14 @@ its negative/positive object-writer tests cover x86_64 and aarch64 emission.
 
 For Lean, `(cd lean && lake build)` with Lean 4.30.0 builds and checks the
 importable `Randoml` library. Build the byte-preserving production executable
-with `lean/build-owned-cli zig-out/bin/randoml`; no Zig binary or library is
+with `lean/build-owned-cli PREFIX/bin/randoml`, using a fresh writable prefix
+rather than a published Nix link; no Zig binary or library is
 used by that command. The dedicated `.#randoml` Nix package installs only the
 Lean executable, `nrandoml`/`drandoml` aliases, and its self-test surface.
 `build-owned-cli` strips the linked production executable; ordinary Lake
 library/development builds retain their diagnostic information.
 
-The same build emits `zig-out/bin/randomz-wasi.wasm`, a WASI Preview 1 reactor
+The Zig graph also emits `PREFIX/bin/randomz-wasi.wasm`, a WASI Preview 1 reactor
 module. It exports memory, the public deterministic `randomz_*` ABI, and
 `randomz_wasi_fill(ptr, len)`, which returns `RANDOMZ_OK` on success and
 `RANDOMZ_ENTROPY_ERROR` if the host's `random_get` fails. A browser can host
@@ -808,9 +889,13 @@ and the unwrapped Rust executable.
 ## Layout
 
 ```
-bin/random          the program (LuaJIT)
-bin/nrandom         -> random   (normalized mode)
-bin/drandom         -> random   (deterministic mode)
+CANONICAL_IMPL      tracked canonical implementation identifier (zig)
+build               canonical/scope selection over the native build graphs
+run                 current canonical host build plus exact-generation launch
+build-support/      build planning, verification and transactional publication
+bin/PF/             generated native commands; host PF only belongs on PATH
+bin/random          portable fallback for cached/legacy generic-bin shells
+luajit/random       independent LuaJIT oracle and CLI (luajit/nrandom, luajit/drandom)
 lib/fixed.lua       integer-only soft-float kernel (see Determinism above)
 lib/distribution_charts.lua generated embedded PNG/Sixel/Braille help charts
 lib/distribution_view.lua runtime parameter-aware curve/raster oracle
@@ -829,7 +914,7 @@ tests/randomr_mutation_test  proves five Rust acceptance controls can turn red
 tests/randomr_bsd_targets  Rust 1.97.1 distributed BSD-target cross-link gate
 tests/randomz_cross_compile_test  Linux/macOS/Windows x86_64/aarch64 build gate
 stats               standalone raw/distribution statistical sanity analysis
-bm                  three-implementation release benchmark and parity preflight
+bm                  five-implementation release benchmark and parity preflight
 benchmarks/         per-machine append-only NDJSON benchmark history
 tests/fixed_test    unit tests for lib/fixed.lua (bash)
 tests/golden_test   verifies committed golden vectors still reproduce

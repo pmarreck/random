@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/product_paths.sh"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixture-cleanup.sh"
 # Demonstrate that each independent randomr control can actually turn red.
 set -u
@@ -8,13 +9,13 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 target_dir="$(cd "$root" && cargo metadata --no-deps --format-version 1 |
 	sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')"
 rust_cli="$target_dir/release/randomr"
-zig_cli="$root/zig-out/bin/randomz"
+zig_cli="$RANDOM_TEST_ZIG_OUT/bin/randomz"
 mutant_root="$(mktemp -d "${TMPDIR:-/tmp}/randomr-mutant.XXXXXX")" || exit 1
 trap 'test_trash "$mutant_root"' EXIT
 fails=0
 
 (cd "$root" && cargo build --locked --release -p randomr-cli) >/dev/null || exit 1
-(cd "$root" && zig build -Doptimize=ReleaseFast) >/dev/null || exit 1
+(cd "$root" && zig build --prefix "$RANDOM_TEST_ZIG_OUT" -Doptimize=ReleaseFast) >/dev/null || exit 1
 false_cli="$(type -P false)"
 if [ -z "$false_cli" ] || [ ! -x "$false_cli" ]; then
 	echo "randomr mutation test requires an executable false command" >&2
@@ -112,7 +113,7 @@ mutant_target="$mutant_root/target"
 	cargo build --locked --offline --release -p randomr-cli) >/dev/null || exit 1
 nonlinear_vector_control() {
 	local expected actual candidate_status
-	expected="$("$root/bin/random" -d --seed 42 --log-normal --mean=-0.25 \
+	expected="$("$root/luajit/random" -d --seed 42 --log-normal --mean=-0.25 \
 		--stddev=1.75 -c 32 2>/dev/null)"
 	actual="$("$mutant_target/release/randomr" -d --seed 42 --log-normal \
 		--mean=-0.25 --stddev=1.75 -c 32 2>/dev/null)"

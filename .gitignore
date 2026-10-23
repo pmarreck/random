@@ -8,14 +8,24 @@ result-*
 HANDOFF*
 
 # Zig build outputs
-zig-out
+/zig-out/
 .zig-cache
 
 # Roc native build outputs
-roc-out
+/roc-out/
 
 # Private target/profile-separated Bend native products
-/.build-work/bend/
+/.build-work/
+/.nix-out/
+/rust-out/
+/lean-out/
+/luajit-out/
+/bend-out/
+/bin/linux-amd64
+/bin/linux-arm64
+/bin/macos-arm64
+/bin/mswin-amd64
+/bin/mswin-arm64
 
 # Lean/Lake build outputs
 lean/.lake

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Explicit development launcher: build once, then execute that exact generation.
+set -u
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$here/build-support/driver.sh"
+backend=nix
+case "${1:-}" in --backend=*) backend="${1#*=}"; shift ;; esac
+[ "${1:-}" != -- ] || shift
+rb_main "$here" "--backend=$backend" >&2 || exit 1
+[ -n "$RB_HOST_ENTRY" ] || { rb_error 'no canonical host executable was produced'; exit 1; }
+exec "$RB_HOST_ENTRY" "$@"

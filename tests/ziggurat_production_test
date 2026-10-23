@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/product_paths.sh"
 # Independent acceptance control for the owner-approved Ziggurat stream break.
 # Expectations are frozen from the validated isolated experiment, never a
 # production CLI. Every natively supported producer/consumer is required:
@@ -90,7 +91,7 @@ fi
 # Default artifacts are rebuilt. Explicit artifacts support installed-package
 # checks and the initial RED run before production implementation begins.
 if [ -z "${ZIGGURAT_TEST_ZIG_CLI:-}" ]; then
-	report="$(zig build -Doptimize=ReleaseFast 2>&1)"
+	report="$(zig build --prefix "$RANDOM_TEST_ZIG_OUT" -Doptimize=ReleaseFast 2>&1)"
 	if [ "$?" -ne 0 ]; then fail "Zig build: $report"; exit 1; fi
 fi
 rust_target="$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)" || exit 1
@@ -99,7 +100,7 @@ if [ -z "${ZIGGURAT_TEST_RUST_CLI:-}" ]; then
 	if [ "$?" -ne 0 ]; then fail "Rust build: $report"; exit 1; fi
 fi
 if [ -z "${ZIGGURAT_TEST_LEAN_CLI:-}" ]; then
-	report="$("$root/lean/build-owned-cli" "$root/zig-out/bin/randoml" 2>&1)"
+	report="$("$root/lean/build-owned-cli" "$RANDOM_TEST_LEAN_OUT/bin/randoml" 2>&1)"
 	if [ "$?" -ne 0 ]; then fail "Lean build: $report"; exit 1; fi
 fi
 if [ "$include_roc" -eq 1 ] && [ -z "${ZIGGURAT_TEST_ROC_CLI:-}" ]; then
@@ -107,12 +108,12 @@ if [ "$include_roc" -eq 1 ] && [ -z "${ZIGGURAT_TEST_ROC_CLI:-}" ]; then
 	report="$(roc_native_setup 2>&1)"
 	if [ "$?" -ne 0 ]; then fail "Roc build: $report"; exit 1; fi
 fi
-clis=("${ZIGGURAT_TEST_LUA_CLI:-$root/bin/random}"
-	"${ZIGGURAT_TEST_ZIG_CLI:-$root/zig-out/bin/randomz}"
+clis=("${ZIGGURAT_TEST_LUA_CLI:-$root/luajit/random}"
+	"${ZIGGURAT_TEST_ZIG_CLI:-$RANDOM_TEST_ZIG_OUT/bin/randomz}"
 	"${ZIGGURAT_TEST_RUST_CLI:-$rust_target/release/randomr}"
-	"${ZIGGURAT_TEST_LEAN_CLI:-$root/zig-out/bin/randoml}")
+	"${ZIGGURAT_TEST_LEAN_CLI:-$RANDOM_TEST_LEAN_OUT/bin/randoml}")
 if [ "$include_roc" -eq 1 ]; then
-	clis+=("${ZIGGURAT_TEST_ROC_CLI:-${RANDOM_ROC_NATIVE_DIR:-$root/roc-out}/bin/randomroc}")
+	clis+=("${ZIGGURAT_TEST_ROC_CLI:-${RANDOM_ROC_NATIVE_DIR:-$RANDOM_TEST_ROC_OUT}/bin/randomroc}")
 fi
 bend_cli="${ZIGGURAT_TEST_BEND_CLI:-${RANDOM_BEND_CLI:-}}"
 if [ -z "$bend_cli" ]; then

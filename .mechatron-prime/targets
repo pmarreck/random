@@ -1,6 +1,7 @@
 # Mechatron Prime CI targets for pmarreck/random.
 # One flake attribute per line; the worker fetches this file from the exact
 # pushed SHA.
+checks.x86_64-linux.build-architecture
 # Fail quickly on experimental Bend packaging; the full matrix remains below.
 checks.x86_64-linux.bend2-sandbox
 #
@@ -20,8 +21,10 @@ checks.x86_64-linux.random-crossarch
 checks.x86_64-linux.randomr-cross-compile
 checks.x86_64-linux.windows-x64-smoke
 
-# The explicit aggregate installs all five Linux command families.
+# The default selects only the canonical implementation.
 packages.x86_64-linux.default
+# The explicitly named aggregate retains all five production command families.
+packages.x86_64-linux.random-all
 
 # Separate Zig/C package surface and randomz app entrypoint.
 packages.x86_64-linux.randomz

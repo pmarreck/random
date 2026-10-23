@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/product_paths.sh"
 # Rust CLI acceptance and two-oracle exact differential gate.
 set -u
 set -o pipefail
@@ -7,7 +8,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 rust_target="$(cd "$root" && cargo metadata --no-deps --format-version 1 |
 	sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')"
 rust_cli="${RANDOMR_TEST_CLI:-$rust_target/release/randomr}"
-zig_cli="${RANDOMR_TEST_ZIG_CLI:-$root/zig-out/bin/randomz}"
+zig_cli="${RANDOMR_TEST_ZIG_CLI:-$RANDOM_TEST_ZIG_OUT/bin/randomz}"
 
 if [ -z "${RANDOMR_TEST_CLI:-}" ]; then
 	if [ ! -f "$root/Cargo.toml" ]; then
@@ -21,7 +22,7 @@ if [ ! -x "$rust_cli" ]; then
 	exit 1
 fi
 if [ -z "${RANDOMR_TEST_ZIG_CLI:-}" ]; then
-	(cd "$root" && zig build -Doptimize=ReleaseFast) || exit 1
+	(cd "$root" && zig build --prefix "$RANDOM_TEST_ZIG_OUT" -Doptimize=ReleaseFast) || exit 1
 fi
 if [ ! -x "$zig_cli" ]; then
 	echo "randomr test RED: Zig/C oracle is not executable: $zig_cli" >&2

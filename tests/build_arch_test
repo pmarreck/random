@@ -1,0 +1,260 @@
+#!/usr/bin/env bash
+# Exercise the real selector and publication layer with recording build ports.
+set -u
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$root/tests/fixture-cleanup.sh"
+if [ ! -f "$root/build-support/core.sh" ]; then
+	printf '%s\n' 'FAIL: canonical build control module is missing' >&2
+	exit 1
+fi
+source "$root/build-support/core.sh"
+
+work="$(mktemp -d "${TMPDIR:-/tmp}/random-build-contract.XXXXXX")" || exit 1
+trap 'test_trash_on_exit "$work"' EXIT
+project="$work/project with spaces"
+mkdir -p "$project"
+failed=0
+checks=0
+assert_equal() {
+	checks=$((checks + 1))
+	if [ "$1" != "$2" ]; then
+		printf 'FAIL: %s\nexpected: %s\nobserved: %s\n' "$3" "$2" "$1" >&2
+		failed=$((failed + 1))
+	fi
+}
+assert_refused() {
+	local status
+	checks=$((checks + 1))
+	"$@" >"$work/refusal.out" 2>"$work/refusal.err"
+	status=$?
+	if [ "$status" -eq 0 ]; then
+		printf 'FAIL: expected refusal from %s\n' "$*" >&2
+		failed=$((failed + 1))
+	elif [ "$status" -ge 124 ]; then
+		printf 'FAIL: infrastructure failure (%s), not intended refusal: %s\n' "$status" "$*" >&2
+		failed=$((failed + 1))
+	elif [ ! -s "$work/refusal.err" ]; then
+		printf 'FAIL: refusal has no diagnostic: %s\n' "$*" >&2
+		failed=$((failed + 1))
+	fi
+}
+plan_text() { printf '%s\n' "${RB_PLAN[@]}"; }
+
+# Preprocess the production C identity mapping for every declared compiler
+# target/ABI; no foreign executable is run and no runtime env is consulted.
+printf 'RANDOM_BUILD_ID\n' >"$work/identity.c"
+identity_case() {
+	local expected="$1" observed
+	shift
+	observed=$("${CC:-cc}" -E -P -undef -include "$root/src/build_platform.h" "$@" "$work/identity.c") || exit 1
+	observed=$(printf '%s' "$observed" | tr -d '"[:space:]')
+	assert_equal "$observed" "$expected" 'compiled --about PF/ABI mapping'
+}
+for cpu in __x86_64__:amd64 __aarch64__:arm64; do
+	identity_case "PF=linux-${cpu#*:}VARIANT=gnu" -D__linux__ "-D${cpu%:*}" -D__GLIBC__
+	identity_case "PF=linux-${cpu#*:}VARIANT=musl" -D__linux__ "-D${cpu%:*}"
+	identity_case "PF=mswin-${cpu#*:}VARIANT=gnu" -D_WIN32 "-D${cpu%:*}" -D__MINGW32__
+done
+identity_case PF=macos-arm64 -D__APPLE__ -D__aarch64__
+
+# Classify complete sets of supported aliases and rejected execution targets.
+for pair in Linux:x86_64 Linux:amd64 Linux:AMD64; do
+	assert_equal "$(rb_platform "${pair%:*}" "${pair#*:}")" linux-amd64 "$pair"
+done
+for pair in Darwin:arm64 Darwin:aarch64; do
+	assert_equal "$(rb_platform "${pair%:*}" "${pair#*:}")" macos-arm64 "$pair"
+done
+for os in Windows_NT MINGW64_NT-10.0 MSYS_NT-10.0 CYGWIN_NT-10.0; do
+	assert_equal "$(rb_platform "$os" AMD64)" mswin-amd64 "$os"
+	assert_equal "$(rb_platform "$os" ARM64)" mswin-arm64 "$os"
+done
+assert_equal "$(rb_platform Linux aarch64)" linux-arm64 'WSL uses its Linux execution environment'
+for pair in Darwin:x86_64 Linux:i686 Haiku:x86_64 Linux:mips Windows_NT:unknown; do
+	assert_refused rb_platform "${pair%:*}" "${pair#*:}"
+done
+
+for text in zig $'zig\n'; do
+	printf '%s' "$text" >"$project/CANONICAL_IMPL"
+	assert_equal "$(rb_read_selection "$project")" zig 'selector permits exactly one optional LF'
+done
+for text in '' unknown ' zig' 'zig ' $'zig\n\n' $'zig\nrust' '$(touch CANONICAL_EXECUTED)'; do
+	printf '%s' "$text" >"$project/CANONICAL_IMPL"
+	assert_refused rb_read_selection "$project"
+done
+printf 'zig\000rust' >"$project/CANONICAL_IMPL"
+assert_refused rb_read_selection "$project"
+assert_equal "$(test -e "$project/CANONICAL_EXECUTED" && printf bad)" '' 'selection is data, never shell code'
+
+printf 'zig\n' >"$project/CANONICAL_IMPL"
+rb_plan zig linux-amd64 || exit 1
+default_plan='zig|linux-amd64|musl|ReleaseFast|x86_64-linux-musl'
+assert_equal "$(plan_text)" "$default_plan" 'default means canonical host, portable baseline'
+for flags in --all-impls --all-implementations; do
+	rb_plan zig linux-amd64 "$flags" || exit 1
+	assert_equal "${#RB_PLAN[@]}" 6 'all host implementations include the experimental backend explicitly'
+done
+for flags in --all-plats --all-platforms; do
+	rb_plan zig linux-amd64 "$flags" || exit 1
+	assert_equal "$(plan_text)" $'zig|linux-amd64|musl|ReleaseFast|x86_64-linux-musl\nzig|linux-arm64|musl|ReleaseFast|aarch64-linux-musl\nzig|macos-arm64||ReleaseFast|aarch64-macos.14.0\nzig|mswin-amd64|gnu|ReleaseFast|x86_64-windows-gnu\nzig|mswin-arm64|gnu|ReleaseFast|aarch64-windows-gnu' 'five declared Mecha targets, actual compiler triples'
+done
+rb_plan zig linux-amd64 --all || exit 1
+all_plan="$(plan_text)"
+for args in '--all-impls --all-plats' '--all-platforms --all-implementations' '--all --all-plats --all-impls' '--all-plats --all-plats --all-impls'; do
+	read -r -a argv <<<"$args"
+	rb_plan zig linux-amd64 "${argv[@]}" || exit 1
+	assert_equal "$(plan_text)" "$all_plan" 'scope aliases, order and repetitions select the same set'
+done
+rb_plan zig linux-amd64 --impl rust || exit 1
+assert_equal "$(plan_text)" 'rust|linux-amd64|gnu|ReleaseFast|x86_64-unknown-linux-gnu' 'explicit noncanonical implementation remains isolated'
+rb_plan rust linux-amd64 --all-platforms || exit 1
+assert_equal "${#RB_PLAN[@]}" 5 'the existing Rust Windows ARM64 target is retained in the required matrix'
+assert_equal "${RB_PLAN[4]:-missing}" 'rust|mswin-arm64|gnu|ReleaseFast|aarch64-pc-windows-gnullvm' 'Windows ARM64 retains its Rust-native compiler target'
+rb_plan zig linux-amd64 --variant gnu --debug || exit 1
+assert_equal "$(plan_text)" 'zig|linux-amd64|gnu|Debug|x86_64-linux-gnu' 'ABI and profile are separate namespaces'
+rb_plan zig macos-arm64 || exit 1
+assert_equal "$(plan_text)" 'zig|macos-arm64||ReleaseFast|aarch64-macos.14.0' 'no empty variant directory'
+rb_plan roc linux-amd64 || exit 1
+assert_equal "$(plan_text)" 'roc|linux-amd64|musl|ReleaseFast|x86_64-linux-musl' 'Roc CLI ABI describes its actual static-musl linker target'
+for argument in '--nonsense' '--impl unknown' '--platform macos-amd64' '--variant none' '--backend unknown' '--all-impls canonize rust'; do
+	read -r -a argv <<<"$argument"
+	assert_refused rb_plan zig linux-amd64 "${argv[@]}"
+done
+
+# Canonization is a configuration transaction, never a build/publication.
+mkdir -p "$project/bin/linux-amd64"
+printf 'previous command\n' >"$project/bin/linux-amd64/random"
+before="$(cksum "$project/bin/linux-amd64/random")"
+rb_canonize "$project" rust >"$work/canonize.out" || exit 1
+assert_equal "$(cat "$work/canonize.out")" 'rust implementation canonized. Rerun ./build to rebuild.' 'canonization confirmation'
+assert_equal "$(rb_read_selection "$project")" rust 'canonization persists the requested identifier'
+assert_equal "$(cksum "$project/bin/linux-amd64/random")" "$before" 'canonization does not switch an installed command'
+ln "$project/CANONICAL_IMPL" "$work/selection-inode"
+rb_canonize "$project" rust >"$work/canonize.out" || exit 1
+checks=$((checks + 1))
+if ! [ "$work/selection-inode" -ef "$project/CANONICAL_IMPL" ]; then
+	printf '%s\n' 'FAIL: repeated canonization replaced unchanged state' >&2
+	failed=$((failed + 1))
+fi
+assert_refused rb_canonize "$project" unknown
+
+if [ ! -f "$root/build-support/fs.sh" ]; then
+	printf '%s\n' 'FAIL: transactional publication module is missing' >&2
+	exit 1
+fi
+source "$root/build-support/fs.sh"
+
+# Reproduce independent corruption findings before mocking the verification
+# port for the transaction-only checks below. Reuse a real inspected host ELF.
+case "$(uname -s):$(uname -m)" in
+	Linux:x86_64|Linux:aarch64)
+		binary="$(command -v bash)"
+		binary="$(readlink -f "$binary")"
+		rb_inspect_binary "$binary" "$(rb_platform "$(uname -s)" "$(uname -m)")" gnu || exit 1
+		dd if="$binary" of="$work/truncated-elf" bs=1 count=64 2>/dev/null
+		chmod +x "$work/truncated-elf"
+		assert_refused rb_inspect_binary "$work/truncated-elf" "$(rb_platform "$(uname -s)" "$(uname -m)")" gnu
+		mkdir -p "$work/rust-product/bin"
+		for name in randomr nrandomr drandomr; do ln -s "$work/truncated-elf" "$work/rust-product/bin/$name"; done
+		assert_refused rb_verify_product "$work/rust-product" rust "$(rb_platform "$(uname -s)" "$(uname -m)")" gnu x86_64-unknown-linux-gnu
+		;;
+esac
+printf 'not an archive\n' >"$work/invalid.a"
+printf 'int build_archive_fixture(void) { return 1; }\n' >"$work/archive-probe.c"
+"${CC:-cc}" -c "$work/archive-probe.c" -o "$work/archive-probe.o" || exit 1
+ar rc "$work/valid.a" "$work/archive-probe.o" || exit 1
+rb_verify_archive "$work/valid.a" || exit 1
+assert_refused rb_verify_archive "$work/invalid.a"
+
+# This is a filesystem integration test with an injected verification port.
+# Real ELF/Mach-O/PE verification is exercised separately below and in Nix.
+rb_verify_product() {
+	local product="$1" impl="$2" pf="$3" variant="$4" triple="$5" main suffix=
+	main="$(rb_main_name "$impl")" || return 1
+	[[ "$pf" != mswin-* ]] || suffix=.exe
+	[ "$(cat "$product/verified")" = "$impl|$pf|$variant|$triple" ] &&
+		[ -x "$product/bin/$main$suffix" ] &&
+		[ -x "$product/bin/n$main$suffix" ] &&
+		[ -x "$product/bin/d$main$suffix" ] || rb_error 'fixture verification refused the product'
+}
+make_product() {
+	local path="$1" impl="$2" pf="$3" variant="$4" triple="$5" main suffix= name
+	main="$(rb_main_name "$impl")" || return 1
+	[[ "$pf" != mswin-* ]] || suffix=.exe
+	mkdir -p "$path/bin" "$path/lib" "$path/share"
+	for name in "$main" "n$main" "d$main"; do
+		printf '#!%s\nprintf "%%s\\n" "%s"\n' "$(command -v bash)" "$impl" >"$path/bin/$name$suffix"
+		chmod +x "$path/bin/$name$suffix"
+	done
+	printf '%s|%s|%s|%s\n' "$impl" "$pf" "$variant" "$triple" >"$path/verified"
+	printf '%s resource\n' "$impl" >"$path/lib/runtime-resource"
+}
+publication="$work/publication with spaces"
+mkdir -p "$publication"
+printf 'zig\n' >"$publication/CANONICAL_IMPL"
+zig_product="$publication/zig-out/linux-amd64/musl/ReleaseFast"
+rust_product="$publication/rust-out/linux-amd64/gnu/ReleaseFast"
+make_product "$zig_product" zig linux-amd64 musl x86_64-linux-musl
+make_product "$rust_product" rust linux-amd64 gnu x86_64-unknown-linux-gnu
+printf '#!/usr/bin/env bash\nprintf "private\\n"\n' >"$zig_product/bin/private-driver"
+chmod +x "$zig_product/bin/private-driver"
+rb_publish "$publication" zig "$default_plan" "$zig_product" link >"$work/publication.out" || exit 1
+assert_equal "$("$publication/bin/linux-amd64/random")" zig 'canonical command executes the chosen implementation'
+assert_equal "$(test -e "$publication/bin/linux-amd64/private-driver" && printf bad)" '' 'private build drivers are not published on PATH'
+assert_equal "$("$publication/bin/linux-amd64/drandom")" zig 'entire canonical alias set is published'
+old_link="$(readlink "$publication/bin/linux-amd64")"
+printf 'unrecognized user file\n' >"$publication/bin/linux-amd64/custom-tool"
+rb_canonize "$publication" rust >"$work/canonize.out" || exit 1
+assert_equal "$(readlink "$publication/bin/linux-amd64")" "$old_link" 'recording a new canonical implementation does not switch commands'
+rust_request='rust|linux-amd64|gnu|ReleaseFast|x86_64-unknown-linux-gnu'
+rb_publish "$publication" rust "$rust_request" "$rust_product" link >"$work/publication.out" || exit 1
+assert_equal "$("$publication/bin/linux-amd64/random")" rust 'successful canonical switch executes Rust'
+assert_equal "$(cat "$publication/bin/linux-amd64/custom-tool")" 'unrecognized user file' 'unrecognized entries survive publication'
+assert_equal "$(cat "$publication/bin/linux-amd64/lib/runtime-resource")" 'rust resource' 'runtime resources accompany the selected product'
+assert_equal "$("$zig_product/bin/randomz")" zig 'other implementation outputs coexist'
+rust_link="$(readlink "$publication/bin/linux-amd64")"
+assert_refused rb_publish "$publication" zig "$default_plan" "$zig_product" link
+assert_equal "$(readlink "$publication/bin/linux-amd64")" "$rust_link" 'a stale canonical snapshot cannot publish'
+printf 'corrupt product\n' >"$rust_product/verified"
+assert_refused rb_publish "$publication" rust "$rust_request" "$rust_product" link
+assert_equal "$("$publication/bin/linux-amd64/random")" rust 'verification failure preserves the previous executable'
+make_product "$rust_product" rust linux-amd64 gnu x86_64-unknown-linux-gnu
+mv "$rust_product/bin/drandomr" "$rust_product/bin/retained-drandomr"
+assert_refused rb_publish "$publication" rust "$rust_request" "$rust_product" link
+assert_equal "$(readlink "$publication/bin/linux-amd64")" "$rust_link" 'missing required command cannot publish a mixed set'
+mv "$rust_product/bin/retained-drandomr" "$rust_product/bin/drandomr"
+
+# Hold the actual publication lock in another process. Pipes determine ordering,
+# so this tests exclusion without sleeps or scheduler-dependent timing.
+mkfifo "$work/ready" "$work/release"
+(
+	rb_lock "$publication" selection || exit 1
+	printf 'ready\n' >"$work/ready"
+	read -r _ <"$work/release"
+	rb_unlock "$publication" selection
+) &
+locker=$!
+read -r ready <"$work/ready"
+assert_equal "$ready" ready 'competing publisher acquired its lock'
+assert_refused rb_publish "$publication" rust "$rust_request" "$rust_product" link
+assert_equal "$(readlink "$publication/bin/linux-amd64")" "$rust_link" 'a competing publisher cannot switch the command set'
+printf 'release\n' >"$work/release"
+wait "$locker" || exit 1
+rb_publish "$publication" rust "$rust_request" "$rust_product" link >"$work/publication.out" || exit 1
+
+# Windows publication copies executable/resource bytes; it never needs symlink
+# privileges to launch the resulting .exe. Native Windows runtime is a separate gate.
+rb_canonize "$publication" zig >"$work/canonize.out" || exit 1
+windows_product="$publication/zig-out/mswin-arm64/gnu/ReleaseFast"
+make_product "$windows_product" zig mswin-arm64 gnu aarch64-windows-gnu
+printf 'adjacent DLL\n' >"$windows_product/bin/fixture.dll"
+windows_request='zig|mswin-arm64|gnu|ReleaseFast|aarch64-windows-gnu'
+rb_publish "$publication" zig "$windows_request" "$windows_product" copy >"$work/publication.out" || exit 1
+assert_equal "$(cat "$publication/bin/mswin-arm64/fixture.dll")" 'adjacent DLL' 'Windows DLL adjacency survives publication'
+assert_equal "$(test -L "$publication/bin/mswin-arm64/random.exe" && printf bad)" '' 'Windows public executables are copies, not Unix symlinks'
+assert_equal "$("$publication/bin/linux-amd64/random")" rust 'foreign publication cannot retarget the host command'
+
+if [ "$failed" -ne 0 ]; then
+	printf 'Build architecture: %s of %s checks failed\n' "$failed" "$checks" >&2
+	exit 1
+fi
+printf 'Build architecture: %s selection/scope/configuration/publication checks passed\n' "$checks"

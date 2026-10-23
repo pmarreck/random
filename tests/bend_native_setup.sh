@@ -1,4 +1,5 @@
 # shellcheck shell=bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/product_paths.sh"
 # Resolve one current native Bend snapshot, never an unrelated PATH command.
 bend_native_setup() {
 	if [ -z "${RANDOM_BEND_ARTIFACT_DIR:-}" ]; then
@@ -23,8 +24,8 @@ bend_native_setup() {
 		return 1
 	fi
 	if [ -z "${RANDOM_BEND_ORACLE_LIBRARY:-}" ]; then
-		(cd "$root" && zig build -Doptimize=ReleaseFast) || return 1
-		RANDOM_BEND_ORACLE_LIBRARY="$root/zig-out/lib/librandomz.$extension"
+		(cd "$root" && zig build --prefix "$RANDOM_TEST_ZIG_OUT" -Doptimize=ReleaseFast) || return 1
+		RANDOM_BEND_ORACLE_LIBRARY="$RANDOM_TEST_ZIG_OUT/lib/librandomz.$extension"
 	fi
 	if [ ! -s "$RANDOM_BEND_ORACLE_LIBRARY" ]; then echo 'Bend native test RED: Zig oracle library missing' >&2; return 1; fi
 	export RANDOM_BEND_CLI RANDOM_BEND_SHARED_LIBRARY RANDOM_BEND_ORACLE_LIBRARY

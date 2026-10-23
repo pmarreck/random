@@ -1013,9 +1013,32 @@ fn print_about(program: &str) -> Result<(), String> {
 		"CSPRNG with OS entropy, cross-platform-identical deterministic streams, and alternate distributions"
 	};
 	let text = format!(
-		"{program} v{VERSION} ({}/{}): {description}",
+		"{program} v{VERSION} ({}/{}): {description}; PF={}-{}{}",
 		platform_name(),
-		architecture_name()
+		architecture_name(),
+		if cfg!(target_os = "windows") {
+			"mswin"
+		} else if cfg!(target_os = "macos") {
+			"macos"
+		} else if cfg!(target_os = "linux") {
+			"linux"
+		} else {
+			"unknown"
+		},
+		if cfg!(target_arch = "x86_64") {
+			"amd64"
+		} else if cfg!(target_arch = "aarch64") {
+			"arm64"
+		} else {
+			"unknown"
+		},
+		if cfg!(target_env = "gnu") {
+			" VARIANT=gnu"
+		} else if cfg!(target_env = "musl") {
+			" VARIANT=musl"
+		} else {
+			""
+		}
 	);
 	writeln!(io::stdout().lock(), "{text}").map_err(|_| "stdout write failed".to_owned())
 }

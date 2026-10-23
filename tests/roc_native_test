@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/product_paths.sh"
 # Native library controls supplement, never replace, the shared CLI oracle.
 set -u
 set -o pipefail
@@ -11,10 +12,10 @@ source "$root/tests/roc_native_setup.sh"
 source "$root/tests/fixture-cleanup.sh"
 roc_native_setup || exit 1
 cd "$root" || exit 1
-zig build library -Doptimize=ReleaseFast || exit 1
+zig build library --prefix "$RANDOM_TEST_ZIG_OUT" -Doptimize=ReleaseFast || exit 1
 export RANDOM_PROJECT_ROOT="$root"
 export RANDOM_ROC_SHARED_LIBRARY="$RANDOM_ROC_NATIVE_DIR/lib/librandomroc.so"
-export RANDOM_ROC_ORACLE_LIBRARY="${RANDOM_ROC_ORACLE_LIBRARY:-$root/zig-out/lib/librandomz.so}"
+export RANDOM_ROC_ORACLE_LIBRARY="${RANDOM_ROC_ORACLE_LIBRARY:-$RANDOM_TEST_ZIG_OUT/lib/librandomz.so}"
 fixtures=0
 for fixture in "$root/tests/roc_native/"*.lua; do
 	luajit "$fixture" "$RANDOM_ROC_SHARED_LIBRARY" || exit 1

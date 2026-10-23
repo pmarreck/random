@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/product_paths.sh"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixture-cleanup.sh"
 # Compile and execute a consumer that knows the public header, not Zig internals.
 set -u
@@ -7,15 +8,15 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/randomz-abi.XXXXXX")" || exit 1
 trap 'test_trash "$tmp"' EXIT
 
-(cd "$root" && zig build -Doptimize=ReleaseFast) >/dev/null || exit 1
+(cd "$root" && zig build --prefix "$RANDOM_TEST_ZIG_OUT" -Doptimize=ReleaseFast) >/dev/null || exit 1
 compiler="${CC:-cc}"
 "$compiler" -std=c11 -Wall -Wextra -Werror -I"$root/include" \
-	"$root/tests/randomz_abi_test.c" "$root/zig-out/lib/librandomz.a" \
+	"$root/tests/randomz_abi_test.c" "$RANDOM_TEST_ZIG_OUT/lib/librandomz.a" \
 	-o "$tmp/randomz-abi-test" || exit 1
 "$tmp/randomz-abi-test" || exit 1
 case "$(uname -s)" in
-	Darwin) shared="$root/zig-out/lib/librandomz.dylib" ;;
-	*) shared="$root/zig-out/lib/librandomz.so" ;;
+	Darwin) shared="$RANDOM_TEST_ZIG_OUT/lib/librandomz.dylib" ;;
+	*) shared="$RANDOM_TEST_ZIG_OUT/lib/librandomz.so" ;;
 esac
 luajit "$root/tests/buffered_drbg.lua" "$shared" || exit 1
 luajit "$root/tests/batch_drbg.lua" "$shared"

@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/product_paths.sh"
 # Bounded-memory CLI output, checked against the independent Zig implementation.
 # Payloads go through digest pipes or /dev/null; state remains in shell memory.
 set -u
 set -o pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-lua_cli="${STREAM_TEST_LUA_CLI:-$root/bin/random}"
-zig_cli="${STREAM_TEST_ZIG_CLI:-$root/zig-out/bin/randomz}"
+lua_cli="${STREAM_TEST_LUA_CLI:-$root/luajit/random}"
+zig_cli="${STREAM_TEST_ZIG_CLI:-$RANDOM_TEST_ZIG_OUT/bin/randomz}"
 if [ -z "${STREAM_TEST_ZIG_CLI:-}" ]; then
-	(cd "$root" && zig build -Doptimize=ReleaseFast) || exit 1
+	(cd "$root" && zig build --prefix "$RANDOM_TEST_ZIG_OUT" -Doptimize=ReleaseFast) || exit 1
 fi
 fails=0
 checks=0

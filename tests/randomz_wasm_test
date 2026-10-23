@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/product_paths.sh"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixture-cleanup.sh"
 # Validate the shipped WASI reactor, its entropy import, and its deterministic
 # identity against the LuaJIT oracle.
@@ -6,11 +7,11 @@ set -u
 set -o pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-wasm="$root/zig-out/bin/randomz-wasi.wasm"
+wasm="$RANDOM_TEST_ZIG_OUT/bin/randomz-wasi.wasm"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/randomz-wasm.XXXXXX")" || exit 1
 trap 'test_trash "$tmp"' EXIT
 
-zig build -Doptimize=ReleaseFast >/dev/null || exit 1
+zig build --prefix "$RANDOM_TEST_ZIG_OUT" -Doptimize=ReleaseFast >/dev/null || exit 1
 wasm-tools validate "$wasm" || exit 1
 wasm-tools print "$wasm" >"$tmp/randomz.wat" || exit 1
 
@@ -28,7 +29,7 @@ done
 
 wasm_hex=$(NODE_NO_WARNINGS=1 node "$root/tests/wasm_probe.mjs" "$wasm")
 wasm_rc=$?
-lua_hex=$("$root/bin/random" -d --seed 42 --binaryoutput --count 64 | xxd -p -c 256)
+lua_hex=$("$root/luajit/random" -d --seed 42 --binaryoutput --count 64 | xxd -p -c 256)
 lua_rc=$?
 if [ "$wasm_rc" -ne 0 ] || [ "$lua_rc" -ne 0 ] || [ "$wasm_hex" != "$lua_hex" ]; then
 	echo "WASM test FAILED: deterministic stream differs from LuaJIT oracle" >&2

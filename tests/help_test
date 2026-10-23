@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/product_paths.sh"
 # Shared CLI help contract across every natively supported frontend.
 #
 # Intentional implementation namespaces are normalized to the LuaJIT spelling;
@@ -8,13 +9,13 @@ set -u
 set -o pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-lua_cli="${HELP_TEST_LUA_CLI:-$root/bin/random}"
-zig_cli="${HELP_TEST_ZIG_CLI:-$root/zig-out/bin/randomz}"
+lua_cli="${HELP_TEST_LUA_CLI:-$root/luajit/random}"
+zig_cli="${HELP_TEST_ZIG_CLI:-$RANDOM_TEST_ZIG_OUT/bin/randomz}"
 
 rust_target="$(cd "$root" && cargo metadata --no-deps --format-version 1 |
 	sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')"
 rust_cli="${HELP_TEST_RUST_CLI:-$rust_target/release/randomr}"
-lean_cli="${HELP_TEST_LEAN_CLI:-$root/zig-out/bin/randoml}"
+lean_cli="${HELP_TEST_LEAN_CLI:-$RANDOM_TEST_LEAN_OUT/bin/randoml}"
 roc_cli="${HELP_TEST_ROC_CLI:-}"
 if [ -z "$roc_cli" ] && [ "$(uname -s)" = Linux ]; then
 	source "$root/tests/roc_native_setup.sh"
@@ -23,7 +24,7 @@ if [ -z "$roc_cli" ] && [ "$(uname -s)" = Linux ]; then
 fi
 
 if [ -z "${HELP_TEST_ZIG_CLI:-}" ]; then
-	(cd "$root" && zig build -Doptimize=ReleaseFast) || exit 1
+	(cd "$root" && zig build --prefix "$RANDOM_TEST_ZIG_OUT" -Doptimize=ReleaseFast) || exit 1
 fi
 if [ -z "${HELP_TEST_RUST_CLI:-}" ]; then
 	(cd "$root" && cargo build --locked --release -p randomr-cli) || exit 1

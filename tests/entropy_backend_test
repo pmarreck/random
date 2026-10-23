@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/product_paths.sh"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixture-cleanup.sh"
 # Compile the C entropy boundary for each supported platform and inspect the
 # object before Zig/libc can add their own RNG references. This is a provenance
@@ -129,12 +130,12 @@ if [ "$(uname -s)" = Linux ]; then
 	cases=$((cases + 1))
 	if ! cc -std=c11 -Wall -Wextra -Werror -shared -fPIC \
 		"$root/tests/getrandom_fail.c" -o "$tmp/getrandom-fail.so" ||
-		! (cd "$root" && zig build -Doptimize=ReleaseFast) >/dev/null ||
-		! "$root/lean/build-owned-cli" "$root/zig-out/bin/randoml" >/dev/null; then
+		! (cd "$root" && zig build --prefix "$RANDOM_TEST_ZIG_OUT" -Doptimize=ReleaseFast) >/dev/null ||
+		! "$root/lean/build-owned-cli" "$RANDOM_TEST_LEAN_OUT/bin/randoml" >/dev/null; then
 		echo "entropy backend FAILED: could not build the fault-injection control" >&2
 		fails=$((fails + 1))
 	else
-		for frontend in "$root/bin/random" "$root/zig-out/bin/randomz" "$root/zig-out/bin/randoml"; do
+		for frontend in "$root/luajit/random" "$RANDOM_TEST_ZIG_OUT/bin/randomz" "$RANDOM_TEST_LEAN_OUT/bin/randoml"; do
 			if LD_PRELOAD="$tmp/getrandom-fail.so" "$frontend" --true-random \
 				--binaryoutput --count 1 >"$tmp/fault.out" 2>"$tmp/fault.err"; then
 				echo "entropy backend FAILED: $(basename "$frontend") accepted denied kernel entropy" >&2

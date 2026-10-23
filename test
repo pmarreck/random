@@ -10,7 +10,7 @@
 set -u
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export PATH="$here/bin:$PATH"
+export PATH="$here/luajit:$PATH"
 export RANDOM_TEST_FILE="$here/tests/random_test"
 export FAST="${FAST-1}"
 SUITE_TIMEOUT="${SUITE_TIMEOUT:-300}"
@@ -35,7 +35,7 @@ REQUIRED_SUITES+=(bend2_test bend2_proof_test)
 REQUIRED_SUITES+=(bend2_benchmark_test)
 REQUIRED_SUITES+=(bend2_ffi_test bend2_cli_test)
 REQUIRED_SUITES+=(bend_full_benchmark_test)
-REQUIRED_SUITES+=(stats_model_test)
+REQUIRED_SUITES+=(stats_model_test build_arch_test)
 if [ "$(uname -s)" = Linux ]; then
 	REQUIRED_SUITES+=(roc_core_test roc_platform_test roc_native_test roc_cli_test)
 fi

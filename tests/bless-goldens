@@ -5,7 +5,7 @@
 set -u
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export PATH="$here/../bin:$PATH"
+export PATH="$here/../luajit:$PATH"
 # The default output delimiter is deliberately independent of $IFS. Unset it
 # here as an additional guard against accidental shell-side word splitting.
 unset IFS

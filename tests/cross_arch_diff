@@ -366,11 +366,11 @@ for spec in "${CLI_CASES[@]}" "@stdin:${CLI_STDIN_CASES[0]}" "@stdin:${CLI_STDIN
 		for leg in "${LEG_NAMES[@]}"; do
 			read -r -a cmd <<<"$(leg_cmd "$leg")"
 			if [ -n "$stdin_data" ]; then
-				printf '%s\n' "$stdin_data" | "${cmd[@]}" "$root/bin/random" \
+				printf '%s\n' "$stdin_data" | "${cmd[@]}" "$root/luajit/random" \
 					--seed "$seed" "${argv[@]}" \
 					>"$tmp/cli.$case_no.$seed.$leg" 2>/dev/null
 			else
-				"${cmd[@]}" "$root/bin/random" --seed "$seed" "${argv[@]}" \
+				"${cmd[@]}" "$root/luajit/random" --seed "$seed" "${argv[@]}" \
 					>"$tmp/cli.$case_no.$seed.$leg" 2>/dev/null
 			fi
 			rc=$?
@@ -414,7 +414,7 @@ for leg in "${ZIG_LEG_NAMES[@]}"; do
 	fi
 done
 RANDOMZ_RUNNER="$tc/bin/luajit-x86_64-glibc" \
-	"$here/randomz_cross_payload" "$root/bin/random" \
+	"$here/randomz_cross_payload" "$root/luajit/random" \
 	>"$tmp/randomz.lua-oracle" 2>"$tmp/randomz.lua-oracle.err"
 rc=$?
 if [ "$rc" -ne 0 ] || [ ! -s "$tmp/randomz.lua-oracle" ]; then
@@ -561,7 +561,7 @@ if [ -n "${CROSS_ARCH_REMOTE-}" ]; then
 	if [ "$rfail" -eq 0 ]; then
 		note "  building Zig/C artifacts natively on the remote..."
 		ssh -n -o BatchMode=yes "$CROSS_ARCH_REMOTE" \
-			"cd $rd && nix develop 'path:.' --command zig build -Doptimize=ReleaseSafe" \
+			"cd $rd && nix develop --command bash -c 'source tests/product_paths.sh; zig build -Doptimize=ReleaseSafe --prefix \"\$RANDOM_TEST_ZIG_SAFE_OUT\"'" \
 			>/dev/null 2>"$tmp/remote.zig-build.err" || {
 			bad "remote Zig/C build failed"
 			sed 's/^/      /' <"$tmp/remote.zig-build.err" >&2
@@ -598,14 +598,14 @@ if [ -n "${CROSS_ARCH_REMOTE-}" ]; then
 		rfetch libm     tests/cross_arch_controls.lua libm
 		rfetch f2i      tests/cross_arch_controls.lua float2int
 		ssh -n -o BatchMode=yes "$CROSS_ARCH_REMOTE" \
-			"cd $rd && zig-out/bin/differential-driver '$zig_count'" \
+			"cd $rd && bash -c 'source tests/product_paths.sh; \"\$RANDOM_TEST_ZIG_SAFE_OUT/bin/differential-driver\" $zig_count'" \
 			>"$tmp/remote.zig_core" 2>"$tmp/remote.zig_core.err"
 		zig_core_remote_rc=$?
 		if [ "$zig_core_remote_rc" -ne 0 ]; then
 			bad "remote Zig core payload exited $zig_core_remote_rc"
 		fi
 		ssh -n -o BatchMode=yes "$CROSS_ARCH_REMOTE" \
-			"cd $rd && bash tests/randomz_cross_payload zig-out/bin/randomz" \
+			"cd $rd && bash -c 'source tests/product_paths.sh; bash tests/randomz_cross_payload \"\$RANDOM_TEST_ZIG_SAFE_OUT/bin/randomz\"'" \
 			>"$tmp/remote.randomz" 2>"$tmp/remote.randomz.err"
 		randomz_remote_rc=$?
 		if [ "$randomz_remote_rc" -ne 0 ]; then

@@ -256,7 +256,7 @@ def printAbout (program : String) : IO Unit := do
   else
     "CSPRNG with OS entropy, cross-platform-identical deterministic streams, and alternate distributions"
   writeBytes (← IO.getStdout)
-    s!"{program} v{version} ({← Native.platformName}/{← Native.architectureName}): {description}\n".toUTF8
+    s!"{program} v{version} ({← Native.platformName}/{← Native.architectureName}): {description}; {← Native.buildIdentity}\n".toUTF8
 
 def helpText (program : String) : String :=
   String.intercalate "\n" [

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/product_paths.sh"
 # Independent Roc kernel gate; CLI acceptance remains tests/random_test,
 # unchanged for every language. Oracle values travel through pipes, not files.
 set -u
@@ -14,7 +15,7 @@ if [ -z "${RANDOM_ROC_COMPILER:-}" ]; then
 	exit 1
 fi
 roc_compiler="$RANDOM_ROC_COMPILER"
-roc_kernel="${RANDOM_ROC_CORE_TEST:-$root/zig-out/bin/roc-core-test}"
+roc_kernel="${RANDOM_ROC_CORE_TEST:-$RANDOM_TEST_ZIG_OUT/bin/roc-core-test}"
 
 "$roc_compiler" check roc/test.roc || exit 1
 "$roc_compiler" test roc/test.roc || exit 1
@@ -148,7 +149,7 @@ printf 'Roc native BLAKE3 subset: %s frozen official vectors passed.\n' "$vector
 
 drbg_checks=0
 for seed in 0 1 42 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff; do
-	expected="$(bin/random -d --seed "$seed" -b --hex -c 197 2>/dev/null)" || exit 1
+	expected="$(luajit/random -d --seed "$seed" -b --hex -c 197 2>/dev/null)" || exit 1
 	for position in 0 1 31 32 63 64 65 127 128 131 196 197; do
 		count=$((197 - position))
 		actual="$("$roc_kernel" drbg "$seed" "$position" "$count")" || exit 1
@@ -442,12 +443,12 @@ echo "Roc canonical charts: $chart_checks exact height/bounds/stem witnesses and
 # The production count codec consumes one canonical unsigned BLIP. Pin both
 # acceptance and formatted values against the real Zig C ABI, not a Roc
 # encoder/decoder round trip alone. Rebuild the oracle to avoid stale artifacts.
-zig build library -Doptimize=ReleaseFast || exit 1
+zig build library --prefix "$RANDOM_TEST_ZIG_OUT" -Doptimize=ReleaseFast || exit 1
 corpus="$(luajit - <<'LUA'
 local ffi = require('ffi')
 local counts = require('lib.unsigned_count')
 ffi.cdef[[int randomz_count_format(const uint8_t *, size_t, uint8_t, uint32_t *, size_t, char *, size_t, size_t *);]]
-local library = ffi.load('./zig-out/lib/librandomz.so')
+local library = ffi.load(assert(os.getenv('RANDOM_TEST_ZIG_OUT')) .. '/lib/librandomz.so')
 local scratch, text, size = ffi.new('uint32_t[12500]'), ffi.new('char[40000]'), ffi.new('size_t[1]')
 local function hex(s) return (s:gsub('.',function(c)return string.format('%02x',c:byte())end)) end
 local function emit(input)

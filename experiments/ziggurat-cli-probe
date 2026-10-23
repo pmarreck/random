@@ -9,7 +9,7 @@ expected="$(jq -er --arg v "$version" --arg op "$operation" '.[$v][$op]' tests/f
 case "$version/$language" in
 	before/zig) cli="${RANDOM_ZIGGURAT_OLD_ZIG:?old release CLI required}" ;;
 	before/rust) cli="${RANDOM_ZIGGURAT_OLD_RUST:?old release CLI required}" ;;
-	after/zig) cli="${RANDOM_ZIGGURAT_NEW_ZIG:-$PWD/zig-out/bin/randomz}" ;;
+	after/zig) cli="${RANDOM_ZIGGURAT_NEW_ZIG:-$("$PWD/build-support/product-path" zig --variant gnu)/bin/randomz}" ;;
 	after/rust) cli="${RANDOM_ZIGGURAT_NEW_RUST:-${CARGO_TARGET_DIR:-$PWD/target}/release/randomr}" ;;
 	*) exit 1 ;;
 esac

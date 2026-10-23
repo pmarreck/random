@@ -23,6 +23,14 @@
     ] (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        # Canonization changes a selector, not every implementation's source.
+        # Explicit language consumers never depend on that selection file.
+        implementationSource = pkgs.lib.fileset.toSource {
+          root = ./.;
+          fileset = pkgs.lib.fileset.difference ./. (pkgs.lib.fileset.unions [
+            ./CANONICAL_IMPL ./PLAN.md ./.dirtree-state ./.mechatron-prime
+          ]);
+        };
         # The pinned shared engine has a hard-coded 30s child deadline. Expose
         # its existing process.run timeout argument, without forking its policy.
         # Remove this override when the pinned upstream admits, forwards and
@@ -115,7 +123,7 @@
         randomBendProbe = pkgs.stdenv.mkDerivation {
           pname = "random-bend2-probe-experimental";
           version = "0.4.0";
-          src = ./.;
+          src = implementationSource;
           strictDeps = true;
           nativeBuildInputs = [ bendToolchain pkgs.clang pkgs.time ];
           disallowedReferences = [ bendToolchain ];
@@ -237,7 +245,7 @@
         randomRocLib = pkgs.stdenvNoCC.mkDerivation {
           pname = "random-roc-lib";
           version = "0.4.0";
-          src = ./.;
+          src = implementationSource;
           strictDeps = true;
           dontBuild = true;
           allowedReferences = [ ];
@@ -260,7 +268,7 @@
         randomRocNative = pkgs.stdenvNoCC.mkDerivation {
           pname = "random-roc-ffi";
           version = "0.4.0";
-          src = ./.;
+          src = implementationSource;
           strictDeps = true;
           nativeBuildInputs = [ rocToolchain pkgs.zig_0_16 pkgs.binutils ];
           allowedReferences = [ ];
@@ -299,7 +307,7 @@
         randomRoc = pkgs.stdenvNoCC.mkDerivation {
           pname = "random-roc";
           version = "0.4.0";
-          src = ./.;
+          src = implementationSource;
           strictDeps = true;
           nativeBuildInputs = [ pkgs.zig_0_16 pkgs.makeWrapper ];
           buildInputs = [ pkgs.bash ];
@@ -441,7 +449,7 @@
         runtimeTools = [ luajitFixed ];
         # External tools the executable shells out to / the test suite needs.
         testTools = with pkgs; [
-          bashInteractive coreutils gnugrep ripgrep gawk bc xxd binutils gnutar git
+          bashInteractive coreutils gnugrep ripgrep gawk bc xxd binutils gnutar git file
           stdenv.cc libsixel imagemagick nodejs wasm-tools jq time
         ];
         # The installed 80-case CLI self-test needs ordinary shell utilities,
@@ -478,7 +486,7 @@
 		mkRandomr = rustPkgs: runTests: rustPkgs.rustPlatform.buildRustPackage {
 		  pname = "random-rust";
           version = "0.4.0";
-          src = ./.;
+          src = implementationSource;
           cargoLock.lockFile = ./Cargo.lock;
           cargoBuildFlags = [ "-p" "randomr-cli" ];
           cargoTestFlags = [ "--workspace" ];
@@ -514,7 +522,7 @@
 		randomRustLib = pkgs.stdenvNoCC.mkDerivation {
 		  pname = "random-rust-lib";
 		  version = "0.4.0";
-		  src = ./.;
+		  src = implementationSource;
 		  strictDeps = true;
 		  dontBuild = true;
 		  installPhase = ''
@@ -543,7 +551,7 @@
 		randomLeanLib = pkgs.stdenvNoCC.mkDerivation {
 		  pname = "random-lean-lib";
 		  version = "0.4.0";
-		  src = ./.;
+		  src = implementationSource;
 		  strictDeps = true;
 		  nativeBuildInputs = [ pkgs.lean4 ];
 		  buildPhase = ''
@@ -573,7 +581,7 @@
 		randomLeanProofs = pkgs.stdenvNoCC.mkDerivation {
 		  pname = "random-lean-proofs";
 		  version = "0.4.0";
-		  src = ./.;
+		  src = implementationSource;
 		  strictDeps = true;
 		  nativeBuildInputs = [ pkgs.lean4 pkgs.bash pkgs.gnugrep pkgs.gnused ];
 		  propagatedBuildInputs = [ randomLeanLib distributionMathlib ];
@@ -608,7 +616,7 @@
 		randoml = pkgs.stdenv.mkDerivation {
 		  pname = "random-lean";
           version = "0.4.0";
-          src = ./.;
+          src = implementationSource;
           strictDeps = true;
           nativeBuildInputs = [ pkgs.lean4 pkgs.makeWrapper pkgs.bash ];
           buildInputs = [ pkgs.gmp pkgs.libuv ];
@@ -646,7 +654,7 @@
 		randomLuaLib = pkgs.stdenvNoCC.mkDerivation {
 		  pname = "random-luajit-lib";
 		  version = "0.4.0";
-		  src = ./.;
+		  src = implementationSource;
 		  strictDeps = true;
 		  dontBuild = true;
 		  installPhase = ''
@@ -667,14 +675,14 @@
 		randomLua = pkgs.stdenvNoCC.mkDerivation {
 		  pname = "random-luajit";
 		  version = "0.4.0";
-		  src = ./.;
+		  src = implementationSource;
 		  strictDeps = true;
 		  nativeBuildInputs = randomLuaNativeBuildInputs;
 		  dontBuild = true;
 		  installPhase = ''
 			runHook preInstall
 			mkdir -p $out/bin $out/tests $out/share/licenses/random-luajit
-			install -Dm755 bin/random $out/bin/random
+			install -Dm755 luajit/random $out/bin/random
 			ln -s ${randomLuaLib}/lib $out/lib
 			install -Dm755 tests/random_test $out/tests/random_test
 			install -Dm644 tests/cli_test_setup.sh $out/tests/cli_test_setup.sh
@@ -701,7 +709,7 @@
 		randomZigLib = pkgs.stdenvNoCC.mkDerivation {
 		  pname = "random-zig-lib";
 		  version = "0.4.0";
-		  src = ./.;
+		  src = implementationSource;
 		  strictDeps = true;
 		  nativeBuildInputs = [ pkgs.zig_0_16 ];
 		  buildPhase = ''
@@ -719,7 +727,7 @@
 			install -Dm755 zig-lib-out/lib/${randomZigSharedName} \
 			  $out/lib/${randomZigSharedName}
 			install -Dm644 zig-lib-out/include/randomz.h $out/include/randomz.h
-			ln -s ${./.} $out/src
+			ln -s ${implementationSource} $out/src
 			install -Dm644 LICENSE $out/share/licenses/random-zig-lib/LICENSE
 			runHook postInstall
 		  '';
@@ -732,7 +740,7 @@
 		randomZig = pkgs.stdenv.mkDerivation {
 		  pname = "random-zig";
 		  version = "0.4.0";
-		  src = ./.;
+		  src = implementationSource;
 		  strictDeps = true;
 		  nativeBuildInputs = [
 			pkgs.makeWrapper pkgs.removeReferencesTo pkgs.zig_0_16
@@ -789,8 +797,12 @@
 		} (''
 		  mkdir -p $out/bin $out/lib $out/libexec $out/include \
 			$out/share/licenses
-		  ln -s ${randomLua}/bin/* ${randomZig}/bin/* ${randomr}/bin/* \
+		  ln -s ${randomZig}/bin/* ${randomr}/bin/* \
 			${randoml}/bin/* $out/bin/
+		  ln -s ${randomLua}/bin/random $out/bin/random-luajit
+		  for command in random nrandom drandom; do
+		    ln -s ${randomCanonical}/bin/$command $out/bin/$command
+		  done
 		  ln -s ${randomLua}/lib/* ${randomZig}/lib/* $out/lib/
 		  ln -s ${randomr}/libexec/* $out/libexec/
 		  ln -s ${randomZig}/include/* $out/include/
@@ -837,24 +849,96 @@
           config.allowUnsupportedSystem = true;
         };
         rustCrossTargetNames = [
-          "linux-aarch64"
-          "windows-x86_64"
+          "linux-arm64"
+          "mswin-amd64"
+          "mswin-arm64"
         ];
         rustCrossSets = if crossSupported then {
-          linux-aarch64 = crossWithUnsupported pkgs.pkgsCross.aarch64-multiplatform;
-          windows-x86_64 = crossWithUnsupported pkgs.pkgsCross.mingw-ucrt-x86_64;
+          linux-arm64 = crossWithUnsupported pkgs.pkgsCross.aarch64-multiplatform;
+          mswin-amd64 = crossWithUnsupported pkgs.pkgsCross.mingw-ucrt-x86_64;
+          mswin-arm64 = crossWithUnsupported pkgs.pkgsCross.mingw-ucrt-aarch64;
         } else { };
         randomrCrossPackages = pkgs.lib.mapAttrs
           (_name: rustPkgs: mkRandomr rustPkgs false)
-          rustCrossSets;
+          rustCrossSets // pkgs.lib.optionalAttrs crossSupported {
+            # Nixpkgs' ARM64 MinGW bootstrap currently requests unavailable
+            # pthread headers. Retain the target using its pinned official
+            # Rust std and the existing standalone gate's Zig linker.
+            mswin-arm64 = pkgs.callPackage ./nix/rust-windows-arm64.nix {
+              source = implementationSource;
+              cargoDeps = rustCargoDeps;
+            };
+          };
         randomrCrossAarch64 = if crossSupported then
-          randomrCrossPackages.linux-aarch64
+          randomrCrossPackages.linux-arm64
         else null;
         randomrCrossTargets = assert
           builtins.attrNames rustCrossSets == rustCrossTargetNames;
           pkgs.linkFarm "randomr-cross-targets"
             (pkgs.lib.mapAttrsToList (name: path: { inherit name path; })
               randomrCrossPackages);
+        hostPf = {
+          x86_64-linux = "linux-amd64";
+          aarch64-linux = "linux-arm64";
+          aarch64-darwin = "macos-arm64";
+        }.${system};
+        platformSystem = {
+          linux-amd64 = "x86_64-linux";
+          linux-arm64 = "aarch64-linux";
+          macos-arm64 = "aarch64-darwin";
+        };
+        languageAttribute = {
+          zig = "random-zig"; rust = "random-rust"; luajit = "random-luajit";
+          lean = "random-lean"; roc = "random-roc"; bend = "random-bend2";
+        };
+        nativeLanguagePackages = {
+          zig = randomZig; rust = randomr; luajit = randomLua;
+          lean = randoml; bend = randomBend;
+        } // pkgs.lib.optionalAttrs rocSupported { roc = randomRoc; };
+        buildProducts = import ./nix/build-products.nix {
+          inherit pkgs system installedTestTools;
+          source = implementationSource;
+          rustCrossPackages = randomrCrossPackages;
+          getNativePackage = impl: pf:
+            if pf == hostPf then nativeLanguagePackages.${impl}
+            else if pkgs.lib.hasPrefix "mswin-" pf && impl == "rust" then
+              # This existing cross builder requires its declared Linux host.
+              self.packages.x86_64-linux."random-build-rust-${pf}-gnu-ReleaseFast"
+            else self.packages.${platformSystem.${pf}}.${languageAttribute.${impl}};
+        };
+        selectionBytes = builtins.readFile ./CANONICAL_IMPL;
+        canonicalId = pkgs.lib.removeSuffix "\n" selectionBytes;
+        canonicalValid = builtins.elem canonicalId [ "zig" "rust" "luajit" "lean" "roc" "bend" ];
+        canonicalVariant = if hostPf == "macos-arm64" then ""
+          else if builtins.elem canonicalId [ "zig" "roc" ] then "musl" else "gnu";
+        canonicalProductName = "random-build-${canonicalId}-${hostPf}"
+          + pkgs.lib.optionalString (canonicalVariant != "") "-${canonicalVariant}"
+          + "-ReleaseFast";
+        canonicalProduct = if canonicalValid && builtins.hasAttr canonicalProductName buildProducts then
+          buildProducts.${canonicalProductName}
+          else throw "Invalid or unavailable CANONICAL_IMPL; run ./build canonize zig (one identifier, optional single LF).";
+        canonicalMain = {
+          zig = "randomz"; rust = "randomr"; luajit = "random";
+          lean = "randoml"; roc = "randomroc"; bend = "randomb";
+        }.${canonicalId};
+        randomCanonical = pkgs.runCommand "random-${canonicalId}-canonical-0.4.0" {
+          meta = {
+            description = "Canonical ${canonicalId} implementation of cross-platform-identical Random";
+            mainProgram = "random";
+            license = canonicalProduct.meta.license or pkgs.lib.licenses.mit;
+          };
+          passthru = { implementation = canonicalId; product = canonicalProduct; };
+        } ''
+          mkdir -p "$out/bin"
+          for entry in ${canonicalProduct}/*; do
+            [ "$(basename "$entry")" = bin ] || ln -s "$entry" "$out/"
+          done
+          ln -s ${canonicalProduct}/bin/* "$out/bin/"
+          for prefix in "" n d; do
+            [ -e "$out/bin/''${prefix}random" ] ||
+              ln -s ${canonicalProduct}/bin/''${prefix}${canonicalMain} "$out/bin/''${prefix}random"
+          done
+        '';
       in {
         # The conditional attribute is merged INSIDE `packages`, not by `//`-ing
         # a second `{ packages.crossToolchains = ...; }` onto the outputs set.
@@ -864,9 +948,9 @@
         # (it exercised `checks.*`, which was untouched); Mechatron Prime did,
         # with "target failed: packages.x86_64-linux.default".
         packages = {
-		  # Preserve the historical default for compatibility, but expose its
-		  # aggregate nature explicitly so consumers can select one implementation.
-          default = randomAll;
+          # The default follows only the canonical implementation; the
+          # intentionally expensive multi-language aggregate stays explicit.
+          default = randomCanonical;
           random-all = randomAll;
 		  random-luajit = randomLua;
 		  random-zig = randomZig;
@@ -885,8 +969,8 @@
           bend2-toolchain = bendToolchain;
 
 		  # Compatibility aliases. Language-named aliases now resolve to their
-		  # minimal package; `random` remains the historical aggregate alias.
-          random = randomAll;
+		  # minimal package; `random` follows the tracked canonical selection.
+          random = randomCanonical;
           randomz = randomZig;
           randomr = randomr;
           randoml = randoml;
@@ -902,7 +986,7 @@
         # force `pkgs`. eachDefaultSystem still enumerates x86_64-darwin, which
         # nixpkgs 26.11 has dropped -- forcing `pkgs` for that system throws at
         # evaluation time and takes the whole flake down, including on Linux.
-        } // nixpkgs.lib.optionalAttrs (nixpkgs.lib.hasSuffix "-linux" system) {
+        } // buildProducts // nixpkgs.lib.optionalAttrs (nixpkgs.lib.hasSuffix "-linux" system) {
           roc-toolchain = rocToolchain;
           random-roc-lib = randomRocLib;
           random-roc-ffi = randomRocNative;
@@ -926,6 +1010,11 @@
         };
 
         apps = {
+        default = {
+          type = "app";
+          program = "${randomCanonical}/bin/random";
+          meta.description = "Run the canonical Random implementation";
+        };
         randomz = {
           type = "app";
           program = "${randomZig}/bin/randomz";
@@ -960,6 +1049,17 @@
         # tests/random_test, so fixed_test/golden_test/kernel_bc_sweep are
         # actually exercised here too, not just the CLI-behavior suite.
         checks.distribution-proofs = randomLeanProofs;
+        checks.build-architecture = pkgs.runCommand "random-build-architecture" {
+          nativeBuildInputs = [ pkgs.bash pkgs.coreutils pkgs.binutils pkgs.file pkgs.stdenv.cc ];
+        } ''
+          cp -r ${./.} work
+          chmod -R u+w work
+          cd work
+          export RANDOM_TEST_TRASH_DIR="$TMPDIR/fixture-trash"
+          patchShebangs tests/build_arch_test
+          bash tests/build_arch_test
+          touch "$out"
+        '';
         # Fast real-sandbox gate before the full matrix; never replaces it.
         checks.bend2-sandbox = if system == "x86_64-linux" then pkgs.runCommand "random-bend2-sandbox" {
           nativeBuildInputs = runtimeTools ++ testTools ++ zigTools ++ [ bendToolchain ];
@@ -985,7 +1085,7 @@
           export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
           export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-local"
           mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
-          patchShebangs bin tests experiments
+          patchShebangs bin luajit tests experiments
           FAST=1 bash ./test bend2
           touch $out
         '' else pkgs.runCommand "random-bend2-sandbox-not-applicable" { } "touch $out";
@@ -1027,6 +1127,7 @@
             cp -r ${./.} work
             chmod -R u+w work
             cd work
+            source tests/product_paths.sh
 			# runCommand has no unpack/patch phases, so cargoSetupHook's normal
 			# phase hooks do not fire automatically. Apply them explicitly to
 			# point Cargo at importCargoLock's vendored source tree.
@@ -1049,7 +1150,7 @@
             # The Nix sandbox has no /usr/bin/env, so resolve shebangs in both the
             # program (bin/) and the test scripts (tests/) — `random --test` execs the
             # latter via its #!/usr/bin/env bash shebang.
-            patchShebangs bin tests experiments lean/build-owned-cli
+            patchShebangs bin luajit tests experiments lean/build-owned-cli
             export HOME="$TMPDIR"
             export PATH="$PWD/bin:$PATH"
             # ./test sets RANDOM_TEST_FILE itself; FAST=1 keeps this hermetic
@@ -1069,10 +1170,11 @@
             cp -r ${./.} work
             chmod -R u+w work
             cd work
+            source tests/product_paths.sh
             export ROC_CACHE_DIR="$TMPDIR/roc-cache"
             export XDG_CACHE_HOME="$TMPDIR/roc-xdg-cache"
             mkdir -p "$ROC_CACHE_DIR" "$XDG_CACHE_HOME"
-            patchShebangs bin tests
+            patchShebangs bin luajit tests
             bash tests/roc_core_test
             bash tests/roc_platform_test
             mkdir consumer
@@ -1094,7 +1196,7 @@
             "$RANDOM_ROC_COMPILER" check native-consumer/consumer.roc
             "$RANDOM_ROC_COMPILER" build native-consumer/consumer.roc --opt=speed --output="$PWD/native-consumer/run"
             actual="$(native-consumer/run 42)"
-            expected="$(zig-out/bin/roc-core-test geometric 42 4611686018427387904 -100 1)"
+            expected="$("$RANDOM_TEST_ZIG_OUT/bin/roc-core-test" geometric 42 4611686018427387904 -100 1)"
             expected="''${expected//$'\n'pos=/:}"
             test "$actual" = "$expected"
             test ! -e ${randomRocLib}/bin
@@ -1110,11 +1212,12 @@
             cp -r ${./.} work
             chmod -R u+w work
             cd work
+            source tests/product_paths.sh
             export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
             export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-local"
             mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
             export RANDOM_TEST_TRASH_DIR="$TMPDIR/test-Trash"
-            patchShebangs bin tests
+            patchShebangs bin luajit tests
             bash tests/roc_native_test
             bash tests/roc_cli_test
             test ! -e ${randomRocNative}/bin
@@ -1135,14 +1238,21 @@
 
         checks.stats-smoke = pkgs.runCommand "random-stats-smoke"
           ({
+            RANDOM_STATS_SKIP_BUILD = "1";
+            RANDOM_STATS_LUA_CLI = "${randomLua}/bin/random";
+            RANDOM_STATS_ZIG_CLI = "${randomZig}/bin/randomz";
+            RANDOM_STATS_RUST_CLI = "${randomr}/bin/randomr";
+            RANDOM_STATS_LEAN_CLI = "${randoml}/bin/randoml";
             nativeBuildInputs = runtimeTools ++ testTools ++ zigTools ++ rustTools ++ leanTools;
             cargoDeps = rustCargoDeps;
           } // pkgs.lib.optionalAttrs rocSupported {
             RANDOM_ROC_NATIVE_DIR = "${rocTestArtifacts}";
+            RANDOM_STATS_ROC_CLI = "${randomRoc}/bin/randomroc";
           }) ''
             cp -r ${./.} work
             chmod -R u+w work
             cd work
+            source tests/product_paths.sh
 			cargoSetupPostUnpackHook
 			cargoSetupPostPatchHook
 			export CARGO_HOME="$TMPDIR/cargo-home"
@@ -1155,7 +1265,7 @@
             export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
             export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-local"
             mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
-            patchShebangs bin tests stats lean/build-owned-cli
+            patchShebangs bin luajit tests stats lean/build-owned-cli
             export HOME="$TMPDIR"
             export PATH="$PWD/bin:$PATH"
             FAST=1 RANDOM_STATS_SKIP_TRUE=1 bash ./stats --all
@@ -1215,8 +1325,8 @@
 			test -s ${randomLeanProofs}/src/Contract.lean
 			test ! -e ${randomLeanProofs}/bin
 
-			# The backwards-compatible default is the documented aggregate and
-			# therefore exposes every implementation.
+            # The explicit aggregate exposes every production implementation;
+            # the default selects the canonical implementation separately.
 			for executable in random randomz randomr randoml; do
 			  test -x ${randomAll}/bin/"$executable"
 			done
@@ -1343,7 +1453,7 @@
 		  '';
 
         checks.package-smoke = pkgs.runCommand "random-package-smoke"
-          { nativeBuildInputs = [ pkgs.stdenv.cc pkgs.wasm-tools ]; } ''
+          { nativeBuildInputs = [ pkgs.stdenv.cc pkgs.wasm-tools pkgs.file ]; } ''
             export HOME="$TMPDIR/home"
             export XDG_CONFIG_HOME="$HOME/.config"
             export XDG_CACHE_HOME="$HOME/.cache"
@@ -1353,6 +1463,14 @@
             mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" \
               "$XDG_DATA_HOME" "$XDG_STATE_HOME" "$XDG_RUNTIME_DIR"
             chmod 0700 "$XDG_RUNTIME_DIR"
+            # The public default must execute precisely its selected product,
+            # not a same-output program accidentally found elsewhere on PATH.
+            test "$(readlink -f ${randomCanonical}/bin/random)" = \
+              "$(readlink -f ${canonicalProduct}/bin/${canonicalMain})"
+            ${randomCanonical}/bin/random --about
+            test "$(${randomCanonical}/bin/random --seed 42 d20 -c 10 2>/dev/null)" = \
+              "$(${randomLua}/bin/random --seed 42 d20 -c 10 2>/dev/null)"
+            ${randomCanonical}/bin/random --test
             test -s ${randomAll}/share/licenses/random-luajit/LICENSE
             test -s ${randomAll}/share/licenses/random-zig/LICENSE
             test -s ${randomAll}/share/licenses/random-rust/LICENSE
@@ -1431,7 +1549,8 @@
               cp -r ${./.} work
               chmod -R u+w work
               cd work
-              patchShebangs bin tests crossarch
+            source tests/product_paths.sh
+              patchShebangs bin luajit tests crossarch
               export HOME="$TMPDIR"
               export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global"
               export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-local"
@@ -1447,13 +1566,14 @@
               test -s ${randomr}/bin/randomr
               for target in ${pkgs.lib.escapeShellArgs rustCrossTargetNames}; do
                 case "$target" in
-                  windows-*) suffix=.exe ;;
+                  mswin-*) suffix=.exe ;;
                   *) suffix= ;;
                 esac
                 test -s ${randomrCrossTargets}/"$target"/bin/randomr"$suffix"
               done
-              file ${randomrCrossTargets}/linux-aarch64/bin/randomr | grep -q 'ARM aarch64'
-              file ${randomrCrossTargets}/windows-x86_64/bin/randomr.exe | grep -q 'x86-64'
+              file ${randomrCrossTargets}/linux-arm64/bin/randomr | grep -q 'ARM aarch64'
+              file ${randomrCrossTargets}/mswin-amd64/bin/randomr.exe | grep -q 'x86-64'
+              file ${randomrCrossTargets}/mswin-arm64/bin/randomr.exe | grep -q 'Aarch64\|ARM64'
               touch $out
             ''
           else pkgs.runCommand "randomr-cross-compile-not-applicable" { } "touch $out";
@@ -1465,7 +1585,8 @@
               cp -r ${./.} work
               chmod -R u+w work
               cd work
-              patchShebangs bin
+            source tests/product_paths.sh
+              patchShebangs bin luajit
               export HOME="$TMPDIR/home"
               export WINEPREFIX="$TMPDIR/wine"
               export WINEDEBUG=-all
@@ -1474,10 +1595,10 @@
               mkdir -p "$HOME" "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
               zig build -Doptimize=ReleaseFast -Dtarget=x86_64-windows-gnu \
                 --prefix "$TMPDIR/windows"
-              bin/random -d --seed 42 -b -c 131 > lua.raw
+              luajit/random -d --seed 42 -b -c 131 > lua.raw
               wine "$TMPDIR/windows/bin/randomz.exe" -d --seed 42 -b -c 131 > windows.raw
               cmp lua.raw windows.raw
-              RANDOMZ_CHART_TYPE=utf8 bin/random --beta=3 --alpha=1 --view > lua.view
+              RANDOMZ_CHART_TYPE=utf8 luajit/random --beta=3 --alpha=1 --view > lua.view
               RANDOMZ_CHART_TYPE=utf8 wine "$TMPDIR/windows/bin/randomz.exe" --beta=3 --alpha=1 --view > windows.view
               cmp lua.view windows.view
               wine "$TMPDIR/windows/bin/nrandomz.exe" -d --seed 42 -c 8 > alias.out
@@ -1490,6 +1611,9 @@
           else pkgs.runCommand "random-windows-x64-smoke-not-applicable" { } "touch $out";
 
         devShells = {
+          zig = pkgs.mkShell {
+            packages = [ pkgs.zig_0_16 pkgs.bash pkgs.coreutils pkgs.binutils pkgs.file ];
+          };
           bend2 = pkgs.mkShell {
             packages = [ bendToolchain pkgs.bun pkgs.clang ] ++
               runtimeTools ++ testTools ++ zigTools;

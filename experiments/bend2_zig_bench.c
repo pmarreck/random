@@ -140,6 +140,11 @@ int main(int argc,char **argv) {
 		volatile uint32_t token=result; (void)token;
 		const uint64_t c1=clock_ns(CLOCK_PROCESS_CPUTIME_ID),w1=clock_ns(CLOCK_MONOTONIC);
 		require(result==expected,"incorrect timed work");
+		if (c1 <= c0 || w1 <= w0) {
+			fprintf(stderr, "invalid clock sample kind=%u size=%u repeats=%u sample=%u cpu=%llu..%llu wall=%llu..%llu\n",
+				kind,n,repeats,sample,(unsigned long long)c0,(unsigned long long)c1,
+				(unsigned long long)w0,(unsigned long long)w1);
+		}
 		require(c1>c0 && w1>w0,"nonpositive clock interval");
 		cpu[sample]=(c1-c0)/repeats;wall[sample]=(w1-w0)/repeats;
 		require(cpu[sample]>0 && wall[sample]>0,"zero normalized sample");

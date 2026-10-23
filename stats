@@ -5,12 +5,12 @@ set -u
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ "${1-}" = --ziggurat ]; then shift; exec "$root/experiments/stats-ziggurat" "$@"; fi
-lua_cli="$root/bin/random"
-c_cli="$root/zig-out/bin/randomz"
-rust_target="$(cd "$root" && cargo metadata --no-deps --format-version 1 |
-	sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')"
-rust_cli="$rust_target/release/randomr"
-lean_cli="$root/zig-out/bin/randoml"
+lua_cli="${RANDOM_STATS_LUA_CLI:-$root/luajit/random}"
+zig_options=()
+[ "$(uname -s)" != Linux ] || zig_options=(--variant gnu)
+c_cli="${RANDOM_STATS_ZIG_CLI:-$("$root/build-support/product-path" zig "${zig_options[@]}")/bin/randomz}"
+rust_cli="${RANDOM_STATS_RUST_CLI:-$("$root/build-support/product-path" rust)/bin/randomr}"
+lean_cli="${RANDOM_STATS_LEAN_CLI:-$("$root/build-support/product-path" lean)/bin/randoml}"
 
 usage() {
 	cat <<'EOF'
@@ -25,6 +25,8 @@ Environment:
   RANDOM_STATS_SAMPLES=N     values per distribution (default 50000)
   RANDOM_STATS_SKIP_TRUE=1   omit the nondeterministic OS-CSPRNG sample
   FAST=1                     use 262144 bytes / 10000 distribution values
+  RANDOM_STATS_SKIP_BUILD=1   use explicitly selected installed products (Nix checks)
+  RANDOM_STATS_{LUA,ZIG,RUST,LEAN,ROC}_CLI  explicit CLI paths
 EOF
 }
 
@@ -53,19 +55,21 @@ esac
 
 if [ "${1:---all}" = --roc ] ||
    { [ "${1:---all}" = --all ] && [ "$(uname -s)" = Linux ]; }; then
-	source "$root/tests/roc_native_setup.sh"
-	roc_native_setup || exit 1
-	targets+=("Roc core / C FFI:$RANDOM_ROC_NATIVE_DIR/bin/randomroc")
+	if [ "${RANDOM_STATS_SKIP_BUILD:-0}" != 1 ]; then "$root/build" --impl roc >&2 || exit 1; fi
+	roc_cli="${RANDOM_STATS_ROC_CLI:-$("$root/build-support/product-path" roc)/bin/randomroc}"
+	targets+=("Roc core / C FFI:$roc_cli")
 fi
 
+if [ "${RANDOM_STATS_SKIP_BUILD:-0}" != 1 ]; then
 if [ "${1:---all}" = "--all" ] || [ "${1:---all}" = "--c" ]; then
-	zig build -Doptimize=ReleaseFast >/dev/null || exit 1
+	"$root/build" --impl zig "${zig_options[@]}" >&2 || exit 1
 fi
 if [ "${1:---all}" = "--all" ] || [ "${1:---all}" = "--lean" ]; then
-	"$root/lean/build-owned-cli" "$lean_cli" >/dev/null || exit 1
+	"$root/build" --impl lean >&2 || exit 1
 fi
 if [ "${1:---all}" = "--all" ] || [ "${1:---all}" = "--rust" ]; then
-	(cd "$root" && cargo build --locked --release -p randomr-cli) >/dev/null || exit 1
+	"$root/build" --impl rust >&2 || exit 1
+fi
 fi
 
 failed=0

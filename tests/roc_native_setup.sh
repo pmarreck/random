@@ -1,8 +1,9 @@
 # shellcheck shell=bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/product_paths.sh"
 # Shared artifact selector only; every CLI assertion lives in the Bash oracle.
 roc_native_setup() {
 	if [ -z "${RANDOM_ROC_NATIVE_DIR:-}" ]; then
-		RANDOM_ROC_NATIVE_DIR="$root/roc-out"
+		RANDOM_ROC_NATIVE_DIR="$RANDOM_TEST_ROC_OUT"
 		bash "$root/roc/build-native" "$RANDOM_ROC_NATIVE_DIR" || return 1
 		export RANDOM_ROC_NATIVE_DIR
 	fi

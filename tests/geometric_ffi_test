@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/product_paths.sh"
 # Build the standalone library, then invoke its C ABI directly through LuaJIT.
 set -u
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$here" || exit 1
-zig build library -Doptimize=ReleaseFast || exit 1
+zig build library --prefix "$RANDOM_TEST_ZIG_OUT" -Doptimize=ReleaseFast || exit 1
 case "$(uname -s)" in
-	Darwin) shared="$here/zig-out/lib/librandomz.dylib" ;;
-	*) shared="$here/zig-out/lib/librandomz.so" ;;
+	Darwin) shared="$RANDOM_TEST_ZIG_OUT/lib/librandomz.dylib" ;;
+	*) shared="$RANDOM_TEST_ZIG_OUT/lib/librandomz.so" ;;
 esac
 export LUA_PATH="$here/lib/?.lua;;"
 exec luajit tests/geometric_ffi.lua "$shared"

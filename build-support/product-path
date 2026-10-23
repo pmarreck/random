@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Report a single namespaced product without building or changing selection.
+set -u
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$root/build-support/core.sh"
+[ "$#" -gt 0 ] || { rb_error 'usage: build-support/product-path IMPL [build selection options]'; exit 1; }
+implementation="$1"
+shift
+host="$(rb_platform "$(uname -s)" "$(uname -m)")" || exit 1
+rb_plan "$implementation" "$host" "--impl=$implementation" "$@" || exit 1
+[ "${#RB_PLAN[@]}" -eq 1 ] || { rb_error 'product-path requires a single implementation/platform'; exit 1; }
+IFS='|' read -r implementation platform variant profile target <<<"${RB_PLAN[0]}"
+printf '%s/%s-out/%s%s/%s\n' "$root" "$implementation" "$platform" "${variant:+/$variant}" "$profile"

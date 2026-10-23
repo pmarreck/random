@@ -56,21 +56,35 @@ require_command() {
 }
 
 if [ "${BM_SKIP_BUILD:-0}" != 1 ]; then
-	"$here/build" || exit 1
+	for implementation in luajit rust lean; do
+		"$here/build" --impl "$implementation" || exit 1
+	done
+	# Keep the existing native-GNU benchmark ABI explicit; the portable
+	# canonical Linux command defaults to musl instead.
+	zig_options=()
+	[ "$(uname -s)" != Linux ] || zig_options=(--variant gnu)
+	"$here/build" --impl zig "${zig_options[@]}" || exit 1
+	[ "$(uname -s)" != Linux ] || "$here/build" --impl roc || exit 1
 fi
 
-lua_cli="$here/zig-out/bin/random"
-zig_cli="$here/zig-out/bin/randomz"
-rust_cli="$here/zig-out/bin/randomr"
-lean_cli="$here/zig-out/bin/randoml"
-rust_timing_cli="${BM_RUST_TIMING_CLI:-$here/zig-out/bin/.randomr-bench}"
+lua_product="$("$here/build-support/product-path" luajit)" || exit 1
+zig_options=()
+[ "$(uname -s)" != Linux ] || zig_options=(--variant gnu)
+zig_product="$("$here/build-support/product-path" zig "${zig_options[@]}")" || exit 1
+rust_product="$("$here/build-support/product-path" rust)" || exit 1
+lean_product="$("$here/build-support/product-path" lean)" || exit 1
+lua_cli="$lua_product/bin/random"
+zig_cli="$zig_product/bin/randomz"
+rust_cli="$rust_product/bin/randomr"
+lean_cli="$lean_product/bin/randoml"
+rust_timing_cli="${BM_RUST_TIMING_CLI:-$rust_product/libexec/randomr}"
 implementations=(luajit zig rust lean)
 parity_executables=("$lua_cli" "$zig_cli" "$rust_cli" "$lean_cli")
 timing_executables=("$lua_cli" "$zig_cli" "$rust_timing_cli" "$lean_cli")
 if [ "$(uname -s)" = Linux ] || [ -n "${BM_ROC_CLI:-}" ]; then
 	roc_cli="${BM_ROC_CLI:-}"
 	if [ -z "$roc_cli" ] && [ "${BM_SKIP_BUILD:-0}" != 1 ]; then
-		roc_cli="$here/zig-out/bin/randomroc"
+		roc_cli="$("$here/build-support/product-path" roc)/bin/randomroc"
 	fi
 	if [ -z "$roc_cli" ]; then
 		root="$here"
@@ -85,7 +99,7 @@ fi
 for executable in "${parity_executables[@]}" "$rust_timing_cli"; do
 	if [ ! -x "$executable" ]; then
 		echo "./bm requires a release executable: $executable" >&2
-		echo "Run ./build, or unset BM_SKIP_BUILD." >&2
+		echo "Unset BM_SKIP_BUILD to build each requested implementation." >&2
 		exit 1
 	fi
 done

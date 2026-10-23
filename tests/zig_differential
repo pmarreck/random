@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/product_paths.sh"
+RANDOM_TEST_ZIG_OUT="$RANDOM_TEST_ZIG_SAFE_OUT"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fixture-cleanup.sh"
 # Differential control: src/fixed.zig vs lib/fixed.lua, bit-exact.
 #
@@ -57,13 +59,13 @@ echo "============================================"
 # ReleaseSafe, not ReleaseFast: this comparison is exactly where a UB-driven
 # wrong answer would show up, and a ReleaseFast build compiles out the checks
 # that would catch it. Speed is irrelevant here; correctness is the product.
-if ! (cd "$root" && zig build -Doptimize=ReleaseSafe >"$tmp/build.log" 2>&1); then
+if ! (cd "$root" && zig build --prefix "$RANDOM_TEST_ZIG_OUT" -Doptimize=ReleaseSafe >"$tmp/build.log" 2>&1); then
 	bad "zig build failed"
 	sed 's/^/      /' <"$tmp/build.log" >&2
 	exit 1
 fi
 
-driver="$root/zig-out/bin/differential-driver"
+driver="$RANDOM_TEST_ZIG_OUT/bin/differential-driver"
 [ -x "$driver" ] || { bad "driver not built at $driver"; exit 1; }
 
 "$driver" "$COUNT" >"$tmp/zig.txt" 2>"$tmp/zig.err"

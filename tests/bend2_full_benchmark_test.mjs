@@ -51,15 +51,20 @@ for (const kind of [3, 4, 5, 6, 7, 8, 9, 10, 11]) for (const n of [1, 64]) {
 		}
 		return expected;
 	};
-	const first = oracle(1), warm = oracle(3), expected = oracle(2);
-	const args = [kind, n, 2, expected.hash, first.hash, warm.hash, 42];
+	const first = oracle(1), warm = oracle(3), two = oracle(2);
+	// Retain the exact two-repeat value/cursor controls above. Timer admission
+	// additionally uses at least 64 checked outputs for short-run accounting.
+	// Aggregate verified work, never clamp or retry a nonpositive clock.
+	const timedRepeats = n === 1 ? 64 : 2;
+	const expected = timedRepeats === 2 ? two : oracle(timedRepeats);
+	const args = [kind, n, timedRepeats, expected.hash, first.hash, warm.hash, 42];
 	for (const [name, command] of Object.entries(commands)) {
-		const r = run(command, args); assert.equal(r.status, 0, `${name}: ${r.stderr}`);
+		const r = run(command, args); assert.equal(r.status, 0, `${name} kind=${kind} size=${n} repeats=${timedRepeats}: ${r.stderr}`);
 		const [ready, text, ...extra] = r.stdout.trimEnd().split('\n');
 		assert.equal(ready, 'READY'); assert.equal(extra.length, 0);
 		const data = JSON.parse(text);
 		assert.equal(data.correct, true); assert.equal(data.position, expected.position);
-		assert.equal(data.iterations, 2); assert.equal(data.rows[0].size, n);
+		assert.equal(data.iterations, timedRepeats); assert.equal(data.rows[0].size, n);
 		for (const metric of ['cpu_ns', 'wall_ns']) {
 			assert.equal(data.rows[0].samples[metric].length, 7);
 			assert.ok(data.rows[0].samples[metric].every(v => Number.isSafeInteger(v) && v > 0));

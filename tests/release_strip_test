@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/product_paths.sh"
 # Release binaries must be stripped by their own language build, independently
 # of any downstream packaging/fixup phase. On ELF hosts, absence of .symtab and
 # debug sections is a mechanical assertion; all hosts still smoke-test output.
@@ -6,14 +7,14 @@ set -u
 set -o pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-zig_cli="${RELEASE_STRIP_ZIG_CLI:-$root/zig-out/bin/randomz}"
-lean_cli="${RELEASE_STRIP_LEAN_CLI:-$root/zig-out/bin/randoml}"
+zig_cli="${RELEASE_STRIP_ZIG_CLI:-$RANDOM_TEST_ZIG_OUT/bin/randomz}"
+lean_cli="${RELEASE_STRIP_LEAN_CLI:-$RANDOM_TEST_LEAN_OUT/bin/randoml}"
 rust_target="$(cd "$root" && cargo metadata --no-deps --format-version 1 |
 	sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')"
 rust_cli="${RELEASE_STRIP_RUST_CLI:-$rust_target/release/randomr}"
 
 if [ -z "${RELEASE_STRIP_ZIG_CLI:-}" ]; then
-	(cd "$root" && zig build -Doptimize=ReleaseFast) || exit 1
+	(cd "$root" && zig build --prefix "$RANDOM_TEST_ZIG_OUT" -Doptimize=ReleaseFast) || exit 1
 fi
 if [ -z "${RELEASE_STRIP_RUST_CLI:-}" ]; then
 	(cd "$root" && cargo build --locked --release -p randomr-cli) || exit 1

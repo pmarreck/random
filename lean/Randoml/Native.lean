@@ -15,6 +15,9 @@ opaque platformName : BaseIO String
 @[extern "randoml_architecture_name"]
 opaque architectureName : BaseIO String
 
+@[extern "randoml_build_identity"]
+opaque buildIdentity : BaseIO String
+
 /-- Terminal-transport codec implemented at the byte-oriented native edge. -/
 @[extern "randoml_base64"]
 opaque base64 (bytes : @& ByteArray) : ByteArray

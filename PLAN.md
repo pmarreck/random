@@ -2,6 +2,15 @@
 
 Completed work: [log](docs/PLAN_LOG.md). Historical directives and deferred risks: [context](docs/plan_context/legacy_decisions.md).
 
+## Canonical cross-platform build architecture
+
+- [ ] Adopt the cross-platform-project-build-arch contract with a tracked CANONICAL_IMPL selecting zig, validated canonization and independent implementation/platform build scopes.
+- [ ] Namespace complete products by implementation/PF/VARIANT/profile and atomically publish only the canonical command set in bin/PF, preserving working selections on failure and foreign builds.
+- [ ] Make the default Nix output select the canonical Zig/C CLI while retaining separately consumable language-specific CLIs, libraries and an explicitly named aggregate.
+- [ ] Add failing Bash conformance tests for selection, scopes, hostile inputs, ABI/profile isolation, publication rollback and concurrency; include them in ./test and verify a real canonical host build.
+- [ ] Migrate build/run/test helpers, packaging and documentation together, retain recoverable legacy products and report unexecuted foreign-platform checks without changing global shell configuration.
+- [ ] Make every CLI's one-line --about identify its actual PF and applicable ABI variant, ignoring conflicting runtime target variables for compiled outputs.
+
 ## Correctness and verification
 
 - [ ] Prove production-linked distribution laws and explicit parameter-dependent deviation/failure bounds for uniform, normal, normalized integers, exponential, Poisson, log-normal, beta and geometric; preserve shared CLI acceptance and distinguish ideal-source assumptions from cross-language refinement (context: docs/plan_context/distribution_proofs.md).
@@ -24,6 +33,7 @@ Completed work: [log](docs/PLAN_LOG.md). Historical directives and deferred risk
 
 ## Platform coverage
 
+- [ ] Execute native macOS/Windows publication and resource lookup, including Windows copy/DLL handling, and validate the layout on a case-insensitive filesystem before claiming those runtime gates.
 - [ ] Execute native Bend C-ABI/CLI checks on aarch64 Linux/macOS before widening the Linux-x86_64-only runtime evidence.
 - [ ] Execute the Roc CLI/C ABI on native aarch64 Linux and extend official-platform packaging beyond Linux before widening runtime support claims.
 - [ ] Produce and execute Solaris/illumos and DragonFly artifacts before claiming runtime support; source selectors alone are not execution evidence.
@@ -55,6 +65,7 @@ Completed work: [log](docs/PLAN_LOG.md). Historical directives and deferred risk
 
 ## Integration and maintenance
 
+- [ ] Investigate the intermittent nonpositive-clock rejection in the short-run benchmark smoke probe, retaining invalid-clock refusals and frozen profiling baselines.
 - [ ] Specify and add parameterized bounded-integer, sparse distinct, checked u64 geometric and weighted-index consumer APIs with Zig-native entrypoints and construction IDs (context: docs/plan_context/consumer_sampling.md).
 - [ ] Locate or deliver the outstanding password-generator entropy assessment with source/range/security/fork/partial-read evidence and a known-green commit; no dotfiles changes.
 - [ ] Remove `luajitFixed` only when locked nixpkgs LuaJIT includes the verified #1499 fix (roll ≥1785606157); enforce toolchain/mitigation threshold alignment.

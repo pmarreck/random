@@ -71,7 +71,7 @@ oracle_bytes()
 	local seed="$1" position="$2" count="$3" seed_hex state
 	printf -v seed_hex '%064x' "$seed"
 	state="{\"sv\":3,\"rv\":\"0.4.0\",\"seed\":\"0x${seed_hex}\",\"next_pos\":\"${position}\",\"args\":{}}"
-	"$root/bin/random" --state "$state" --binaryoutput --count "$count" 2>/dev/null |
+	"$root/luajit/random" --state "$state" --binaryoutput --count "$count" 2>/dev/null |
 		od -An -tu1 -v | normalize_numbers
 }
 

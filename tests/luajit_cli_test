@@ -4,5 +4,18 @@ set -u
 set -o pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CANDIDATE_CLI="$root/bin/random" CANDIDATE_KIND=luajit \
+source "$root/tests/fixture-cleanup.sh"
+alias_work="$(mktemp -d "${TMPDIR:-/tmp}/random-lua-alias.XXXXXX")" || exit 1
+trap 'test_trash_on_exit "$alias_work"' EXIT
+ln -s "$root/luajit/random" "$alias_work/random-luajit" || exit 1
+# A relocated public alias must resolve its real modules and self-test surface,
+# not whichever implementation happens to own the generic command on PATH.
+RANDOM_TEST_DEPTH=1 "$alias_work/random-luajit" --test \
+	>"$alias_work/stdout" 2>"$alias_work/stderr"
+if [ "$?" -ne 0 ] || [ -s "$alias_work/stderr" ]; then
+	printf '%s\n' 'LuaJIT alias failed to resolve its own resources/self-test' >&2
+	cat "$alias_work/stderr" >&2
+	exit 1
+fi
+CANDIDATE_CLI="$root/luajit/random" CANDIDATE_KIND=luajit \
 	"$root/tests/frontend_differential"
